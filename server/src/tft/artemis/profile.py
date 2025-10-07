@@ -9,7 +9,7 @@ import cProfile
 import io
 import pstats
 import time
-from typing import Any, Dict, List, Optional, Tuple, TypeVar
+from typing import Any, Optional, TypeVar
 
 import gluetool.log
 import pyinstrument
@@ -77,7 +77,7 @@ class Profiler:
 
         self.stop_time = time.time()
 
-    def format(self, sort_stats: Tuple[str, str] = ('cumulative', 'time'), limit: int = 30) -> str:
+    def format(self, sort_stats: tuple[str, str] = ('cumulative', 'time'), limit: int = 30) -> str:
         """
         Format captured profiling data report.
 
@@ -86,7 +86,7 @@ class Profiler:
         :param limit: how many entries should be reported in the summary.
         :returns: nicely formatted profiling report.
         """
-        lines: List[str] = []
+        lines: list[str] = []
 
         if self.elapsed_time is not None:
             lines.append(f'elapsed time: {self.elapsed_time:3}')
@@ -104,7 +104,7 @@ class Profiler:
 
         if self._callstack_profiler is not None:
             if self.verbose:
-                kwargs: Dict[str, Any] = {'show_all': True, 'timeline': True}
+                kwargs: dict[str, Any] = {'show_all': True, 'timeline': True}
 
             else:
                 kwargs = {'show_all': False, 'timeline': False, 'short_mode': True}
@@ -118,7 +118,7 @@ class Profiler:
         self,
         logger: gluetool.log.ContextAdapter,
         label: str,
-        sort_stats: Tuple[str, str] = ('cumulative', 'time'),
+        sort_stats: tuple[str, str] = ('cumulative', 'time'),
         limit: int = 30,
     ) -> None:
         """

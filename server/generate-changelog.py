@@ -5,7 +5,6 @@
 
 import re
 import sys
-from typing import Dict, List
 
 import jinja2
 
@@ -43,7 +42,7 @@ def usage() -> None:
 
 
 def main() -> None:
-    section_items: Dict[str, List[str]] = {section_name: [] for section_name in SECTION_NAMES}
+    section_items: dict[str, list[str]] = {section_name: [] for section_name in SECTION_NAMES}
 
     for line in sys.stdin:
         line = line.strip()

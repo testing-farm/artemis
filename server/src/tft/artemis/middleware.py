@@ -6,7 +6,7 @@ import os
 import signal
 import threading
 import traceback
-from typing import TYPE_CHECKING, Any, Dict, Optional, Set, Tuple, cast
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 import dramatiq.broker
 import dramatiq.message
@@ -30,7 +30,7 @@ DEFAULT_MAX_RETRIES = 20
 DEFAULT_MAX_TASKS_PER_WORKER_PROCESS = 100
 
 
-def _dump_message(message: dramatiq.message.Message) -> Dict[str, Any]:
+def _dump_message(message: dramatiq.message.Message) -> dict[str, Any]:
     # message.asdict() is nice, but returns ordered dict. we don't care about
     # order, and OrderedDict would need extra care when serializing anywhere,
     # so convert it to plain dict.
@@ -83,14 +83,14 @@ def _message_backoff(message: dramatiq.broker.MessageProxy, retries: int, actor:
 
 def _message_tools(
     broker: dramatiq.broker.Broker, message: dramatiq.message.Message
-) -> Tuple[gluetool.log.ContextAdapter, 'TaskCall', Dict[str, Any]]:
+) -> tuple[gluetool.log.ContextAdapter, 'TaskCall', dict[str, Any]]:
     from . import get_logger
     from .tasks import TaskCall
 
     logger = get_logger()
     task_call = TaskCall.from_message(broker, message)
 
-    failure_details: Dict[str, Any] = {'task_call': task_call, 'broker_message': _dump_message(message)}
+    failure_details: dict[str, Any] = {'task_call': task_call, 'broker_message': _dump_message(message)}
 
     return (task_call.logger(logger, failure_details), task_call, failure_details)
 
@@ -232,7 +232,7 @@ def resolve_retry_message(
 
 class Retries(dramatiq.middleware.retries.Retries):  # type: ignore[misc]  # cannot subclass 'Retries'
     @property
-    def actor_options(self) -> Set[str]:
+    def actor_options(self) -> set[str]:
         return {
             # These come from our superclass...
             'max_retries',
@@ -281,7 +281,7 @@ def set_message_note(note: str, value: str) -> None:
     message_proxy = CURRENT_MESSAGE.get()
     assert message_proxy is not None
 
-    options = cast(Dict[str, Dict[str, str]], message_proxy.options)
+    options = cast(dict[str, dict[str, str]], message_proxy.options)
     options.setdefault(MESSAGE_NOTE_OPTION_KEY, {})
     options[MESSAGE_NOTE_OPTION_KEY][note] = value
 
@@ -296,7 +296,7 @@ def get_metric_note(note: str) -> Optional[str]:
     message_proxy = CURRENT_MESSAGE.get()
     assert message_proxy is not None
 
-    options = cast(Dict[str, Dict[str, str]], message_proxy.options)
+    options = cast(dict[str, dict[str, str]], message_proxy.options)
 
     return options.get(MESSAGE_NOTE_OPTION_KEY, {}).get(note)
 
@@ -305,11 +305,11 @@ class Prometheus(dramatiq.middleware.Middleware):  # type: ignore[misc]  # canno
     def __init__(self) -> None:
         super().__init__()
 
-        self._delayed_messages: Set[str] = set()
-        self._message_start_times: Dict[str, int] = {}
+        self._delayed_messages: set[str] = set()
+        self._message_start_times: dict[str, int] = {}
 
     @property
-    def actor_options(self) -> Set[str]:
+    def actor_options(self) -> set[str]:
         return {MESSAGE_NOTE_OPTION_KEY}
 
     def after_nack(self, broker: dramatiq.broker.Broker, message: dramatiq.message.Message) -> None:
@@ -546,10 +546,10 @@ class SingletonTask(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
 
         self.cache = cache
 
-        self._tokens: Dict[str, str] = {}
+        self._tokens: dict[str, str] = {}
 
     @property
-    def actor_options(self) -> Set[str]:
+    def actor_options(self) -> set[str]:
         return {'singleton', 'singleton_deadline', 'singleton_no_retry_on_lock_fail'}
 
     @staticmethod

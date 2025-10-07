@@ -3,7 +3,7 @@
 
 import dataclasses
 import datetime
-from typing import List, Optional
+from typing import Optional
 
 from ... import db as artemis_db
 
@@ -21,7 +21,7 @@ class GuestLogResponse_v0_0_69:  # noqa: N801
 
     @classmethod
     def from_db(cls, log: artemis_db.GuestLog) -> 'GuestLogResponse_v0_0_69':
-        blob_components: List[str] = []
+        blob_components: list[str] = []
 
         for blob in log.blobs:
             blob_components.append(f'# Captured at {blob.ctime}')

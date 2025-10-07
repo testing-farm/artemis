@@ -6,7 +6,9 @@ import json
 import os
 import re
 import shutil
-from typing import Any, Dict, Generator, Iterator, List, Optional, Pattern, Tuple, TypedDict, cast
+from collections.abc import Generator, Iterator
+from re import Pattern
+from typing import Any, Optional, TypedDict, cast
 
 import gluetool.log
 import sqlalchemy.orm.session
@@ -62,7 +64,7 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
     default='{{ os.compose }}',
 )
 
-IBMCLOUD_RESOURCE_TYPE: Dict[str, ResourceType] = {
+IBMCLOUD_RESOURCE_TYPE: dict[str, ResourceType] = {
     'instance': ResourceType.VIRTUAL_MACHINE,
     'subnet': ResourceType.VIRTUAL_NETWORK,
     'volume': ResourceType.DISK,
@@ -88,7 +90,7 @@ TAG_MAX_LENGTH = 128
 TAG_FORBIDDEN_CHARACTERS_PATTERN = re.compile(r'[^.a-zA-Z0-9 _\-]')
 
 
-def _sanitize_tags(tags: GuestTagsType) -> Generator[Tuple[str, str], None, None]:
+def _sanitize_tags(tags: GuestTagsType) -> Generator[tuple[str, str], None, None]:
     """
     Sanitize tags to make their values acceptable for IBM API and CLI.
 
@@ -112,7 +114,7 @@ def _sanitize_tags(tags: GuestTagsType) -> Generator[Tuple[str, str], None, None
             yield name, ''
 
 
-def _serialize_tags(tags: GuestTagsType) -> List[str]:
+def _serialize_tags(tags: GuestTagsType) -> list[str]:
     """
     Serialize tags to make them acceptable for IBM CLI.
 
@@ -135,7 +137,7 @@ class APIImageType(TypedDict):
     visibility: str
     user_data_format: str
     status: str
-    operating_system: Dict[str, Any]
+    operating_system: dict[str, Any]
 
 
 ConfigImageFilter = TypedDict(
@@ -212,7 +214,7 @@ class IBMCloudPoolData(PoolData):
 @dataclasses.dataclass
 class IBMCloudPoolResourcesIDs(PoolResourcesIDs):
     instance_id: Optional[str] = None
-    assorted_resource_ids: Optional[List[Dict[str, str]]] = None
+    assorted_resource_ids: Optional[list[dict[str, str]]] = None
 
 
 @dataclasses.dataclass
@@ -247,12 +249,12 @@ class IBMCloudVPCDriver(FlavorBasedPoolDriver[IBMCloudVPCPoolImageInfo, IBMCloud
         self,
         logger: gluetool.log.ContextAdapter,
         poolname: str,
-        pool_config: Dict[str, Any],
+        pool_config: dict[str, Any],
     ) -> None:
         super().__init__(logger, poolname, pool_config)
 
-    def fetch_pool_image_info(self) -> Result[List[PoolImageInfo], Failure]:
-        def _fetch_images(filters: Optional[ConfigImageFilter] = None) -> Result[List[PoolImageInfo], Failure]:
+    def fetch_pool_image_info(self) -> Result[list[PoolImageInfo], Failure]:
+        def _fetch_images(filters: Optional[ConfigImageFilter] = None) -> Result[list[PoolImageInfo], Failure]:
             name_pattern: Optional[Pattern[str]] = None
             arch_pattern: Optional[Pattern[str]] = None
 
@@ -295,8 +297,8 @@ class IBMCloudVPCDriver(FlavorBasedPoolDriver[IBMCloudVPCPoolImageInfo, IBMCloud
                         Failure.from_failure('failed to fetch image information', r_images_list.unwrap_error())
                     )
 
-            images: List[PoolImageInfo] = []
-            for image in cast(List[APIImageType], r_images_list.unwrap()):
+            images: list[PoolImageInfo] = []
+            for image in cast(list[APIImageType], r_images_list.unwrap()):
                 try:
                     # Apply wild-card filter if specified, unfortunately no way to filter by name or regex via cli
                     if name_pattern and not name_pattern.match(image['name']):
@@ -329,8 +331,8 @@ class IBMCloudVPCDriver(FlavorBasedPoolDriver[IBMCloudVPCPoolImageInfo, IBMCloud
 
             return Ok(images)
 
-        images: List[PoolImageInfo] = []
-        image_filters = cast(List[ConfigImageFilter], self.pool_config.get('image-filters', []))
+        images: list[PoolImageInfo] = []
+        image_filters = cast(list[ConfigImageFilter], self.pool_config.get('image-filters', []))
 
         if image_filters:
             for filters in image_filters:
@@ -351,10 +353,10 @@ class IBMCloudVPCDriver(FlavorBasedPoolDriver[IBMCloudVPCPoolImageInfo, IBMCloud
 
         return Ok(images)
 
-    def fetch_pool_flavor_info(self) -> Result[List[Flavor], Failure]:
+    def fetch_pool_flavor_info(self) -> Result[list[Flavor], Failure]:
         # See https://cloud.ibm.com/docs/vpc?topic=vpc-vs-profiles&interface=cli for more info
 
-        def _fetch(logger: gluetool.log.ContextAdapter) -> Result[List[Dict[str, Any]], Failure]:
+        def _fetch(logger: gluetool.log.ContextAdapter) -> Result[list[dict[str, Any]], Failure]:
             with IBMCloudSession(self.logger, self) as session:
                 r_flavors_list = session.run(
                     self.logger,
@@ -367,16 +369,16 @@ class IBMCloudVPCDriver(FlavorBasedPoolDriver[IBMCloudVPCPoolImageInfo, IBMCloud
                         Failure.from_failure('failed to fetch flavors information', r_flavors_list.unwrap_error())
                     )
 
-            return Ok(cast(List[Dict[str, Any]], r_flavors_list.unwrap()))
+            return Ok(cast(list[dict[str, Any]], r_flavors_list.unwrap()))
 
         def _constructor(
-            logger: gluetool.log.ContextAdapter, raw_flavor: Dict[str, Any]
+            logger: gluetool.log.ContextAdapter, raw_flavor: dict[str, Any]
         ) -> Iterator[Result[Flavor, Failure]]:
-            raw_disks = cast(List[Any], raw_flavor.get('disks', []))
+            raw_disks = cast(list[Any], raw_flavor.get('disks', []))
 
             if not raw_disks:
                 # Yep, surprizingly enough ibmcloud has flavors with no disks, like bx2-2x8
-                disks: List[FlavorDisk] = []
+                disks: list[FlavorDisk] = []
 
             else:
                 # diskspace is reported in GB
@@ -430,7 +432,7 @@ class IBMCloudVPCDriver(FlavorBasedPoolDriver[IBMCloudVPCPoolImageInfo, IBMCloud
 
         with IBMCloudSession(logger, self) as session:
             # Resource usage - instances and flavors
-            def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[List[Dict[str, Any]], Failure]:
+            def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[list[dict[str, Any]], Failure]:
                 r_list_instances = session.run(
                     logger, ['is', 'instances', '--json'], commandname='ibm.is.instances-list'
                 )
@@ -441,7 +443,7 @@ class IBMCloudVPCDriver(FlavorBasedPoolDriver[IBMCloudVPCPoolImageInfo, IBMCloud
                 return Ok(
                     [
                         raw_instance
-                        for raw_instance in cast(List[Dict[str, Any]], r_list_instances.unwrap())
+                        for raw_instance in cast(list[dict[str, Any]], r_list_instances.unwrap())
                         if subnet_id
                         in [nics.get('subnet', {}).get('id') for nics in raw_instance.get('network_interfaces', [])]
                     ]
@@ -450,7 +452,7 @@ class IBMCloudVPCDriver(FlavorBasedPoolDriver[IBMCloudVPCPoolImageInfo, IBMCloud
             def _update_instance_usage(
                 logger: gluetool.log.ContextAdapter,
                 usage: PoolResourcesUsage,
-                raw_instance: Dict[str, Any],
+                raw_instance: dict[str, Any],
                 flavor: Optional[Flavor],
             ) -> Result[None, Failure]:
                 assert usage.instances is not None  # narrow type
@@ -489,7 +491,7 @@ class IBMCloudVPCDriver(FlavorBasedPoolDriver[IBMCloudVPCPoolImageInfo, IBMCloud
             if r_show_network.is_error:
                 return Error(Failure.from_failure('Could not get network metrics', r_show_network.unwrap_error()))
 
-            network = cast(Dict[str, Any], r_show_network.unwrap())
+            network = cast(dict[str, Any], r_show_network.unwrap())
 
             # drop network address and broadcast
             resources.limits.networks[subnet_id] = PoolNetworkResources(
@@ -553,7 +555,7 @@ class IBMCloudVPCDriver(FlavorBasedPoolDriver[IBMCloudVPCPoolImageInfo, IBMCloud
                     )
 
                 try:
-                    vpc_id = cast(Dict[str, Any], r_subnet_show.unwrap())['vpc']['id']
+                    vpc_id = cast(dict[str, Any], r_subnet_show.unwrap())['vpc']['id']
                 except KeyError:
                     return Error(Failure('Subnet details have no vpc information'))
 
@@ -619,7 +621,7 @@ class IBMCloudVPCDriver(FlavorBasedPoolDriver[IBMCloudVPCPoolImageInfo, IBMCloud
         if r_output.is_error:
             return Error(r_output.unwrap_error())
 
-        created = cast(Dict[str, Any], r_output.unwrap())
+        created = cast(dict[str, Any], r_output.unwrap())
 
         if not created['id']:
             return Error(Failure('Instance id not found'))
@@ -634,7 +636,7 @@ class IBMCloudVPCDriver(FlavorBasedPoolDriver[IBMCloudVPCPoolImageInfo, IBMCloud
 
     def _show_guest(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[Any, Failure]:
         instance_id = guest_request.pool_data.mine(self, IBMCloudPoolData).instance_id
-        res: Dict[str, Any] = {}
+        res: dict[str, Any] = {}
 
         if not instance_id:
             return Error(Failure('Need an instance ID to fetch any information about a guest'))
@@ -649,7 +651,7 @@ class IBMCloudVPCDriver(FlavorBasedPoolDriver[IBMCloudVPCPoolImageInfo, IBMCloud
                     Failure.from_failure('failed to fetch instance information', r_instance_info.unwrap_error())
                 )
 
-            res = cast(Dict[str, Any], r_instance_info.unwrap())
+            res = cast(dict[str, Any], r_instance_info.unwrap())
 
             # Now send another request to resource api to retrieve tags information
             r_resource_info = session.run(logger, ['resource', 'search', f'name:{res["name"]}', '--output', 'json'])
@@ -659,7 +661,7 @@ class IBMCloudVPCDriver(FlavorBasedPoolDriver[IBMCloudVPCPoolImageInfo, IBMCloud
                     Failure.from_failure('failed to fetch resource information', r_resource_info.unwrap_error())
                 )
 
-            res['tags'] = cast(Dict[str, Any], r_resource_info.unwrap()).get('tags')
+            res['tags'] = cast(dict[str, Any], r_resource_info.unwrap()).get('tags')
 
         return Ok(res)
 

@@ -4,7 +4,7 @@
 import dataclasses
 import datetime
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import gluetool.log
 import gluetool.utils
@@ -23,12 +23,12 @@ class MatrixItem:
 
 
 @pytest.fixture(name='matrix_from_file')
-def fixture_matrix_from_file() -> List[MatrixItem]:
-    matrix: List[MatrixItem] = []
+def fixture_matrix_from_file() -> list[MatrixItem]:
+    matrix: list[MatrixItem] = []
     matrix_specs = gluetool.utils.load_yaml(os.environ['HERD_MATRIX_FILEPATH'])
 
     if 'HERD_VARIABLES_FILEPATH' not in os.environ:
-        variables: Dict[str, Any] = {}
+        variables: dict[str, Any] = {}
 
     else:
         variables = gluetool.utils.load_yaml(os.environ['HERD_VARIABLES_FILEPATH'])
@@ -57,8 +57,8 @@ def fixture_matrix_from_file() -> List[MatrixItem]:
     os.getenv('HERD_MATRIX_FILEPATH') is None,
     reason='Provide file with desired provisioning matrix via HERD_MATRIX_FILEPATH envvar',
 )
-def test_provision_matrix_file(matrix_from_file: List[MatrixItem]) -> None:
-    def populate(guests: List[GuestRequest]) -> None:
+def test_provision_matrix_file(matrix_from_file: list[MatrixItem]) -> None:
+    def populate(guests: list[GuestRequest]) -> None:
         for matrix_item in matrix_from_file:
             print(f'matrix item: {matrix_item.compose} {matrix_item.arch}')
 

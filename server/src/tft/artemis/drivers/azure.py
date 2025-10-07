@@ -6,7 +6,9 @@ import datetime
 import os
 import re
 import tempfile
-from typing import Any, Dict, Iterator, List, Optional, Pattern, Tuple, TypedDict, Union, cast
+from collections.abc import Iterator
+from re import Pattern
+from typing import Any, Optional, TypedDict, Union, cast
 
 import gluetool.log
 import gluetool.utils
@@ -92,7 +94,7 @@ KNOB_CONSOLE_DUMP_BLOB_UPDATE_TICK: Knob[int] = Knob(
 )
 
 
-AZURE_RESOURCE_TYPE: Dict[str, ResourceType] = {
+AZURE_RESOURCE_TYPE: dict[str, ResourceType] = {
     'Microsoft.Compute/virtualMachines': ResourceType.VIRTUAL_MACHINE,
     'Microsoft.Network/virtualNetworks': ResourceType.VIRTUAL_NETWORK,
     'Microsoft.Compute/disks': ResourceType.DISK,
@@ -130,7 +132,7 @@ class AzurePoolData(PoolData):
 @dataclasses.dataclass
 class AzurePoolResourcesIDs(PoolResourcesIDs):
     instance_id: Optional[str] = None
-    assorted_resource_ids: Optional[List[Dict[str, str]]] = None
+    assorted_resource_ids: Optional[list[dict[str, str]]] = None
     resource_group: Optional[str] = None
     boot_log_container: Optional[str] = None
 
@@ -148,7 +150,7 @@ class AzurePoolImageInfo(PoolImageInfo):
 class AzureFlavor(Flavor):
     resource_disk_size: Optional[SizeType] = None
 
-    def serialize(self) -> Dict[str, Any]:
+    def serialize(self) -> dict[str, Any]:
         serialized = super().serialize()
 
         # is not None comparison to successfully serialize 0 MB
@@ -158,7 +160,7 @@ class AzureFlavor(Flavor):
         return serialized
 
     @classmethod
-    def unserialize(cls, serialized: Dict[str, Any]) -> 'AzureFlavor':
+    def unserialize(cls, serialized: dict[str, Any]) -> 'AzureFlavor':
         flavor = cast(AzureFlavor, super().unserialize(serialized))
 
         if serialized['resource_disk_size'] is not None:
@@ -218,7 +220,7 @@ class AzureSession:
     def _run_cmd(
         self,
         logger: gluetool.log.ContextAdapter,
-        options: List[str],
+        options: list[str],
         json_format: bool = True,
         commandname: Optional[str] = None,
     ) -> Result[Union[JSONType, str], Failure]:
@@ -265,7 +267,7 @@ class AzureSession:
     def run_az(
         self,
         logger: gluetool.log.ContextAdapter,
-        options: List[str],
+        options: list[str],
         json_format: bool = True,
         commandname: Optional[str] = None,
     ) -> Result[Union[JSONType, str], Failure]:
@@ -288,7 +290,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
         self,
         logger: gluetool.log.ContextAdapter,
         poolname: str,
-        pool_config: Dict[str, Any],
+        pool_config: dict[str, Any],
     ) -> None:
         super().__init__(logger, poolname, pool_config)
 
@@ -474,7 +476,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
 
         # NOTE(ivasilev) As Azure doesn't delete vm's resources (disk, secgroup, publicip) upon vm deletion
         # will need to delete stuff manually. Lifehack: query for tag uid=name used during vm creation
-        resource_ids: List[AzurePoolResourcesIDs] = []
+        resource_ids: list[AzurePoolResourcesIDs] = []
 
         if pool_data.instance_id is not None:
             resource_ids.append(
@@ -491,7 +493,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
 
         assorted_resource_ids = [
             res
-            for res in cast(List[Dict[str, str]], r_tagged_resources.unwrap())
+            for res in cast(list[dict[str, str]], r_tagged_resources.unwrap())
             if res['type'] != 'Microsoft.Compute/virtualMachines'
         ]
 
@@ -598,9 +600,9 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
 
         with AzureSession(logger, self) as session:
             # Resource usage - instances and flavors
-            def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[List[Any], Failure]:
+            def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[list[Any], Failure]:
                 return cast(
-                    Result[List[Any], Failure], session.run_az(logger, ['vm', 'list'], commandname='az.vm-list')
+                    Result[list[Any], Failure], session.run_az(logger, ['vm', 'list'], commandname='az.vm-list')
                 )
 
             def _update_instance_usage(
@@ -629,7 +631,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
 
         return Ok(resources)
 
-    def fetch_pool_flavor_info(self) -> Result[List[Flavor], Failure]:
+    def fetch_pool_flavor_info(self) -> Result[list[Flavor], Failure]:
         # Flavors are described by az cli as
         # {
         #     "maxDataDiskCount": int,
@@ -640,7 +642,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
         #     "resourceDiskSizeInMB": int
         # }
 
-        def _fetch(logger: gluetool.log.ContextAdapter) -> Result[List[Dict[str, Any]], Failure]:
+        def _fetch(logger: gluetool.log.ContextAdapter) -> Result[list[dict[str, Any]], Failure]:
             list_flavors_cmd = ['vm', 'list-sizes', '--location', self.pool_config['default-location']]
             with AzureSession(logger, self) as session:
                 r_flavors_list = session.run_az(logger, list_flavors_cmd, commandname='az.vm-flavors-list')
@@ -650,10 +652,10 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
                         Failure.from_failure('failed to fetch flavors information', r_flavors_list.unwrap_error())
                     )
 
-            return Ok(cast(List[Dict[str, Any]], r_flavors_list.unwrap()))
+            return Ok(cast(list[dict[str, Any]], r_flavors_list.unwrap()))
 
         def _constructor(
-            logger: gluetool.log.ContextAdapter, raw_flavor: Dict[str, Any]
+            logger: gluetool.log.ContextAdapter, raw_flavor: dict[str, Any]
         ) -> Iterator[Result[Flavor, Failure]]:
             max_data_disk_count = int(raw_flavor['maxDataDiskCount'])
             # diskspace is reported in MB
@@ -679,8 +681,8 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
             self.logger, _fetch, lambda raw_flavor: cast(str, raw_flavor['name']), _constructor
         )
 
-    def fetch_pool_image_info(self) -> Result[List[PoolImageInfo], Failure]:
-        def _fetch_images(filters: Optional[ConfigImageFilter] = None) -> Result[List[PoolImageInfo], Failure]:
+    def fetch_pool_image_info(self) -> Result[list[PoolImageInfo], Failure]:
+        def _fetch_images(filters: Optional[ConfigImageFilter] = None) -> Result[list[PoolImageInfo], Failure]:
             name_pattern: Optional[Pattern[str]] = None
 
             # AzureSession needs a logger but fetch_pool_image_info doesn't pass one along
@@ -709,8 +711,8 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
                         Failure.from_failure('failed to fetch image information', r_images_list.unwrap_error())
                     )
 
-            images: List[PoolImageInfo] = []
-            for image in cast(List[APIImageType], r_images_list.unwrap()):
+            images: list[PoolImageInfo] = []
+            for image in cast(list[APIImageType], r_images_list.unwrap()):
                 try:
                     # Apply wild-card filter if specified, unfortunately no way to filter by urn via azure cli
                     if name_pattern and not name_pattern.match(image['urn']):
@@ -740,8 +742,8 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
 
             return Ok(images)
 
-        images: List[PoolImageInfo] = []
-        image_filters = cast(List[ConfigImageFilter], self.pool_config.get('image-filters', []))
+        images: list[PoolImageInfo] = []
+        image_filters = cast(list[ConfigImageFilter], self.pool_config.get('image-filters', []))
 
         if image_filters:
             for filters in image_filters:
@@ -936,7 +938,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
         if r_output.is_error:
             return Error(r_output.unwrap_error())
 
-        output = cast(Dict[str, Any], r_output.unwrap())
+        output = cast(dict[str, Any], r_output.unwrap())
         if not output['id']:
             return Error(Failure('Instance id not found'))
 
@@ -960,7 +962,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
         if r_vm_show.is_error:
             return Error(r_vm_show.unwrap_error())
 
-        vm_info = cast(Dict[str, Any], r_vm_show.unwrap())
+        vm_info = cast(dict[str, Any], r_vm_show.unwrap())
 
         # There is no chance that the guest will be ready in this step
         return Ok(
@@ -978,7 +980,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
 
     def _find_boot_log_storage_container(
         self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
-    ) -> Result[Dict[str, str], Failure]:
+    ) -> Result[dict[str, str], Failure]:
         pool_data = guest_request.pool_data.mine(self, AzurePoolData)
 
         if not self.pool_config.get('boot-log-storage'):
@@ -1003,7 +1005,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
                     )
                 )
 
-            containers = cast(List[Dict[str, str]], r_container_list.unwrap())
+            containers = cast(list[dict[str, str]], r_container_list.unwrap())
 
             # Now let's find the storage container that ends with vmId of the machine.
             storage_container = next(
@@ -1017,7 +1019,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
 
     def _fetch_guest_console_blob(
         self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
-    ) -> Result[Union[Tuple[None, None], Tuple[datetime.datetime, Optional[str]]], Failure]:
+    ) -> Result[Union[tuple[None, None], tuple[datetime.datetime, Optional[str]]], Failure]:
         """
         Retrieve last modification date of the serial console log and its contents directly from storage container.
         """
@@ -1025,7 +1027,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
         # Azure doesn't natively provide modification timestamps, so will have to be creative and fetch
         # modification data of the serial log file from the vm-associated container of the boot log storage
 
-        blobs: List[Dict[str, Any]] = []
+        blobs: list[dict[str, Any]] = []
 
         with AzureSession(logger, self) as session:
             r_storage_container = self._find_boot_log_storage_container(logger, guest_request)
@@ -1055,7 +1057,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
             if r_blob_list.is_error:
                 return Error(Failure.from_failure('Could not get a list of stored blobs', r_blob_list.unwrap_error()))
 
-            blobs = cast(List[Dict[str, Any]], r_blob_list.unwrap())
+            blobs = cast(list[dict[str, Any]], r_blob_list.unwrap())
             # The one we need will end with a serialconsole.log
             serial_console_log = next((b for b in blobs if b['name'].endswith('.serialconsole.log')), None)
             if not serial_console_log:

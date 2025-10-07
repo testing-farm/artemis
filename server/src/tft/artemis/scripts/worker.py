@@ -6,7 +6,7 @@ import os
 import shlex
 import shutil
 import sys
-from typing import List, Optional, Tuple
+from typing import Optional
 
 import click
 
@@ -73,8 +73,8 @@ DRAMATIQ_PATH = shutil.which('dramatiq')
 def cmd_root(
     processes: Optional[int],
     threads: Optional[int],
-    queue: Tuple[str, ...],
-    tasks: List[str],
+    queue: tuple[str, ...],
+    tasks: list[str],
     queue_prefetch: Optional[int],
     delay_queue_prefetch: Optional[int],
 ) -> None:
@@ -85,7 +85,7 @@ def cmd_root(
 
         sys.exit(1)
 
-    cmd: List[str] = ['dramatiq']
+    cmd: list[str] = ['dramatiq']
 
     # We need to place tasks first and then options - when reversed, Dramatiq
     # would be unable to process command-line with queue names and task names

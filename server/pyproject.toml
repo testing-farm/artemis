@@ -156,6 +156,7 @@ lint.select = [
     "SIM",    # flake8-simplify
     "T10",    # flake8-debugger
     "TRY",    # tryceratops
+    "UP",     # pyupgrade
     "W",      # pycodestyle warning
     "YTT",   # flake8-2020
     ]

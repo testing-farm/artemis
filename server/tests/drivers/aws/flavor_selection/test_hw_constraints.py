@@ -1,7 +1,7 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
-from typing import List, cast
+from typing import cast
 from unittest.mock import MagicMock
 
 import gluetool.log
@@ -18,7 +18,7 @@ def test_irrelevant_hw_constraints(
     session: sqlalchemy.orm.session.Session,
     aws_pool: AWSDriver,
     guest_request: GuestRequest,
-    flavors: List[AWSFlavor],
+    flavors: list[AWSFlavor],
     image: AWSPoolImageInfo,
 ) -> None:
     cast(MagicMock, guest_request).environment.get_hw_constraints = MagicMock(
@@ -35,7 +35,7 @@ def test_no_constraints(
     session: sqlalchemy.orm.session.Session,
     aws_pool: AWSDriver,
     guest_request: GuestRequest,
-    flavors: List[AWSFlavor],
+    flavors: list[AWSFlavor],
     image: AWSPoolImageInfo,
 ) -> None:
     cast(MagicMock, guest_request).environment.get_hw_constraints = MagicMock(return_value=Ok(None))
@@ -50,7 +50,7 @@ def test_boot_method_match(
     session: sqlalchemy.orm.session.Session,
     aws_pool: AWSDriver,
     guest_request: GuestRequest,
-    flavors: List[AWSFlavor],
+    flavors: list[AWSFlavor],
     image: AWSPoolImageInfo,
 ) -> None:
     image.boot.method = ['uefi']
@@ -69,7 +69,7 @@ def test_boot_method_mismatch(
     session: sqlalchemy.orm.session.Session,
     aws_pool: AWSDriver,
     guest_request: GuestRequest,
-    flavors: List[AWSFlavor],
+    flavors: list[AWSFlavor],
     image: AWSPoolImageInfo,
 ) -> None:
     image.boot.method = ['uefi']

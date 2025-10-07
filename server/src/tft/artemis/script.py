@@ -3,7 +3,7 @@
 
 import imp
 import os
-from typing import Any, Callable, Dict
+from typing import Any, Callable
 
 import gluetool.utils
 from gluetool.result import Error, Ok, Result
@@ -15,8 +15,8 @@ class ScriptEngine:
     def __init__(self) -> None:
         super().__init__()
 
-        self.functions: Dict[str, Callable[..., Result[Any, Failure]]] = {}
-        self.variables: Dict[str, Callable[..., Result[Any, Failure]]] = {}
+        self.functions: dict[str, Callable[..., Result[Any, Failure]]] = {}
+        self.variables: dict[str, Callable[..., Result[Any, Failure]]] = {}
 
     def load_script_file(self, filepath: str) -> Result[None, Failure]:
         filepath = os.path.expanduser(filepath)

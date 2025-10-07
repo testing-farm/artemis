@@ -14,21 +14,14 @@ import resource
 import sys
 import threading
 import traceback as _traceback
+from collections.abc import Generator, Iterable, Iterator, MutableSet
 from types import FrameType, TracebackType
 from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Dict,
-    Generator,
-    Iterable,
-    Iterator,
-    List,
-    MutableSet,
     NoReturn,
     Optional,
-    Tuple,
-    Type,
     TypeVar,
     Union,
     cast,
@@ -73,7 +66,7 @@ import sentry_sdk.types
 import sentry_sdk.utils
 import stackprinter
 from gluetool.result import Error, Ok, Result
-from typing_extensions import ParamSpec
+from typing_extensions import ParamSpec, Self
 
 __VERSION__ = pkg_resources.get_distribution('tft-artemis').version
 
@@ -122,9 +115,9 @@ DATETIME_FMT: str = '%Y-%m-%dT%H:%M:%S.%f'
 
 ExceptionInfoType = Union[
     # returned by sys.exc_info()
-    Tuple[Type[BaseException], BaseException, Optional[TracebackType]],
+    tuple[type[BaseException], BaseException, Optional[TracebackType]],
     # this is way of saying "nothing happened, everything's fine"
-    Tuple[None, None, None],
+    tuple[None, None, None],
 ]
 
 # Type variable used in generic types
@@ -132,7 +125,7 @@ T = TypeVar('T')
 S = TypeVar('S', bound='SerializableContainer')
 P = ParamSpec('P')
 
-FailureDetailsType = Dict[str, Any]
+FailureDetailsType = dict[str, Any]
 
 #: Represents a data structure created from a JSON input. The main purpose of this type to allow tracking of such data
 #: instead of very open and easy to misunderstand ``Any``. A particular name is easier to follow in the code.
@@ -141,10 +134,10 @@ FailureDetailsType = Dict[str, Any]
 #: our code will encounter mostly complex types, lists of dictionaries (e.g. list of cloud instances), therefore
 #: including the primitive types will force users of ``JSONType`` to employ ``cast()`` heavily, to actually reveal
 #: the real structure inside the otherwise opaque JSON blob received from a CLI tool. But that **is** a good thing.
-JSONType = Union[str, int, float, List[Any], Dict[Any, Any], None]
+JSONType = Union[str, int, float, list[Any], dict[Any, Any], None]
 
 
-_YAML_DUMPABLE_CLASSES: MutableSet[Type[object]] = set()
+_YAML_DUMPABLE_CLASSES: MutableSet[type[object]] = set()
 
 
 def get_yaml() -> ruamel.yaml.main.YAML:
@@ -236,7 +229,7 @@ SpanT = TypeVar('SpanT', bound=sentry_sdk.tracing.Span)
 
 class Sentry:
     @classmethod
-    def _ingest_integrations(cls, logger: gluetool.log.ContextAdapter) -> List[sentry_sdk.integrations.Integration]:
+    def _ingest_integrations(cls, logger: gluetool.log.ContextAdapter) -> list[sentry_sdk.integrations.Integration]:
         r_integrations = KNOB_SENTRY_INTEGRATIONS.get_value()
 
         if r_integrations.is_error:
@@ -252,7 +245,7 @@ class Sentry:
             module_name = f'sentry_sdk.integrations.{integration_name}'
             class_name = f'{integration_name.capitalize()}Integration'
 
-            failure_details: Dict[str, Any] = {
+            failure_details: dict[str, Any] = {
                 'integration_name': integration_name,
                 'module_name': module_name,
                 'class_name': class_name,
@@ -310,7 +303,7 @@ class Sentry:
 
             def _get_pool_options(
                 self: sentry_sdk.transport.HttpTransport, *args: Any, **kwargs: Any
-            ) -> Dict[str, Any]:
+            ) -> dict[str, Any]:
                 return {
                     # num_pools is a bit cryptic, but comes from the original method
                     'num_pools': 2,
@@ -351,10 +344,10 @@ class Sentry:
         )
 
     @classmethod
-    def get_default_tags(cls) -> Dict[str, Any]:
+    def get_default_tags(cls) -> dict[str, Any]:
         from .knobs import KNOB_DEPLOYMENT, KNOB_DEPLOYMENT_ENVIRONMENT
 
-        tags: Dict[str, str] = {}
+        tags: dict[str, str] = {}
 
         # Special tag, "server_name", is used by Sentry for tracking issues per servers.
         tags['server_name'] = platform.node()
@@ -369,10 +362,10 @@ class Sentry:
         return tags
 
     @classmethod
-    def get_default_contexts(cls) -> Dict[str, Dict[str, Any]]:
+    def get_default_contexts(cls) -> dict[str, dict[str, Any]]:
         from .knobs import KNOB_COMPONENT
 
-        contexts: Dict[str, Dict[str, Any]] = {}
+        contexts: dict[str, dict[str, Any]] = {}
 
         # App https://develop.sentry.dev/sdk/event-payloads/contexts/#app-context
         contexts['app'] = {
@@ -385,7 +378,7 @@ class Sentry:
         return contexts
 
     @classmethod
-    def _apply_tracing_info(cls, span: SpanT, tags: Dict[str, Any], data: Dict[str, Any]) -> SpanT:
+    def _apply_tracing_info(cls, span: SpanT, tags: dict[str, Any], data: dict[str, Any]) -> SpanT:
         for name, value in tags.items():
             span.set_tag(name, value)
 
@@ -401,9 +394,9 @@ class Sentry:
         op: TracingOp,
         description: str,
         scope: Optional[sentry_sdk.Scope] = None,
-        tags: Optional[Dict[str, Any]] = None,
-        data: Optional[Dict[str, Any]] = None,
-        context: Optional[Dict[str, Any]] = None,
+        tags: Optional[dict[str, Any]] = None,
+        data: Optional[dict[str, Any]] = None,
+        context: Optional[dict[str, Any]] = None,
     ) -> Generator[sentry_sdk.tracing.Transaction, None, None]:
         """
         Start new tracing transaction.
@@ -440,8 +433,8 @@ class Sentry:
         op: TracingOp,
         description: Optional[str] = None,
         scope: Optional[sentry_sdk.Scope] = None,
-        tags: Optional[Dict[str, Any]] = None,
-        data: Optional[Dict[str, Any]] = None,
+        tags: Optional[dict[str, Any]] = None,
+        data: Optional[dict[str, Any]] = None,
     ) -> Generator[sentry_sdk.tracing.Span, None, None]:
         """
         Start new tracing span.
@@ -482,7 +475,7 @@ class SerializableContainer:
     #
     # Instead of using decorator to mark classes derived from this one, we let interpreter call
     # this magic method every tim a subclass has been created.
-    def __init_subclass__(cls: Type['SerializableContainer']) -> None:
+    def __init_subclass__(cls: type['SerializableContainer']) -> None:
         """
         Register given subclass as capable of being represented as YAML.
         """
@@ -509,7 +502,7 @@ class SerializableContainer:
 
         return self.serialize_to_yaml()
 
-    def serialize(self) -> Dict[str, Any]:
+    def serialize(self) -> dict[str, Any]:
         """
         Return Python built-in types representing the content of this container.
 
@@ -530,10 +523,10 @@ class SerializableContainer:
 
             serialized[field.name] = getattr(self, field.name).serialize()
 
-        return cast(Dict[str, Any], serialized)
+        return cast(dict[str, Any], serialized)
 
     @classmethod
-    def unserialize(cls: Type[S], serialized: Dict[str, Any]) -> S:
+    def unserialize(cls, serialized: dict[str, Any]) -> Self:
         """
         Create container instance representing the content described with Python built-in types.
 
@@ -571,7 +564,7 @@ class SerializableContainer:
         return json.dumps(self.serialize())
 
     @classmethod
-    def unserialize_from_json(cls: Type[S], serialized: str) -> S:
+    def unserialize_from_json(cls, serialized: str) -> Self:
         """
         Create container instance representing the content described with a JSON blob.
 
@@ -595,7 +588,7 @@ class SerializableContainer:
         return format_dict_yaml(self.serialize())
 
     @classmethod
-    def unserialize_from_yaml(cls: Type[S], serialized: str) -> S:
+    def unserialize_from_yaml(cls, serialized: str) -> Self:
         """
         Create container instance representing the content described with a YAML blob.
 
@@ -683,7 +676,7 @@ class Failure:
         recoverable: bool = True,
         fail_guest_request: bool = True,
         # these are common "details" so we add them as extra keyword arguments with their types
-        scrubbed_command: Optional[List[str]] = None,
+        scrubbed_command: Optional[list[str]] = None,
         command_output: Optional[gluetool.utils.ProcessOutput] = None,
         environment: Optional['Environment'] = None,
         task_call: Optional['TaskCall'] = None,
@@ -728,7 +721,7 @@ class Failure:
             # This is what `traceback.extract_tb` does, but `extract_tb` does not let us save frame locals,
             # and we would like to see them, at least in Sentry.
             self.traceback = _traceback.StackSummary.extract(
-                cast(Generator[Tuple[FrameType, int], None, None], _traceback.walk_tb(exc_info[2])), capture_locals=True
+                cast(Generator[tuple[FrameType, int], None, None], _traceback.walk_tb(exc_info[2])), capture_locals=True
             )
             self.traceback.reverse()
 
@@ -743,7 +736,7 @@ class Failure:
             f = sys._getframe().f_back
 
             self.traceback = _traceback.StackSummary.extract(
-                cast(Generator[Tuple[FrameType, int], None, None], _traceback.walk_stack(f)), capture_locals=True
+                cast(Generator[tuple[FrameType, int], None, None], _traceback.walk_stack(f)), capture_locals=True
             )
             self.traceback.reverse()
 
@@ -757,7 +750,7 @@ class Failure:
         recoverable: bool = True,
         fail_guest_request: bool = True,
         # these are common "details" so we add them as extra keyword arguments with their types
-        scrubbed_command: Optional[List[str]] = None,
+        scrubbed_command: Optional[list[str]] = None,
         command_output: Optional[gluetool.utils.ProcessOutput] = None,
         environment: Optional['Environment'] = None,
         task_call: Optional['TaskCall'] = None,
@@ -783,7 +776,7 @@ class Failure:
         caused_by: 'Failure',
         sentry: Optional[bool] = True,
         # these are common "details" so we add them as extra keyword arguments with their types
-        scrubbed_command: Optional[List[str]] = None,
+        scrubbed_command: Optional[list[str]] = None,
         command_output: Optional[gluetool.utils.ProcessOutput] = None,
         environment: Optional['Environment'] = None,
         task_call: Optional['TaskCall'] = None,
@@ -820,7 +813,7 @@ class Failure:
     def update(
         self,
         # these are common "details" so we add them as extra keyword arguments with their types
-        scrubbed_command: Optional[List[str]] = None,
+        scrubbed_command: Optional[list[str]] = None,
         command_output: Optional[gluetool.utils.ProcessOutput] = None,
         environment: Optional['Environment'] = None,
         task_call: Optional['TaskCall'] = None,
@@ -843,7 +836,7 @@ class Failure:
         return self
 
     @classmethod
-    def _exception_details(cls, exc: BaseException, scrubbed_command: Optional[List[str]]) -> Dict[str, str]:
+    def _exception_details(cls, exc: BaseException, scrubbed_command: Optional[list[str]]) -> dict[str, str]:
         # Special handling of GlueCommandError - when logged, it reports the full command,
         # possibly revealing credentials and other sensitive details.
         #
@@ -868,7 +861,7 @@ class Failure:
     def command_output(self) -> Optional[gluetool.utils.ProcessOutput]:
         return self.details.get('command_output')
 
-    def get_event_details(self) -> Dict[str, Any]:
+    def get_event_details(self) -> dict[str, Any]:
         """
         Returns a mapping of failure details, suitable for storing in DB as a guest event details.
         """
@@ -908,7 +901,7 @@ class Failure:
         cls,
         message: str,
         frames: _traceback.StackSummary,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Based on Sentry's stack trace serialization, this helper takes care of serializing
         a traceback saved by ``Failure`` instance itself, i.e. when there was no exception.
@@ -918,7 +911,7 @@ class Failure:
         # Sentry SDK uses several types to carry lines of code, deal with all of them.
         def _stringify(
             v: Union[
-                str, sentry_sdk.utils.AnnotatedValue, List[str], List[Union[sentry_sdk.utils.AnnotatedValue, str]], None
+                str, sentry_sdk.utils.AnnotatedValue, list[str], list[Union[sentry_sdk.utils.AnnotatedValue, str]], None
             ],
         ) -> Iterator[str]:
             if v is None:
@@ -944,7 +937,7 @@ class Failure:
             function = frame.name
             line = frame.line
 
-            frame_result: Dict[str, Union[int, str, List[str], Dict[str, str], None]] = {
+            frame_result: dict[str, Union[int, str, list[str], dict[str, str], None]] = {
                 'abs_path': filename,
                 'filename': os.path.relpath(filename, os.getcwd()),
                 'module': None,
@@ -986,8 +979,8 @@ class Failure:
             'stacktrace': {'frames': result},
         }
 
-    def get_sentry_contexts(self) -> Dict[str, Dict[str, Any]]:
-        contexts: Dict[str, Dict[str, Any]] = Sentry.get_default_contexts()
+    def get_sentry_contexts(self) -> dict[str, dict[str, Any]]:
+        contexts: dict[str, dict[str, Any]] = Sentry.get_default_contexts()
 
         # https://docs.sentry.io/platforms/python/enriching-events/context/#structured-context
         contexts['contexts'] = {
@@ -998,14 +991,14 @@ class Failure:
 
         return contexts
 
-    def get_sentry_details(self) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
+    def get_sentry_details(self) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
         """
         Returns three mappings, data, tags and extra, accepted by Sentry as issue details.
         """
 
-        event: Dict[str, Any] = {}
-        tags: Dict[str, str] = Sentry.get_default_tags()
-        extra: Dict[str, Any] = self.details.copy()
+        event: dict[str, Any] = {}
+        tags: dict[str, str] = Sentry.get_default_tags()
+        extra: dict[str, Any] = self.details.copy()
 
         extra['message'] = self.message
         extra['recoverable'] = self.recoverable
@@ -1031,7 +1024,7 @@ class Failure:
             tags['poolname'] = self.details['poolname']
 
         if self.exc_info:
-            event, _ = cast(Tuple[Dict[str, Any], Dict[str, Any]], sentry_sdk.utils.event_from_exception(self.exc_info))
+            event, _ = cast(tuple[dict[str, Any], dict[str, Any]], sentry_sdk.utils.event_from_exception(self.exc_info))
 
         elif self.traceback:
             # Convert our traceback to format understood by Sentry, and store it in `data['stacktrace']` where Sentry
@@ -1063,7 +1056,7 @@ class Failure:
 
         return event, tags, extra
 
-    def get_log_details(self) -> Dict[str, Any]:
+    def get_log_details(self) -> dict[str, Any]:
         """
         Returns a mapping of failure details, suitable for logging subsystem.
         """
@@ -1182,11 +1175,11 @@ class Failure:
         self.log(logger.error, label=label)
 
 
-def get_config() -> Dict[str, Any]:
+def get_config() -> dict[str, Any]:
     from .knobs import KNOB_CONFIG_DIRPATH
 
     return cast(
-        Dict[str, Any],
+        dict[str, Any],
         gluetool.utils.load_yaml(os.path.join(KNOB_CONFIG_DIRPATH.value, 'server.yml'), logger=get_logger()),
     )
 
@@ -1195,7 +1188,7 @@ def get_worker_name() -> str:
     return f'{platform.node()}-{os.getpid()}-{threading.get_native_id()}'
 
 
-def get_broker_middleware(logger: gluetool.log.ContextAdapter) -> List[dramatiq.Middleware]:
+def get_broker_middleware(logger: gluetool.log.ContextAdapter) -> list[dramatiq.Middleware]:
     from .knobs import (
         KNOB_COMPONENT,
         KNOB_WORKER_MAX_TASKS_PER_PROCESS,
@@ -1203,7 +1196,7 @@ def get_broker_middleware(logger: gluetool.log.ContextAdapter) -> List[dramatiq.
         KNOB_WORKER_TRAFFIC_METRICS_ENABLED,
     )
 
-    middleware: List[dramatiq.Middleware] = []
+    middleware: list[dramatiq.Middleware] = []
 
     worker_name = get_worker_name()
 
@@ -1248,7 +1241,7 @@ def get_broker(
 ) -> dramatiq.brokers.rabbitmq.RabbitmqBroker:
     from .knobs import KNOB_BROKER_CONFIRM_DELIVERY, KNOB_BROKER_URL
 
-    middleware: List[dramatiq.Middleware] = get_broker_middleware(logger)
+    middleware: list[dramatiq.Middleware] = get_broker_middleware(logger)
 
     # TODO: for actual limiter, we would need to throw in either Redis or Memcached.
     # Using stub and a dummy key for now, but it's just not going to do its job properly.
@@ -1256,7 +1249,7 @@ def get_broker(
     broker_url = KNOB_BROKER_URL.value
 
     # Client properties must be encoded into URL, Pika does not allow `url` + `client_properties` at the same time.
-    client_properties: Dict[str, str] = {}
+    client_properties: dict[str, str] = {}
 
     if application_name is not None:
         client_properties['connection_name'] = application_name
@@ -1266,7 +1259,7 @@ def get_broker(
 
         parsed_url = urllib.parse.urlparse(KNOB_BROKER_URL.value)
 
-        parsed_query: Dict[str, Union[str, Dict[str, str]]] = {
+        parsed_query: dict[str, Union[str, dict[str, str]]] = {
             k: v for k, v in urllib.parse.parse_qsl(parsed_url.query)
         }
 
@@ -1389,7 +1382,7 @@ def safe_call_and_handle(
 #: from a YAML file, then passing it to validators. The actual type could very well be ``Any``, but
 #: given how JSON schema looks like, it's pretty much going to be a mapping with string keys. So using
 #: this type, and adding our alias to it so we could follow JSON schemas in our code easily.
-JSONSchemaType = Dict[str, Any]
+JSONSchemaType = dict[str, Any]
 
 
 def construct_validation_schema(data: Any) -> Result[JSONSchemaType, Failure]:
@@ -1434,7 +1427,7 @@ def load_packaged_validation_schema(schema_subpath: str) -> Result[JSONSchemaTyp
     return load_validation_schema(os.path.join(root_schema_dirpath, schema_subpath))
 
 
-def validate_data(data: Any, schema: JSONSchemaType) -> Result[List[str], Failure]:
+def validate_data(data: Any, schema: JSONSchemaType) -> Result[list[str], Failure]:
     """
     Validate a given data using a JSON schema.
 
@@ -1451,7 +1444,7 @@ def validate_data(data: Any, schema: JSONSchemaType) -> Result[List[str], Failur
     return Ok([])
 
 
-def partition(predicate: Callable[[T], bool], iterable: Iterable[T]) -> Tuple[Iterable[T], Iterable[T]]:
+def partition(predicate: Callable[[T], bool], iterable: Iterable[T]) -> tuple[Iterable[T], Iterable[T]]:
     """
     Use a predicate to split the entries of the given iterable into two lists, one for true entries
     and second for false ones.
@@ -1464,7 +1457,7 @@ def partition(predicate: Callable[[T], bool], iterable: Iterable[T]) -> Tuple[It
 
 def logging_filter(
     logger: gluetool.log.ContextAdapter,
-    items: List[T],
+    items: list[T],
     filter_name: str,
     filter_callable: Callable[[gluetool.log.ContextAdapter, T], bool],
 ) -> Generator[T, None, None]:
@@ -1516,10 +1509,10 @@ def render_template(template: str, **kwargs: Any) -> Result[str, Failure]:
         return Error(Failure.from_exc('failed to render template', exc, template=template, variables=kwargs))
 
 
-def template_environment(guest_request: Optional[artemis_db.GuestRequest]) -> Dict[str, Any]:
+def template_environment(guest_request: Optional[artemis_db.GuestRequest]) -> dict[str, Any]:
     from .knobs import KNOB_DEPLOYMENT, KNOB_DEPLOYMENT_ENVIRONMENT
 
-    env: Dict[str, Any] = {
+    env: dict[str, Any] = {
         'DEPLOYMENT': KNOB_DEPLOYMENT.value,
         'DEPLOYMENT_ENVIRONMENT': KNOB_DEPLOYMENT_ENVIRONMENT.value,
     }

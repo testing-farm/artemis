@@ -1,7 +1,7 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
-from typing import Any, Dict, List
+from typing import Any
 
 import pytest
 import yaml
@@ -22,7 +22,7 @@ from tft.artemis.security_group_rules import SecurityGroupRule, SecurityGroupRul
         ),
     ],
 )
-def test_deserialization(data: Dict[str, Any]) -> None:
+def test_deserialization(data: dict[str, Any]) -> None:
     security_group_rules = SecurityGroupRules.unserialize(data)
     assert isinstance(security_group_rules, SecurityGroupRules)
     assert isinstance(security_group_rules.ingress[0], SecurityGroupRule)
@@ -96,7 +96,7 @@ security-group-rules:
     ],
 )
 def test_load_from_pool_config(
-    config: str, expected_ingress: List[SecurityGroupRule], expected_egress: List[SecurityGroupRule]
+    config: str, expected_ingress: list[SecurityGroupRule], expected_egress: list[SecurityGroupRule]
 ) -> None:
     rules_from_config = yaml.safe_load(config)
     security_group_rules = SecurityGroupRules.load_from_pool_config(rules_from_config['security-group-rules']).unwrap()

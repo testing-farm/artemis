@@ -4,7 +4,8 @@
 import dataclasses
 import datetime
 import re
-from typing import Any, Dict, List, Optional, Pattern, TypedDict, cast
+from re import Pattern
+from typing import Any, Optional, TypedDict, cast
 
 import gluetool.log
 import sqlalchemy.orm.session
@@ -84,7 +85,7 @@ class APIImageType(TypedDict):
     name: str
     href: str
     imageID: str
-    specifications: Dict[str, Any]
+    specifications: dict[str, Any]
 
 
 class IBMCloudPowerErrorCauses(PoolErrorCauses):
@@ -162,7 +163,7 @@ class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flav
         self,
         logger: gluetool.log.ContextAdapter,
         poolname: str,
-        pool_config: Dict[str, Any],
+        pool_config: dict[str, Any],
     ) -> None:
         super().__init__(logger, poolname, pool_config)
 
@@ -175,8 +176,8 @@ class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flav
 
         return Ok(capabilities)
 
-    def fetch_pool_image_info(self) -> Result[List[PoolImageInfo], Failure]:
-        def _fetch_images(filters: Optional[ConfigImageFilter] = None) -> Result[List[PoolImageInfo], Failure]:
+    def fetch_pool_image_info(self) -> Result[list[PoolImageInfo], Failure]:
+        def _fetch_images(filters: Optional[ConfigImageFilter] = None) -> Result[list[PoolImageInfo], Failure]:
             # operating system as defined in operatingSystem.version
             name_pattern: Optional[Pattern[str]] = None
             arch_pattern: Optional[Pattern[str]] = None
@@ -205,8 +206,8 @@ class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flav
                         Failure.from_failure('failed to fetch image information', r_images_list.unwrap_error())
                     )
 
-            images: List[PoolImageInfo] = []
-            for image in cast(List[APIImageType], cast(Dict[str, Any], r_images_list.unwrap()).get('images', [])):
+            images: list[PoolImageInfo] = []
+            for image in cast(list[APIImageType], cast(dict[str, Any], r_images_list.unwrap()).get('images', [])):
                 try:
                     # Apply wild-card filter if specified, unfortunately no way to filter by name or regex via cli
                     if name_pattern and not name_pattern.match(image['name']):
@@ -241,8 +242,8 @@ class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flav
 
             return Ok(images)
 
-        images: List[PoolImageInfo] = []
-        image_filters = cast(List[ConfigImageFilter], self.pool_config.get('image-filters', []))
+        images: list[PoolImageInfo] = []
+        image_filters = cast(list[ConfigImageFilter], self.pool_config.get('image-filters', []))
 
         if image_filters:
             for filters in image_filters:
@@ -266,7 +267,7 @@ class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flav
     def _translate_constraints_to_cli_args(
         self,
         constraint: Optional[ConstraintBase],
-    ) -> Result[List[str], Failure]:
+    ) -> Result[list[str], Failure]:
         """
         Convert a given constraint to a set of filters that IBM Cloud supports (there are not many, mostly cpu / disk).
         """
@@ -275,7 +276,7 @@ class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flav
             return Ok([])
 
         if isinstance(constraint, And):
-            res: List[str] = []
+            res: list[str] = []
 
             for child_constraint in constraint.constraints:
                 r_child_element = self._translate_constraints_to_cli_args(child_constraint)
@@ -333,7 +334,7 @@ class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flav
 
         with IBMCloudPowerSession(logger, self) as session:
             # Resource usage - instances and flavors
-            def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[List[Dict[str, Any]], Failure]:
+            def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[list[dict[str, Any]], Failure]:
                 r_list_instances = session.run(
                     logger, ['pi', 'instance', 'list', '--json'], commandname='ibmcloud.power.instances-list'
                 )
@@ -341,10 +342,10 @@ class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flav
                 if r_list_instances.is_error:
                     return Error(Failure.from_failure('Could not list instances', r_list_instances.unwrap_error()))
 
-                raw_instances: List[Dict[str, Any]] = []
+                raw_instances: list[dict[str, Any]] = []
 
                 for raw_instance_entry in cast(
-                    List[Dict[str, Any]], cast(Dict[str, Any], r_list_instances.unwrap()).get('pwmInstances', [])
+                    list[dict[str, Any]], cast(dict[str, Any], r_list_instances.unwrap()).get('pwmInstances', [])
                 ):
                     # To get network details need to additionally get instance details
                     r_show_instance = self._show_guest(logger, raw_instance_entry['id'])
@@ -371,7 +372,7 @@ class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flav
             def _update_instance_usage(
                 logger: gluetool.log.ContextAdapter,
                 usage: PoolResourcesUsage,
-                raw_instance: Dict[str, Any],
+                raw_instance: dict[str, Any],
                 flavor: Optional[Flavor],
             ) -> Result[None, Failure]:
                 assert usage.instances is not None  # narrow type
@@ -407,7 +408,7 @@ class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flav
             if r_show_network.is_error:
                 return Error(Failure.from_failure('Could not get network metrics', r_show_network.unwrap_error()))
 
-            network = cast(Dict[str, Any], r_show_network.unwrap())
+            network = cast(dict[str, Any], r_show_network.unwrap())
 
             resources.limits.networks[subnet_id] = PoolNetworkResources(addresses=network['ipAddressMetrics']['total'])
             resources.usage.networks[subnet_id] = PoolNetworkResources(addresses=network['ipAddressMetrics']['used'])
@@ -493,7 +494,7 @@ class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flav
         if r_output.is_error:
             return Error(r_output.unwrap_error())
 
-        created = cast(List[Dict[str, Any]], r_output.unwrap())[0]
+        created = cast(list[dict[str, Any]], r_output.unwrap())[0]
 
         if not created.get('pvmInstanceID'):
             return Error(Failure('Instance id not found'))
@@ -563,7 +564,7 @@ class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flav
             )
         )
 
-    def _show_guest(self, logger: gluetool.log.ContextAdapter, instance_id: str) -> Result[Dict[str, Any], Failure]:
+    def _show_guest(self, logger: gluetool.log.ContextAdapter, instance_id: str) -> Result[dict[str, Any], Failure]:
         with IBMCloudPowerSession(logger, self) as session:
             r_instance_info = session.run(
                 logger, ['pi', 'instance', 'get', instance_id, '--json'], commandname='ibmcloud.pi.vm-show'
@@ -574,7 +575,7 @@ class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flav
                     Failure.from_failure('failed to fetch instance information', r_instance_info.unwrap_error())
                 )
 
-            res = cast(Dict[str, Any], r_instance_info.unwrap())
+            res = cast(dict[str, Any], r_instance_info.unwrap())
 
             # XXX FIXME God knows who has woken upon to a brilliant idea to NOT allow tagging instances upon creation,
             # but the VPC hack of tagging resources won't work here as pi instances are not shown in ibm resource list.
@@ -695,7 +696,7 @@ class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flav
         return Ok(
             GuestLogUpdateProgress(
                 state=GuestLogState.COMPLETE,
-                url=cast(Dict[str, str], output)['consoleURL'],
+                url=cast(dict[str, str], output)['consoleURL'],
                 expires=datetime.datetime.utcnow() + datetime.timedelta(seconds=KNOB_CONSOLE_URL_EXPIRES.value),
             )
         )

@@ -24,7 +24,7 @@ import os
 import platform
 import threading
 import time
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, TypeVar, Union, cast
+from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar, Union, cast
 
 import gluetool.log
 import prometheus_client.utils
@@ -178,7 +178,7 @@ class WorkerTrafficTask(SerializableContainer):
     actor: str
     args: 'NamedActorArgumentsType'
 
-    def serialize(self) -> Dict[str, Any]:
+    def serialize(self) -> dict[str, Any]:
         """
         Return Python built-in types representing the content of this container.
 
@@ -192,7 +192,7 @@ class WorkerTrafficTask(SerializableContainer):
         return serialized
 
     @classmethod
-    def unserialize(cls, serialized: Dict[str, Any]) -> 'WorkerTrafficTask':
+    def unserialize(cls, serialized: dict[str, Any]) -> 'WorkerTrafficTask':
         """
         Create container instance representing the content described with Python built-in types.
 
@@ -242,7 +242,7 @@ class MetricsBase:
     Base class for all containers carrying metrics around.
     """
 
-    _metric_container_fields: List['MetricsBase']
+    _metric_container_fields: list['MetricsBase']
 
     def __post_init__(self) -> None:
         """
@@ -263,7 +263,7 @@ class MetricsBase:
         ]
 
     @property
-    def tracing_tags(self) -> Dict[str, str]:
+    def tracing_tags(self) -> dict[str, str]:
         """
         Custom tracking span tags.
 
@@ -467,7 +467,7 @@ class PoolMetricsBase(MetricsBase):
         self.poolname = poolname
 
     @property
-    def tracing_tags(self) -> Dict[str, str]:
+    def tracing_tags(self) -> dict[str, str]:
         """
         Custom tracking span tags.
 
@@ -553,12 +553,12 @@ class PoolResources(PoolMetricsBase):
     Number of instance snapshots.
     """
 
-    networks: Dict[str, PoolNetworkResources] = dataclasses.field(default_factory=dict)
+    networks: dict[str, PoolNetworkResources] = dataclasses.field(default_factory=dict)
     """
     Network resources, i.e. number of addresses and other network-related metrics.
     """
 
-    flavors: Dict[str, int] = dataclasses.field(default_factory=dict)
+    flavors: dict[str, int] = dataclasses.field(default_factory=dict)
     """
     Flavor usage.
     """
@@ -700,7 +700,7 @@ class PoolResourcesDepleted:
     # Depleted networks are listed as names only, no deeper structure. We could change this to mapping between
     # network names and, for example, a boolean or a structure describing which network resource is depleted, but
     # at this moment, all we need to know is whether or not is the network depleted, nothing more.
-    networks: List[str] = dataclasses.field(default_factory=list)
+    networks: list[str] = dataclasses.field(default_factory=list)
 
     def is_depleted(self) -> bool:
         """
@@ -714,7 +714,7 @@ class PoolResourcesDepleted:
             self.available_network_count != 0 and len(self.networks) == self.available_network_count
         )
 
-    def depleted_resources(self) -> List[str]:
+    def depleted_resources(self) -> list[str]:
         """
         Collect depleted resources.
 
@@ -895,10 +895,10 @@ class PoolMetrics(PoolMetricsBase):
     costs: PoolCostsMetrics
 
     current_guest_request_count: int
-    current_guest_request_count_per_state: Dict[GuestState, int]
+    current_guest_request_count_per_state: dict[GuestState, int]
 
-    errors: Dict[str, int]
-    aborts: Dict[Tuple[str, str, str, str], int]
+    errors: dict[str, int]
+    aborts: dict[tuple[str, str, str, str], int]
 
     image_info_count: Optional[float]
     image_info_updated_timestamp: Optional[float]
@@ -906,11 +906,11 @@ class PoolMetrics(PoolMetricsBase):
     flavor_info_updated_timestamp: Optional[float]
 
     # commandname => count
-    cli_calls: Dict[str, int]
+    cli_calls: dict[str, int]
     # commandname:exit-code:cause => count
-    cli_calls_exit_codes: Dict[Tuple[str, str, str], int]
+    cli_calls_exit_codes: dict[tuple[str, str, str], int]
     # bucket:commandname:exit-code:cause => count
-    cli_calls_durations: Dict[Tuple[str, str, str, str], int]
+    cli_calls_durations: dict[tuple[str, str, str, str], int]
 
     def __init__(self, poolname: str) -> None:
         """
@@ -1156,7 +1156,7 @@ class PoolMetrics(PoolMetricsBase):
         self.routing_enabled = r_routing_enabled.unwrap()
 
         self.current_guest_request_count = cast(
-            Tuple[int],
+            tuple[int],
             session.query(sqlalchemy.func.count(artemis_db.GuestRequest.guestname))
             .filter(artemis_db.GuestRequest.poolname == self.poolname)
             .one(),
@@ -1168,7 +1168,7 @@ class PoolMetrics(PoolMetricsBase):
             {
                 GuestState(record[0]): record[1]
                 for record in cast(
-                    List[Tuple[str, int]],
+                    list[tuple[str, int]],
                     session.query(artemis_db.GuestRequest.state, sqlalchemy.func.count(artemis_db.GuestRequest.state))
                     .filter(artemis_db.GuestRequest.poolname == self.poolname)
                     .group_by(artemis_db.GuestRequest.state)
@@ -1182,7 +1182,7 @@ class PoolMetrics(PoolMetricsBase):
         }
 
         self.aborts = {
-            cast(Tuple[str, str, str, str], tuple(field.split(':', 4))): count
+            cast(tuple[str, str, str, str], tuple(field.split(':', 4))): count
             for field, count in get_metric_fields(
                 logger,
                 cache,
@@ -1216,13 +1216,13 @@ class PoolMetrics(PoolMetricsBase):
 
         # commandname:exit-code:cause => count
         self.cli_calls_exit_codes = {
-            cast(Tuple[str, str, str], tuple(field.split(':', 2))): count
+            cast(tuple[str, str, str], tuple(field.split(':', 2))): count
             for field, count in get_metric_fields(logger, cache, self.key_cli_calls_exit_codes).items()
         }
 
         # bucket:commandname:exit-code:cause => count
         self.cli_calls_durations = {
-            cast(Tuple[str, str, str, str], tuple(field.split(':', 3))): count
+            cast(tuple[str, str, str, str], tuple(field.split(':', 3))): count
             for field, count in get_metric_fields(
                 logger,
                 cache,
@@ -1244,19 +1244,19 @@ class UndefinedPoolMetrics(PoolMetricsBase):
     costs: PoolCostsMetrics
 
     current_guest_request_count: int
-    current_guest_request_count_per_state: Dict[GuestState, int]
+    current_guest_request_count_per_state: dict[GuestState, int]
 
-    errors: Dict[str, int]
-    aborts: Dict[Tuple[str, str, str, str], int]
+    errors: dict[str, int]
+    aborts: dict[tuple[str, str, str, str], int]
 
     image_info_count: Optional[float]
     image_info_updated_timestamp: Optional[float]
     flavor_info_count: Optional[float]
     flavor_info_updated_timestamp: Optional[float]
 
-    cli_calls: Dict[str, int]
-    cli_calls_exit_codes: Dict[Tuple[str, str, str], int]
-    cli_calls_durations: Dict[Tuple[str, str, str, str], int]
+    cli_calls: dict[str, int]
+    cli_calls_exit_codes: dict[tuple[str, str, str], int]
+    cli_calls_durations: dict[tuple[str, str, str, str], int]
 
     def __init__(self, poolname: str) -> None:
         """
@@ -1305,7 +1305,7 @@ class UndefinedPoolMetrics(PoolMetricsBase):
         # in the query, we have to use `==` instead of more Pythonic `is`.
 
         self.current_guest_request_count = cast(
-            Tuple[int],
+            tuple[int],
             session.query(sqlalchemy.func.count(artemis_db.GuestRequest.guestname))
             .filter(artemis_db.GuestRequest.poolname == None)  # noqa: E711
             .one(),
@@ -1317,7 +1317,7 @@ class UndefinedPoolMetrics(PoolMetricsBase):
             {
                 GuestState(record[0]): record[1]
                 for record in cast(
-                    List[Tuple[str, int]],
+                    list[tuple[str, int]],
                     session.query(artemis_db.GuestRequest.state, sqlalchemy.func.count(artemis_db.GuestRequest.state))
                     .filter(artemis_db.GuestRequest.poolname == None)  # noqa: E711
                     .group_by(artemis_db.GuestRequest.state)
@@ -1335,7 +1335,7 @@ class PoolsMetrics(MetricsBase):
 
     # here is the space left for global pool-related metrics.
 
-    pools: Dict[str, Union[PoolMetrics, UndefinedPoolMetrics]] = dataclasses.field(default_factory=dict)
+    pools: dict[str, Union[PoolMetrics, UndefinedPoolMetrics]] = dataclasses.field(default_factory=dict)
 
     @with_context
     def do_sync(self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session) -> None:
@@ -1613,17 +1613,17 @@ class ProvisioningMetrics(MetricsBase):
 
     requested: int = 0
     current: int = 0
-    success: Dict[str, int] = dataclasses.field(default_factory=dict)
-    failover: Dict[Tuple[str, str], int] = dataclasses.field(default_factory=dict)
-    failover_success: Dict[Tuple[str, str], int] = dataclasses.field(default_factory=dict)
-    empty_routing: Dict[str, int] = dataclasses.field(default_factory=dict)
+    success: dict[str, int] = dataclasses.field(default_factory=dict)
+    failover: dict[tuple[str, str], int] = dataclasses.field(default_factory=dict)
+    failover_success: dict[tuple[str, str], int] = dataclasses.field(default_factory=dict)
+    empty_routing: dict[str, int] = dataclasses.field(default_factory=dict)
 
     # We want to maybe point fingers on pools where guests are stuck, so include pool name and state as labels.
-    guest_ages: List[Tuple[GuestState, Optional[str], datetime.timedelta]] = dataclasses.field(default_factory=list)
-    provisioning_durations: Dict[str, int] = dataclasses.field(default_factory=dict)
+    guest_ages: list[tuple[GuestState, Optional[str], datetime.timedelta]] = dataclasses.field(default_factory=list)
+    provisioning_durations: dict[str, int] = dataclasses.field(default_factory=dict)
 
     # pool:current-state:new-state => count
-    guest_state_transitions: Dict[Tuple[str, str, str], int] = dataclasses.field(default_factory=dict)
+    guest_state_transitions: dict[tuple[str, str, str], int] = dataclasses.field(default_factory=dict)
 
     @staticmethod
     @with_context
@@ -1790,12 +1790,12 @@ class ProvisioningMetrics(MetricsBase):
         }
         # fields are in form `from_pool:to_pool`
         self.failover = {
-            cast(Tuple[str, str], tuple(field.split(':', 1))): count
+            cast(tuple[str, str], tuple(field.split(':', 1))): count
             for field, count in get_metric_fields(logger, cache, self._KEY_FAILOVER).items()
         }
         # fields are in form `from_pool:to_pool`
         self.failover_success = {
-            cast(Tuple[str, str], tuple(field.split(':', 1))): count
+            cast(tuple[str, str], tuple(field.split(':', 1))): count
             for field, count in get_metric_fields(logger, cache, self._KEY_FAILOVER_SUCCESS).items()
         }
         # Using `query` directly, because we need just limited set of fields, and we need our `Query`
@@ -1803,7 +1803,7 @@ class ProvisioningMetrics(MetricsBase):
         self.guest_ages = [
             (record[0], record[1], now - record[2])
             for record in cast(
-                List[Tuple[GuestState, Optional[str], datetime.datetime]],
+                list[tuple[GuestState, Optional[str], datetime.datetime]],
                 session.query(
                     artemis_db.GuestRequest.state, artemis_db.GuestRequest.poolname, artemis_db.GuestRequest.ctime
                 ).all(),
@@ -1815,7 +1815,7 @@ class ProvisioningMetrics(MetricsBase):
 
         # pool:current-state:new-state => count
         self.guest_state_transitions = {
-            cast(Tuple[str, str, str], tuple(field.split(':', 2))): count
+            cast(tuple[str, str, str], tuple(field.split(':', 2))): count
             for field, count in get_metric_fields(logger, cache, self._KEY_GUEST_STATE_TRANSITIONS).items()
         }
 
@@ -1949,9 +1949,9 @@ class RoutingMetrics(MetricsBase):
     _KEY_CANCELLATIONS = 'metrics.routing.policy.cancellations'
     _KEY_RULINGS = 'metrics.routing.policy.rulings'
 
-    policy_calls: Dict[str, int] = dataclasses.field(default_factory=dict)
-    policy_cancellations: Dict[str, int] = dataclasses.field(default_factory=dict)
-    policy_rulings: Dict[Tuple[str, str, str], int] = dataclasses.field(default_factory=dict)
+    policy_calls: dict[str, int] = dataclasses.field(default_factory=dict)
+    policy_cancellations: dict[str, int] = dataclasses.field(default_factory=dict)
+    policy_rulings: dict[tuple[str, str, str], int] = dataclasses.field(default_factory=dict)
 
     @staticmethod
     @with_context
@@ -2040,7 +2040,7 @@ class RoutingMetrics(MetricsBase):
         }
         # fields are in form `policy:pool:allowed`
         self.policy_rulings = {
-            cast(Tuple[str, str, str], tuple(field.split(':', 2))): count
+            cast(tuple[str, str, str], tuple(field.split(':', 2))): count
             for field, count in get_metric_fields(logger, cache, self._KEY_RULINGS).items()
         }
 
@@ -2280,7 +2280,7 @@ class ShelvesMetrics(MetricsBase):
     General metrics shared by shelves, and per-shelf metrics.
     """
 
-    shelves: Dict[str, ShelfMetrics] = dataclasses.field(default_factory=dict)
+    shelves: dict[str, ShelfMetrics] = dataclasses.field(default_factory=dict)
 
     @with_context
     def do_sync(self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session) -> None:
@@ -2391,14 +2391,14 @@ class TaskMetrics(MetricsBase):
     Task and actor metrics.
     """
 
-    overall_message_count: Dict[Tuple[str, str], int] = dataclasses.field(default_factory=dict)
-    overall_errored_message_count: Dict[Tuple[str, str], int] = dataclasses.field(default_factory=dict)
-    overall_retried_message_count: Dict[Tuple[str, str], int] = dataclasses.field(default_factory=dict)
-    overall_rejected_message_count: Dict[Tuple[str, str], int] = dataclasses.field(default_factory=dict)
-    current_message_count: Dict[Tuple[str, str], int] = dataclasses.field(default_factory=dict)
-    current_delayed_message_count: Dict[Tuple[str, str], int] = dataclasses.field(default_factory=dict)
-    message_durations: Dict[Tuple[str, str, str, str], int] = dataclasses.field(default_factory=dict)
-    current_task_request_count: Dict[str, int] = dataclasses.field(default_factory=dict)
+    overall_message_count: dict[tuple[str, str], int] = dataclasses.field(default_factory=dict)
+    overall_errored_message_count: dict[tuple[str, str], int] = dataclasses.field(default_factory=dict)
+    overall_retried_message_count: dict[tuple[str, str], int] = dataclasses.field(default_factory=dict)
+    overall_rejected_message_count: dict[tuple[str, str], int] = dataclasses.field(default_factory=dict)
+    current_message_count: dict[tuple[str, str], int] = dataclasses.field(default_factory=dict)
+    current_delayed_message_count: dict[tuple[str, str], int] = dataclasses.field(default_factory=dict)
+    message_durations: dict[tuple[str, str, str, str], int] = dataclasses.field(default_factory=dict)
+    current_task_request_count: dict[str, int] = dataclasses.field(default_factory=dict)
 
     _KEY_OVERALL_MESSAGES = 'metrics.tasks.messages.overall'
     _KEY_OVERALL_ERRORED_MESSAGES = 'metrics.tasks.messages.overall.errored'
@@ -2606,27 +2606,27 @@ class TaskMetrics(MetricsBase):
 
         # queue:actor => count
         self.overall_message_count = {
-            cast(Tuple[str, str], tuple(field.split(':', 1))): count
+            cast(tuple[str, str], tuple(field.split(':', 1))): count
             for field, count in get_metric_fields(logger, cache, self._KEY_OVERALL_MESSAGES).items()
         }
         self.overall_errored_message_count = {
-            cast(Tuple[str, str], tuple(field.split(':', 1))): count
+            cast(tuple[str, str], tuple(field.split(':', 1))): count
             for field, count in get_metric_fields(logger, cache, self._KEY_OVERALL_ERRORED_MESSAGES).items()
         }
         self.overall_retried_message_count = {
-            cast(Tuple[str, str], tuple(field.split(':', 1))): count
+            cast(tuple[str, str], tuple(field.split(':', 1))): count
             for field, count in get_metric_fields(logger, cache, self._KEY_OVERALL_RETRIED_MESSAGES).items()
         }
         self.overall_rejected_message_count = {
-            cast(Tuple[str, str], tuple(field.split(':', 1))): count
+            cast(tuple[str, str], tuple(field.split(':', 1))): count
             for field, count in get_metric_fields(logger, cache, self._KEY_OVERALL_REJECTED_MESSAGES).items()
         }
         self.current_message_count = {
-            cast(Tuple[str, str], tuple(field.split(':', 1))): count
+            cast(tuple[str, str], tuple(field.split(':', 1))): count
             for field, count in get_metric_fields(logger, cache, self._KEY_CURRENT_MESSAGES).items()
         }
         self.current_delayed_message_count = {
-            cast(Tuple[str, str], tuple(field.split(':', 1))): count
+            cast(tuple[str, str], tuple(field.split(':', 1))): count
             for field, count in get_metric_fields(logger, cache, self._KEY_CURRENT_DELAYED_MESSAGES).items()
         }
 
@@ -2636,7 +2636,7 @@ class TaskMetrics(MetricsBase):
             {
                 record[0]: record[1]
                 for record in cast(
-                    List[Tuple[str, int]],
+                    list[tuple[str, int]],
                     session.query(
                         artemis_db.TaskRequest.taskname, sqlalchemy.func.count(artemis_db.TaskRequest.taskname)
                     )
@@ -2656,7 +2656,7 @@ class TaskMetrics(MetricsBase):
             if len(field_split) == 3:
                 field_split = (*field_split, UNDEFINED_POOL_NAME)
 
-            self.message_durations[cast(Tuple[str, str, str, str], field_split)] = count
+            self.message_durations[cast(tuple[str, str, str, str], field_split)] = count
 
     def do_register_with_prometheus(self, registry: CollectorRegistry) -> None:
         """
@@ -2735,7 +2735,7 @@ class TaskMetrics(MetricsBase):
 
         super().do_update_prometheus()
 
-        def _update_counter(prom_metric: Counter, source: Dict[Tuple[str, str], int]) -> None:
+        def _update_counter(prom_metric: Counter, source: dict[tuple[str, str], int]) -> None:
             reset_counters(prom_metric)
 
             for (queue_name, actor_name), count in source.items():
@@ -2773,9 +2773,9 @@ class APIMetrics(MetricsBase):
     API metrics (mostly HTTP traffic).
     """
 
-    request_durations: Dict[Tuple[str, str, str], int] = dataclasses.field(default_factory=dict)
-    request_count: Dict[Tuple[str, str, str], int] = dataclasses.field(default_factory=dict)
-    request_inprogress_count: Dict[Tuple[str, str], int] = dataclasses.field(default_factory=dict)
+    request_durations: dict[tuple[str, str, str], int] = dataclasses.field(default_factory=dict)
+    request_count: dict[tuple[str, str, str], int] = dataclasses.field(default_factory=dict)
+    request_inprogress_count: dict[tuple[str, str], int] = dataclasses.field(default_factory=dict)
 
     _KEY_REQUEST_DURATIONS = 'metrics.api.http.request.durations'
     _KEY_REQUEST_COUNT = 'metrics.api.http.request.total'
@@ -2907,19 +2907,19 @@ class APIMetrics(MetricsBase):
 
         # method:bucket:path => count
         self.request_durations = {
-            cast(Tuple[str, str, str], tuple(field.split(':', 2))): count
+            cast(tuple[str, str, str], tuple(field.split(':', 2))): count
             for field, count in get_metric_fields(logger, cache, self._KEY_REQUEST_DURATIONS).items()
         }
 
         # method:status:path => count
         self.request_count = {
-            cast(Tuple[str, str, str], tuple(field.split(':', 2))): count
+            cast(tuple[str, str, str], tuple(field.split(':', 2))): count
             for field, count in get_metric_fields(logger, cache, self._KEY_REQUEST_COUNT).items()
         }
 
         # method:path => count
         self.request_inprogress_count = {
-            cast(Tuple[str, str], tuple(field.split(':', 1))): count
+            cast(tuple[str, str], tuple(field.split(':', 1))): count
             for field, count in get_metric_fields(logger, cache, self._KEY_REQUEST_INPROGRESS_COUNT).items()
         }
 
@@ -2962,10 +2962,10 @@ class WorkerMetrics(MetricsBase):
 
     worker_ping: Optional[float] = None
 
-    worker_process_count: Dict[str, Optional[int]] = dataclasses.field(default_factory=dict)
-    worker_thread_count: Dict[str, Optional[int]] = dataclasses.field(default_factory=dict)
-    worker_process_restart_count: Dict[str, Optional[int]] = dataclasses.field(default_factory=dict)
-    worker_updated_timestamp: Dict[str, Optional[int]] = dataclasses.field(default_factory=dict)
+    worker_process_count: dict[str, Optional[int]] = dataclasses.field(default_factory=dict)
+    worker_thread_count: dict[str, Optional[int]] = dataclasses.field(default_factory=dict)
+    worker_process_restart_count: dict[str, Optional[int]] = dataclasses.field(default_factory=dict)
+    worker_updated_timestamp: dict[str, Optional[int]] = dataclasses.field(default_factory=dict)
 
     _KEY_WORKER_PING = 'metrics.workers.ping'
 
@@ -3159,7 +3159,7 @@ class WorkerMetrics(MetricsBase):
         logger: gluetool.log.ContextAdapter,
         worker_name: str,
         interval: int,
-        metrics_getter: Callable[[Any], Result[Tuple[int, int], Failure]],
+        metrics_getter: Callable[[Any], Result[tuple[int, int], Failure]],
         thread_name: str = 'worker-metrics-refresher',
         worker_instance: Optional[Any] = None,
     ) -> threading.Thread:
@@ -3209,10 +3209,10 @@ class DispatcherMetrics(MetricsBase):
     """
 
     dispatched_task_invocations_count: int = 0
-    dispatched_task_success_count: Dict[str, int] = dataclasses.field(default_factory=dict)
+    dispatched_task_success_count: dict[str, int] = dataclasses.field(default_factory=dict)
     dispatched_task_failure_count: int = 0
     dispatched_task_sequence_invocations_count: int = 0
-    dispatched_task_sequence_success_count: Dict[str, int] = dataclasses.field(default_factory=dict)
+    dispatched_task_sequence_success_count: dict[str, int] = dataclasses.field(default_factory=dict)
     dispatched_task_sequence_failure_count: int = 0
 
     _KEY_DISPATCHED_TASK_INVOCATIONS = 'metrics.dispatcher.task.invocations'
@@ -3289,7 +3289,7 @@ class DispatcherMetrics(MetricsBase):
     @staticmethod
     @with_context
     def inc_successful_dispatched_task_sequence(
-        actor_names: List[str], logger: gluetool.log.ContextAdapter, cache: redis.Redis
+        actor_names: list[str], logger: gluetool.log.ContextAdapter, cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increment number of successfull task sequences dispatches.
@@ -3613,7 +3613,7 @@ def set_metric(
         set_cache_value(logger, cache, metric, value=str(value).encode() if value is not None else None, ttl=ttl)
 
 
-def get_metric_fields(logger: gluetool.log.ContextAdapter, cache: redis.Redis, metric: str) -> Dict[str, int]:
+def get_metric_fields(logger: gluetool.log.ContextAdapter, cache: redis.Redis, metric: str) -> dict[str, int]:
     """
     Return a mapping between fields and corresponding counters representing the given metric.
 

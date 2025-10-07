@@ -4,7 +4,7 @@
 import logging
 import os
 from logging.config import fileConfig
-from typing import Any, List
+from typing import Any
 
 from alembic import context
 
@@ -69,7 +69,7 @@ def run_migrations_online() -> None:
     connectable = config.attributes.get('connectable', None) or get_db(get_logger()).engine
 
     # This trick should result in not generating a revision if there are no changes to schema.
-    def process_revision_directives(context: str, revision: str, directives: List[Any]) -> None:
+    def process_revision_directives(context: str, revision: str, directives: list[Any]) -> None:
         assert config.cmd_opts
 
         if config.cmd_opts.autogenerate:

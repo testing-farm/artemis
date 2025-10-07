@@ -33,7 +33,7 @@ prevent most of the issues.
 
 import contextvars
 import functools
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar
 
 import dramatiq.broker
 import gluetool.log
@@ -58,7 +58,7 @@ CURRENT_MESSAGE: contextvars.ContextVar[Optional[dramatiq.broker.MessageProxy]] 
 CURRENT_TASK: contextvars.ContextVar[Optional['TaskCall']] = contextvars.ContextVar('CURRENT_TASK')
 
 #: Context variables available as injectables.
-CONTEXT_PROVIDERS: Dict[Tuple[str, Any], contextvars.ContextVar[Any]] = {
+CONTEXT_PROVIDERS: dict[tuple[str, Any], contextvars.ContextVar[Any]] = {
     ('logger', gluetool.log.ContextAdapter): LOGGER,
     ('db', DB): DATABASE,
     ('session', sqlalchemy.orm.session.Session): SESSION,

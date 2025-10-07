@@ -4,7 +4,7 @@
 import base64
 import dataclasses
 import json
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 import gluetool.log
 import gluetool.utils
@@ -54,7 +54,7 @@ class RestDriver(PoolDriver):
 
     pool_data_class = RestPoolData
 
-    def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str, pool_config: Dict[str, Any]) -> None:
+    def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str, pool_config: dict[str, Any]) -> None:
         super().__init__(logger, poolname, pool_config)
         self.url = self.pool_config['url']
 
@@ -69,7 +69,7 @@ class RestDriver(PoolDriver):
 
         return Ok(capabilities)
 
-    def _get_headers(self, guestname: Optional[str] = None) -> Dict[str, str]:
+    def _get_headers(self, guestname: Optional[str] = None) -> dict[str, str]:
         """
         Prepares HTTP headers for backend requests.
         """

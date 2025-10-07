@@ -5,7 +5,7 @@ import dataclasses
 import re
 import threading
 from functools import cached_property
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Optional, cast
 
 import gluetool.log
 import google.api_core
@@ -79,7 +79,7 @@ class GCPDriver(PoolDriver):
 
     _image_map_hook_name = 'GCP_ENVIRONMENT_TO_IMAGE'
 
-    def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str, pool_config: Dict[str, Any]) -> None:
+    def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str, pool_config: dict[str, Any]) -> None:
         super().__init__(logger, poolname, pool_config)
 
     @property
@@ -137,7 +137,7 @@ class GCPDriver(PoolDriver):
         if answer.can_acquire is False:
             return r_answer
 
-        r_images: Result[List[PoolImageInfo], Failure] = self._guest_request_to_image_or_none(
+        r_images: Result[list[PoolImageInfo], Failure] = self._guest_request_to_image_or_none(
             logger, session, guest_request
         )
         if r_images.is_error:
@@ -299,7 +299,7 @@ class GCPDriver(PoolDriver):
         project_id: str,
         zone: str,
         instance_name: str,
-        disks: List[compute_v1.AttachedDisk],
+        disks: list[compute_v1.AttachedDisk],
         machine_type: Optional[str] = None,
         network_link: Optional[str] = None,
         delete_protection: bool = False,
@@ -362,7 +362,7 @@ class GCPDriver(PoolDriver):
         guest_request: GuestRequest,
         cancelled: Optional[threading.Event] = None,
     ) -> Result[ProvisioningProgress, Failure]:
-        map_request_to_image_result: Result[List[PoolImageInfo], Failure] = self._guest_request_to_image(
+        map_request_to_image_result: Result[list[PoolImageInfo], Failure] = self._guest_request_to_image(
             logger, session, guest_request
         )
         if map_request_to_image_result.is_error:
@@ -503,7 +503,7 @@ class GCPDriver(PoolDriver):
         resources = r_resources.unwrap()
 
         # Resource usage - instances and flavors
-        def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[List[compute_v1.Instance], Failure]:
+        def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[list[compute_v1.Instance], Failure]:
             return Ok(
                 [
                     instance

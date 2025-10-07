@@ -7,7 +7,8 @@ import logging
 import operator
 import os
 import re
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, Dict, Generic, List, Optional, Pattern, Tuple, TypeVar, cast
+from re import Pattern
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, Generic, Optional, TypeVar, cast
 
 import gluetool.log
 import gluetool.utils
@@ -40,7 +41,7 @@ class KnobSource(Generic[T]):
 
         raise NotImplementedError
 
-    def to_repr(self) -> List[str]:
+    def to_repr(self) -> list[str]:
         """
         Return list of string that shall be added to knob's ``repr()`` representation.
         """
@@ -71,7 +72,7 @@ class KnobSourceEnv(KnobSource[T]):
 
         return Ok(self.knob.cast_from_str(os.environ[envvar]))
 
-    def to_repr(self) -> List[str]:
+    def to_repr(self) -> list[str]:
         return [f'envvar="{self.envvar}"']
 
 
@@ -139,7 +140,7 @@ class KnobSourceDefault(KnobSource[T]):
     def get_value(self, **kwargs: Any) -> Result[Optional[T], 'Failure']:
         return Ok(self.default)
 
-    def to_repr(self) -> List[str]:
+    def to_repr(self) -> list[str]:
         if self.default_label is None:
             return [f'default="{self.default}"']
 
@@ -171,7 +172,7 @@ class KnobSourceDB(KnobSource[T]):
 
         return Ok(cast(T, record.value))
 
-    def to_repr(self) -> List[str]:
+    def to_repr(self) -> list[str]:
         return ['has-db=yes']
 
 
@@ -298,14 +299,14 @@ class Knob(Generic[T]):
     """
 
     #: All known knobs.
-    ALL_KNOBS: ClassVar[Dict[str, 'Knob[Any]']] = {}
+    ALL_KNOBS: ClassVar[dict[str, 'Knob[Any]']] = {}
 
     #: Collect all known ``Knob`` instances that are backed by the DB.
-    DB_BACKED_KNOBS: ClassVar[Dict[str, 'Knob[Any]']] = {}
+    DB_BACKED_KNOBS: ClassVar[dict[str, 'Knob[Any]']] = {}
 
     #: List of patterns matching knob names that belong to knobs with per-entity capability. These names cannot be
     #: used for normal knobs.
-    RESERVED_PATTERNS: ClassVar[List[Pattern[str]]] = [re.compile(r'^([a-z\-.]+):.+$')]
+    RESERVED_PATTERNS: ClassVar[list[Pattern[str]]] = [re.compile(r'^([a-z\-.]+):.+$')]
 
     def __init__(
         self,
@@ -321,7 +322,7 @@ class Knob(Generic[T]):
         self.knobname = knobname
         self.help = inspect.cleandoc(help)
 
-        self._sources: List[KnobSource[T]] = []
+        self._sources: list[KnobSource[T]] = []
 
         self.per_entity = per_entity
 
@@ -398,7 +399,7 @@ class Knob(Generic[T]):
             self.static_value = self.value
 
     def __repr__(self) -> str:
-        traits: List[str] = []
+        traits: list[str] = []
 
         if self.per_entity:
             traits += ['per-entity=yes']
@@ -412,7 +413,7 @@ class Knob(Generic[T]):
 
     def _get_value(
         self, skip_db: bool = False, skip_per_entity: bool = False, **kwargs: Any
-    ) -> Tuple[Optional[T], Optional['Failure']]:
+    ) -> tuple[Optional[T], Optional['Failure']]:
         """
         The core method for getting the knob value. Returns two items:
 
