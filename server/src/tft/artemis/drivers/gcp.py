@@ -14,10 +14,11 @@ import proto
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 from google.cloud import compute_v1
+from tmt.hardware import UNITS
 
 from .. import Failure, log_dict_yaml
 from ..db import GuestRequest, SnapshotRequest
-from ..environment import UNITS, Flavor, FlavorBoot, SizeType
+from ..environment import Flavor, FlavorBoot, SizeType
 from ..knobs import Knob
 from ..metrics import PoolResourcesMetrics, PoolResourcesUsage
 from . import (

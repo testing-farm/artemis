@@ -10,7 +10,6 @@ size, etc.
 """
 
 import dataclasses
-import enum
 import functools
 import itertools
 import operator
@@ -30,17 +29,14 @@ from typing import (
 
 import gluetool.log
 import gluetool.utils
-import pint
 from gluetool.result import Error, Ok, Result
+from tmt.hardware import OPERATOR_SIGN_TO_OPERATOR, OPERATOR_TO_HANDLER, UNITS, Operator, OperatorHandlerType, Spec
 from typing_extensions import Literal, Self, TypeAlias
 
 from . import Failure, SerializableContainer
 
 if TYPE_CHECKING:
     from pint import Quantity  # noqa: F401
-
-#: Unit registry, used and shared by all code.
-UNITS = pint.UnitRegistry()
 
 #
 # Parsing of HW requirements of the environment
@@ -68,18 +64,6 @@ PROPERTY_PATTERN = re.compile(r'(?P<property_name>[a-z_]+)(?:\[(?P<index>[+-]?\d
 PROPERTY_EXPAND_PATTERN = re.compile(
     r'(?P<property_name>[a-z_+]+)(?:\[(?P<index>[+-]?\d+)\])?(?:\.(?P<child_property_name>[a-z_]+))?'
 )
-
-#: Type of the operator callable. The operators accept two arguments, and returns result of their comparison.
-OperatorHandlerType = Callable[[Any, Any], bool]
-
-#: mypy does not support cyclic definition, it would be much easier to just define this:
-#:
-#:   SpecType = Dict[str, Union[int, float, str, 'SpecType', List['SpecType']]]
-#:
-#: Instead of resorting to ``Any``, we'll keep the type tracked by giving it its own name.
-#:
-#: See https://github.com/python/mypy/issues/731 for details.
-SpecType = Any
 
 SizeType: TypeAlias = 'Quantity[int]'
 
@@ -710,94 +694,6 @@ class Flavor(_FlavorSubsystemContainer):
         return flavor
 
 
-class Operator(enum.Enum):
-    """
-    Binary operators available for comparison of constraints and flavor properties.
-    """
-
-    EQ = '=='
-    NEQ = '!='
-    GT = '>'
-    GTE = '>='
-    LT = '<'
-    LTE = '<='
-    MATCH = '~'
-    NOTMATCH = '!~'
-    CONTAINS = 'contains'
-    NOTCONTAINS = 'not contains'
-
-
-def match(text: str, pattern: str) -> bool:
-    """
-    Match a text against a given regular expression.
-
-    :param text: string to examine.
-    :param pattern: regular expression.
-    :returns: ``True`` if pattern matches the string.
-    """
-
-    return re.match(pattern, text) is not None
-
-
-def notmatch(text: str, pattern: str) -> bool:
-    """
-    Match a text against a given regular expression.
-
-    :param text: string to examine.
-    :param pattern: regular expression.
-    :returns: ``True`` if pattern does not matche the string.
-    """
-
-    return re.match(pattern, text) is None
-
-
-def notcontains(haystack: list[str], needle: str) -> bool:
-    """
-    Find out whether an item is in the given list.
-
-    .. note::
-
-       Opposite of :py:func:`operator.contains`.
-
-    :param haystack: container to examine.
-    :param needle: item to look for in ``haystack``.
-    :returns: ``True`` if ``needle`` is in ``haystack``.
-    """
-
-    return needle not in haystack
-
-
-OPERATOR_SIGN_TO_OPERATOR = {
-    '=': Operator.EQ,
-    '==': Operator.EQ,
-    '!=': Operator.NEQ,
-    '>': Operator.GT,
-    '>=': Operator.GTE,
-    '<': Operator.LT,
-    '<=': Operator.LTE,
-    '~': Operator.MATCH,
-    '!~': Operator.NOTMATCH,
-    'contains': Operator.CONTAINS,
-    'not contains': Operator.NOTCONTAINS,
-    # Legacy operators
-    '=~': Operator.MATCH,
-}
-
-
-OPERATOR_TO_HANDLER: dict[Operator, OperatorHandlerType] = {
-    Operator.EQ: operator.eq,
-    Operator.NEQ: operator.ne,
-    Operator.GT: operator.gt,
-    Operator.GTE: operator.ge,
-    Operator.LT: operator.lt,
-    Operator.LTE: operator.le,
-    Operator.MATCH: match,
-    Operator.NOTMATCH: notmatch,
-    Operator.CONTAINS: operator.contains,
-    Operator.NOTCONTAINS: notcontains,
-}
-
-
 # NOTE: this is an exception in the way Artemis handles errors and their propagation. Since constraint parsing
 # involves great deal of recursion and sequences, propagating errors in the form of `Result` instances would
 # introduce a large amount of spaghetti code. The exception is used to interupt this possibly deep chain of calls,
@@ -1372,7 +1268,7 @@ class Or(CompoundConstraint):
                 yield members + span
 
 
-def _parse_boot(spec: SpecType) -> ConstraintBase:
+def _parse_boot(spec: Spec) -> ConstraintBase:
     """
     Parse a boot-related constraints.
 
@@ -1399,7 +1295,7 @@ def _parse_boot(spec: SpecType) -> ConstraintBase:
     return group
 
 
-def _parse_virtualization(spec: SpecType) -> ConstraintBase:
+def _parse_virtualization(spec: Spec) -> ConstraintBase:
     """
     Parse a virtualization-related constraints.
 
@@ -1440,7 +1336,7 @@ def _parse_virtualization(spec: SpecType) -> ConstraintBase:
     return group
 
 
-def _parse_compatible(spec: SpecType) -> ConstraintBase:
+def _parse_compatible(spec: Spec) -> ConstraintBase:
     """
     Parse constraints related to the compatible distro parameter.
 
@@ -1463,7 +1359,7 @@ def _parse_compatible(spec: SpecType) -> ConstraintBase:
     return group
 
 
-def _parse_tpm(spec: SpecType) -> ConstraintBase:
+def _parse_tpm(spec: Spec) -> ConstraintBase:
     """
     Parse constraints related to the ``tpm`` HW requirement.
 
@@ -1482,7 +1378,7 @@ def _parse_tpm(spec: SpecType) -> ConstraintBase:
     return group
 
 
-def _parse_zcrypt(spec: SpecType) -> ConstraintBase:
+def _parse_zcrypt(spec: Spec) -> ConstraintBase:
     """
     Parse constraints related to the ``zcrypt`` HW requirement.
 
@@ -1504,7 +1400,7 @@ def _parse_zcrypt(spec: SpecType) -> ConstraintBase:
     return group
 
 
-def _parse_cpu(spec: SpecType) -> ConstraintBase:
+def _parse_cpu(spec: Spec) -> ConstraintBase:
     """
     Parse a cpu-related constraints.
 
@@ -1560,7 +1456,7 @@ def _parse_cpu(spec: SpecType) -> ConstraintBase:
     return group
 
 
-def _parse_disk(spec: SpecType, disk_index: int) -> ConstraintBase:
+def _parse_disk(spec: Spec, disk_index: int) -> ConstraintBase:
     """
     Parse a disk-related constraints.
 
@@ -1574,7 +1470,7 @@ def _parse_disk(spec: SpecType, disk_index: int) -> ConstraintBase:
     # Constructing a tree of conditions:
     #
     # (size is enough) || (last disk is expansion && has enough spare disks && min/max size is enough)
-    def _parse_size_spec(spec: SpecType) -> None:
+    def _parse_size_spec(spec: Spec) -> None:
         # Our "expansion" branch consists of several conditions that must be satisfied: we need to check
         # expansion is allowed first, then make sure the disk we're trying to match with the flavor fits
         # into what this expansion can handle, and then we can deal with min/max sizes supported by the
@@ -1645,7 +1541,7 @@ def _parse_disk(spec: SpecType, disk_index: int) -> ConstraintBase:
     return group
 
 
-def _parse_disks(spec: SpecType) -> ConstraintBase:
+def _parse_disks(spec: Spec) -> ConstraintBase:
     """
     Parse a storage-related constraints.
 
@@ -1667,7 +1563,7 @@ def _parse_disks(spec: SpecType) -> ConstraintBase:
     return group
 
 
-def _parse_gpu(spec: SpecType) -> ConstraintBase:
+def _parse_gpu(spec: Spec) -> ConstraintBase:
     """
     Parse GPU-related constraints.
 
@@ -1697,7 +1593,7 @@ def _parse_gpu(spec: SpecType) -> ConstraintBase:
     return group
 
 
-def _parse_network(spec: SpecType, network_index: int) -> ConstraintBase:
+def _parse_network(spec: Spec, network_index: int) -> ConstraintBase:
     """
     Parse a network-related constraints.
 
@@ -1711,7 +1607,7 @@ def _parse_network(spec: SpecType, network_index: int) -> ConstraintBase:
     # Constructing a tree of conditions:
     #
     # (type is correct) || (last network is expansion && has enough spare networks && type is correct)
-    def _parse_type_spec(spec: SpecType) -> None:
+    def _parse_type_spec(spec: Spec) -> None:
         # Our "expansion" branch consists of several conditions that must be satisfied: we need to check
         # expansion is allowed first, then make sure the network we're trying to match with the flavor
         # fits into what this expansion can handle, and then we can deal with type supported by the expansion.
@@ -1769,7 +1665,7 @@ def _parse_network(spec: SpecType, network_index: int) -> ConstraintBase:
     return group
 
 
-def _parse_networks(spec: SpecType) -> ConstraintBase:
+def _parse_networks(spec: Spec) -> ConstraintBase:
     """
     Parse a network-related constraints.
 
@@ -1789,7 +1685,7 @@ def _parse_networks(spec: SpecType) -> ConstraintBase:
     return group
 
 
-def _parse_system(spec: SpecType) -> ConstraintBase:
+def _parse_system(spec: Spec) -> ConstraintBase:
     """
     Parse constraints related to the ``system`` HW requirement.
 
@@ -1816,7 +1712,7 @@ def _parse_system(spec: SpecType) -> ConstraintBase:
     return group
 
 
-def _parse_beaker(spec: SpecType) -> ConstraintBase:
+def _parse_beaker(spec: Spec) -> ConstraintBase:
     """
     Parse constraints related to the ``system`` HW requirement.
 
@@ -1837,7 +1733,7 @@ def _parse_beaker(spec: SpecType) -> ConstraintBase:
     return group
 
 
-def _parse_generic_spec(spec: SpecType) -> ConstraintBase:
+def _parse_generic_spec(spec: Spec) -> ConstraintBase:
     """
     Parse actual constraints.
 
@@ -1895,7 +1791,7 @@ def _parse_generic_spec(spec: SpecType) -> ConstraintBase:
     return group
 
 
-def _parse_and(spec: SpecType) -> ConstraintBase:
+def _parse_and(spec: Spec) -> ConstraintBase:
     """
     Parse an ``and`` clause holding one or more subblocks or constraints.
 
@@ -1913,7 +1809,7 @@ def _parse_and(spec: SpecType) -> ConstraintBase:
     return group
 
 
-def _parse_or(spec: SpecType) -> ConstraintBase:
+def _parse_or(spec: Spec) -> ConstraintBase:
     """
     Parse an ``or`` clause holding one or more subblocks or constraints.
 
@@ -1931,7 +1827,7 @@ def _parse_or(spec: SpecType) -> ConstraintBase:
     return group
 
 
-def _parse_block(spec: SpecType) -> ConstraintBase:
+def _parse_block(spec: Spec) -> ConstraintBase:
     """
     Parse a generic block of HW constraints - may contain ``and`` and ``or`` subblocks and actual constraints.
 
@@ -1949,7 +1845,7 @@ def _parse_block(spec: SpecType) -> ConstraintBase:
         return _parse_generic_spec(spec)
 
 
-def constraints_from_environment_requirements(spec: SpecType) -> Result[ConstraintBase, 'Failure']:
+def constraints_from_environment_requirements(spec: Spec) -> Result[ConstraintBase, 'Failure']:
     """
     Convert raw specification of HW constraints to our internal representation.
 
@@ -1977,7 +1873,7 @@ class HWRequirements(SerializableContainer):
     arch: str
 
     #: Additional HW constraints.
-    constraints: Optional[SpecType] = None
+    constraints: Optional[Spec] = None
 
 
 @dataclasses.dataclass(repr=False)

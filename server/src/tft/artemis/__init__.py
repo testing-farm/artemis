@@ -66,6 +66,7 @@ import sentry_sdk.types
 import sentry_sdk.utils
 import stackprinter
 from gluetool.result import Error, Ok, Result
+from tmt.hardware import UNITS
 from typing_extensions import ParamSpec, Self
 
 __VERSION__ = pkg_resources.get_distribution('tft-artemis').version
@@ -1530,8 +1531,6 @@ def template_environment(guest_request: Optional[artemis_db.GuestRequest]) -> di
 
 
 def _rss_factory() -> 'SizeType':
-    from .environment import UNITS
-
     return UNITS.Quantity(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss, UNITS.kilobytes)
 
 
@@ -1547,8 +1546,6 @@ class RSSWatcher:
     def delta(self) -> Optional['SizeType']:
         if self.new_rss is None:
             return None
-
-        from .environment import UNITS
 
         return UNITS.Quantity(self.new_rss.to('bytes').magnitude - self.old_rss.to('bytes').magnitude, UNITS.bytes)
 

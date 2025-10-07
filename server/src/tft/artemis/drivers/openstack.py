@@ -21,11 +21,11 @@ import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 from keystoneauth1.identity import v3
 from novaclient import client as nocl
+from tmt.hardware import UNITS
 
 from .. import Failure, JSONType, process_output_to_str, safe_call
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, SnapshotRequest
 from ..environment import (
-    UNITS,
     Environment,
     Flavor,
     FlavorBoot,

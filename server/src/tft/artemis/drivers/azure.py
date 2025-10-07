@@ -15,13 +15,13 @@ import gluetool.utils
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 from gluetool.utils import normalize_bool_option
+from tmt.hardware import UNITS
 
 from tft.artemis.drivers.aws import awscli_error_cause_extractor
 
 from .. import Failure, JSONType, log_dict_yaml, render_template
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, SnapshotRequest
 from ..environment import (
-    UNITS,
     Flavor,
     FlavorBoot,
     FlavorCpu,
