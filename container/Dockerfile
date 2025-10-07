@@ -29,6 +29,9 @@ ENV HOME=/tmp
 # default kerberos ccache file
 ENV KRB_CCACHE=/dev/shm/ccache
 
+# default config directory for tmt
+ENV TMT_CONFIG_DIR=/tmp/tmt
+
 ENV PATH="/tmp/.local/bin:$PATH"
 
 #
