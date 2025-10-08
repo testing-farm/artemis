@@ -1610,16 +1610,18 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
                 property_name, _, child_property, _ = constraint.expand_name()
 
                 if property_name == 'boot' and child_property == 'method':
-                    if constraint.operator == Operator.CONTAINS:
-                        requested = constraint.value
-                        image_methods = set(image.boot.method or [])
-                        flavor_methods = set(flavor.boot.method or [])
+                    # Expected boot method of the instance is a union of the image and flavor booth method
+                    expected_boot_method = set(image.boot.method) & set(flavor.boot.method)
+                
+                    # UEFI is preferred over legacy bios
+                    if len(expected_boot_method) > 1:
+                        expected_boot_method = {'uefi'}
 
-                        # Enforce exclusivity for both image and flavor when a specific method is requested
-                        return image_methods == {requested} and flavor_methods == {requested}
+                    if constraint.operator == Operator.CONTAINS:
+                        return expected_boot_method == {constraint.value}
 
                     if constraint.operator == Operator.NOTCONTAINS:
-                        return constraint.value not in (image.boot.method + flavor.boot.method)
+                        return constraint.value not in expected_boot_method
 
                     return False
 
@@ -2637,6 +2639,8 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
                 except Exception as exc:
                     return Error(Failure.from_exc('failed to parse AWS output', exc))
 
+                arch = _aws_arch_to_arch(image['Architecture'])
+
                 if aws_boot_mode:
                     boot_method = _aws_boot_to_boot(aws_boot_mode)
 
@@ -2646,7 +2650,9 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
                         image_boot = FlavorBoot(method=[boot_method])
 
                 else:
-                    image_boot = FlavorBoot()
+                    # When boot method is unset, default to `bios` for x86_64 and `uefi` for aarch64.
+                    # See https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/launch-instance-boot-mode.html
+                    image_boot = FlavorBoot(method=['bios' if arch == 'x86_64' else 'uefi'])
 
                 try:
                     images.append(
