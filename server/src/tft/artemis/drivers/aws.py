@@ -1315,7 +1315,7 @@ def _aws_arch_to_arch(arch: str) -> str:
     return arch
 
 
-def _aws_boot_to_boot(boot_method: str) -> FlavorBootMethodType:
+def _aws_boot_mode_to_boot_method(boot_mode: str) -> FlavorBootMethodType:
     """
     Convert image/instance type boot method as known to AWS EC2 API to boot method as tracked by Artemis.
 
@@ -1326,16 +1326,154 @@ def _aws_boot_to_boot(boot_method: str) -> FlavorBootMethodType:
     :returns: boot method as known to Artemis.
     """
 
-    if boot_method == 'legacy-bios':
+    if boot_mode == 'legacy-bios':
         return 'bios'
 
-    if boot_method == 'uefi':
+    if boot_mode == 'uefi':
         return 'uefi'
 
-    if boot_method == 'uefi-preffered':
+    if boot_mode == 'uefi-preffered':
         return 'uefi-preferred'
 
-    return cast(FlavorBootMethodType, boot_method)
+    return cast(FlavorBootMethodType, boot_mode)
+
+
+def _aws_ami_boot_mode_to_boot_method(boot_mode: str, arch: str) -> list[FlavorBootMethodType]:
+    if boot_mode:
+        boot_method = _aws_boot_mode_to_boot_method(boot_mode)
+
+        if boot_method == 'uefi-preferred':
+            return ['bios', 'uefi']
+
+        return [boot_method]
+
+    # When boot method is unset, default to `bios` for x86_64 and `uefi` for aarch64.
+    # See https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/launch-instance-boot-mode.html
+    return ['bios' if arch == 'x86_64' else 'uefi']
+
+
+# Table at https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/launch-instance-boot-mode.html
+# describes the following combinations:
+#
+# | Image         | OS      | Flavor        | Resulting |
+# +---------------+---------+---------------+-----------+
+# | UEFI          | UEFI    | UEFI          | UEFI      |
+# | BIOS          | BIOS    | BIOS          | BIOS      |
+# | BIOS, UEFI    | UEFI    | UEFI          | UEFI      |
+# | BIOS, UEFI    | UEFI    | BIOS, UEFI    | UEFI      |
+# | BIOS, UEFI    | BIOS    | BIOS          | BIOS      |
+# | BIOS, UEFI    | BIOS    | BIOS, UEFI    | BIOS      |
+#
+# Let's assume that OS is not important as it always supports both BIOS and UEFI modes. A table without
+# the OS column would look like this:
+#
+# | Image         | OS      | Flavor        | Resulting |
+# +---------------+---------+---------------+-----------+
+# | UEFI          |         | UEFI          | UEFI      |
+# | UEFI          |         | BIOS          | ....      |
+# | UEFI          |         | BIOS, UEFI    | UEFI      |
+# | BIOS          |         | BIOS          | BIOS      |
+# | BIOS          |         | UEFI          | ....      |
+# | BIOS          |         | BIOS, UEFI    | BIOS      |
+# | BIOS, UEFI    |         | UEFI          | UEFI      |
+# | BIOS, UEFI    |         | BIOS, UEFI    | UEFI      |
+# | BIOS, UEFI    |         | BIOS          | BIOS      |
+# | BIOS, UEFI    |         | BIOS, UEFI    | UEFI      |
+#
+# Notice:
+#
+# * The change in the last row, it becomes equivalent to the third row as OS supports both UEFI and BIOS, and it is not
+#   told to prefer any of the options.
+# * Several new rows. The original table does not define these combinations, they are obviously incompatible, but we can
+#   encounter such combinations, and we need to define their outcome.
+#
+# The table with constraint & expected outcome:
+#
+# | Image         | OS      | Flavor        | Resulting | Requested | Allowed |
+# +---------------+---------+---------------+-----------+-----------+---------+
+#
+# | UEFI          |         | UEFI          | UEFI      | + BIOS    | No
+# | UEFI          |         | BIOS          | ....      | + BIOS    | No
+# | UEFI          |         | BIOS, UEFI    | UEFI      | + BIOS    | No
+# | BIOS          |         | BIOS          | BIOS      | + BIOS    | Yes
+# | BIOS          |         | UEFI          | ....      | + BIOS    | No
+# | BIOS          |         | BIOS, UEFI    | BIOS      | + BIOS    | Yes
+# | BIOS, UEFI    |         | UEFI          | UEFI      | + BIOS    | No
+# | BIOS, UEFI    |         | BIOS, UEFI    | UEFI      | + BIOS    | No
+# | BIOS, UEFI    |         | BIOS          | BIOS      | + BIOS    | Yes
+#
+# | UEFI          |         | UEFI          | UEFI      | - BIOS    | Yes
+# | UEFI          |         | BIOS          | ....      | - BIOS    | No
+# | UEFI          |         | BIOS, UEFI    | UEFI      | - BIOS    | Yes
+# | BIOS          |         | BIOS          | BIOS      | - BIOS    | No
+# | BIOS          |         | UEFI          | ....      | - BIOS    | No
+# | BIOS          |         | BIOS, UEFI    | BIOS      | - BIOS    | No
+# | BIOS, UEFI    |         | UEFI          | UEFI      | - BIOS    | Yes
+# | BIOS, UEFI    |         | BIOS, UEFI    | UEFI      | - BIOS    | Yes
+# | BIOS, UEFI    |         | BIOS          | BIOS      | - BIOS    | No
+#
+# | UEFI          |         | UEFI          | UEFI      | + UEFI    | Yes
+# | UEFI          |         | BIOS          | ....      | + UEFI    | No
+# | UEFI          |         | BIOS, UEFI    | UEFI      | + UEFI    | Yes
+# | BIOS          |         | BIOS          | BIOS      | + UEFI    | No
+# | BIOS          |         | UEFI          | ....      | + UEFI    | No
+# | BIOS          |         | BIOS, UEFI    | BIOS      | + UEFI    | No
+# | BIOS, UEFI    |         | UEFI          | UEFI      | + UEFI    | Yes
+# | BIOS, UEFI    |         | BIOS, UEFI    | UEFI      | + UEFI    | Yes
+# | BIOS, UEFI    |         | BIOS          | BIOS      | + UEFI    | No
+#
+# | UEFI          |         | UEFI          | UEFI      | - UEFI    | No
+# | UEFI          |         | BIOS          | ....      | - UEFI    | No
+# | UEFI          |         | BIOS, UEFI    | UEFI      | - UEFI    | No
+# | BIOS          |         | BIOS          | BIOS      | - UEFI    | Yes
+# | BIOS          |         | UEFI          | ....      | - UEFI    | No
+# | BIOS          |         | BIOS, UEFI    | BIOS      | - UEFI    | Yes
+# | BIOS, UEFI    |         | UEFI          | UEFI      | - UEFI    | No
+# | BIOS, UEFI    |         | BIOS, UEFI    | UEFI      | - UEFI    | No
+# | BIOS, UEFI    |         | BIOS          | BIOS      | - UEFI    | Yes
+
+#: Matrix of supported boot modes: (image boot mode, flavor boot mode, constraint, supported)
+_AWS_BOOT_MODE_MATRIX = [
+    ('uefi',       'uefi',       'contains bios', False),
+    ('uefi',       'bios',       'contains bios', False),
+    ('uefi',       'bios, uefi', 'contains bios', False),
+    ('bios',       'bios',       'contains bios', True),
+    ('bios',       'uefi',       'contains bios', False),
+    ('bios',       'bios, uefi', 'contains bios', True),
+    ('bios, uefi', 'uefi',       'contains bios', False),
+    ('bios, uefi', 'bios, uefi', 'contains bios', False),
+    ('bios, uefi', 'bios',       'contains bios', True),
+
+    ('uefi',       'uefi',       'not contains non exclusive bios', True),
+    ('uefi',       'bios',       'not contains non exclusive bios', False),
+    ('uefi',       'bios, uefi', 'not contains non exclusive bios', True),
+    ('bios',       'bios',       'not contains non exclusive bios', False),
+    ('bios',       'uefi',       'not contains non exclusive bios', False),
+    ('bios',       'bios, uefi', 'not contains non exclusive bios', False),
+    ('bios, uefi', 'uefi',       'not contains non exclusive bios', True),
+    ('bios, uefi', 'bios, uefi', 'not contains non exclusive bios', True),
+    ('bios, uefi', 'bios',       'not contains non exclusive bios', False),
+
+    ('uefi',       'uefi',       'contains uefi', True),
+    ('uefi',       'bios',       'contains uefi', False),
+    ('uefi',       'bios, uefi', 'contains uefi', True),
+    ('bios',       'bios',       'contains uefi', False),
+    ('bios',       'uefi',       'contains uefi', False),
+    ('bios',       'bios, uefi', 'contains uefi', False),
+    ('bios, uefi', 'uefi',       'contains uefi', True),
+    ('bios, uefi', 'bios, uefi', 'contains uefi', True),
+    ('bios, uefi', 'bios',       'contains uefi', False),
+
+    ('uefi',       'uefi',       'not contains non exclusive uefi', False),
+    ('uefi',       'bios',       'not contains non exclusive uefi', False),
+    ('uefi',       'bios, uefi', 'not contains non exclusive uefi', False),
+    ('bios',       'bios',       'not contains non exclusive uefi', True),
+    ('bios',       'uefi',       'not contains non exclusive uefi', False),
+    ('bios',       'bios, uefi', 'not contains non exclusive uefi', True),
+    ('bios, uefi', 'uefi',       'not contains non exclusive uefi', False),
+    ('bios, uefi', 'bios, uefi', 'not contains non exclusive uefi', False),
+    ('bios, uefi', 'bios',       'not contains non exclusive uefi', True),
+]
 
 
 class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
@@ -1550,39 +1688,36 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         if not image.boot.method:
             return Ok(suitable_flavors)
 
-        return Ok(
-            list(
-                logging_filter(
-                    logger,
-                    suitable_flavors,
-                    'image boot method is supported',
-                    lambda logger, flavor: any(method in flavor.boot.method for method in image.boot.method),
+        if not guest_request.environment.has_hw_constraints:
+            return Ok(
+                list(
+                    logging_filter(
+                        logger,
+                        suitable_flavors,
+                        'image boot method is supported',
+                        lambda logger, flavor: any(method in flavor.boot.method for method in image.boot.method),
+                    )
                 )
             )
-        )
-
-    def _filter_flavors_hw_constraints(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        image: PoolImageInfo,
-        suitable_flavors: list[AWSFlavor],
-    ) -> Result[list[AWSFlavor], Failure]:
-        if not guest_request.environment.has_hw_constraints:
-            return Ok(suitable_flavors)
 
         r_constraints = guest_request.environment.get_hw_constraints()
 
         if r_constraints.is_error:
-            r_constraints.unwrap_error().handle(logger)
-
-            return Ok([])
+            return Error(r_constraints.unwrap_error())
 
         constraints = r_constraints.unwrap()
 
         if constraints is None:
-            return Ok(suitable_flavors)
+            return Ok(
+                list(
+                    logging_filter(
+                        logger,
+                        suitable_flavors,
+                        'image boot method is supported',
+                        lambda logger, flavor: any(method in flavor.boot.method for method in image.boot.method),
+                    )
+                )
+            )
 
         def _boot_method_requested(logger: ContextAdapter, flavor: AWSFlavor) -> bool:
             r_span = _get_constraint_span(logger, guest_request, flavor)
@@ -1600,32 +1735,24 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
             for constraint in span:
                 property_name, _, child_property, _ = constraint.expand_name()
 
-                if property_name == 'boot' and child_property == 'method':
-                    # Expected boot method of the instance is a union of the image and flavor booth method
-                    expected_boot_method = set(image.boot.method) & set(flavor.boot.method)
-                
-                    # UEFI is preferred over legacy bios
-                    if len(expected_boot_method) > 1:
-                        expected_boot_method = {'uefi'}
+                if property_name != 'boot' or child_property != 'method':
+                    continue
 
-                    if constraint.operator == Operator.CONTAINS:
-                        return expected_boot_method == {constraint.value}
+                needle = (
+                    ', '.join(sorted(image.boot.method)),
+                    ', '.join(sorted(flavor.boot.method)),
+                    f'{constraint.operator.value} {constraint.value}',
+                    True
+                )
 
-                    if constraint.operator == Operator.NOTCONTAINS:
-                        return constraint.value not in expected_boot_method
-
-                    return False
-
-            # There was no constraint related to boot method, otherwise we wouldn't be at this point. Which means,
-            # boot method has not been requested, and therefore it does not matter.
-            return True
+                return needle in _AWS_BOOT_MODE_MATRIX
 
         return Ok(
             list(
                 logging_filter(
                     logger,
                     suitable_flavors,
-                    'requested boot method is supported by image and flavor',
+                    'image and flavor boot methods match',
                     _boot_method_requested,
                 )
             )
@@ -1647,7 +1774,6 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
             self._filter_flavors_console_url_support,
             self._filter_flavors_image_ena_support,
             self._filter_flavors_image_boot_method,
-            self._filter_flavors_hw_constraints,
             self._filter_flavors_prefer_default_flavor,
             self._filter_flavors_default_fallback,
         )
@@ -2631,19 +2757,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
                     return Error(Failure.from_exc('failed to parse AWS output', exc))
 
                 arch = _aws_arch_to_arch(image['Architecture'])
-
-                if aws_boot_mode:
-                    boot_method = _aws_boot_to_boot(aws_boot_mode)
-
-                    if boot_method == 'uefi-preferred':
-                        image_boot = FlavorBoot(method=['bios', 'uefi'])
-                    else:
-                        image_boot = FlavorBoot(method=[boot_method])
-
-                else:
-                    # When boot method is unset, default to `bios` for x86_64 and `uefi` for aarch64.
-                    # See https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/launch-instance-boot-mode.html
-                    image_boot = FlavorBoot(method=['bios' if arch == 'x86_64' else 'uefi'])
+                boot_method = _aws_ami_boot_mode_to_boot_method(aws_boot_mode, arch)
 
                 try:
                     images.append(
@@ -2729,7 +2843,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
 
                 try:
                     boot_methods: list[FlavorBootMethodType] = [
-                        _aws_boot_to_boot(boot_method)
+                        _aws_boot_mode_to_boot_method(boot_method)
                         for boot_method in JQ_QUERY_FLAVOR_SUPPORTED_BOOT_MODES.input(raw_flavor).all()
                     ]
 

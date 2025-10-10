@@ -86,12 +86,12 @@ def test_boot_method_mismatch(
     assert not r_suitable_flavors.unwrap()
 
 
-@pytest.mark.parametrize("boot_method_constraint, image_boot_method, selected_flavors", (
+@pytest.mark.parametrize("boot_method_constraint, image_boot_method, expected_flavors", (
     ('bios',   ['bios'], ['x86_64.1', 'x86_64.2', 'x86_64.3']),
     ('bios',   ['bios', 'uefi'], ['x86_64.1', 'x86_64.2']),
     ('bios',   ['uefi'], []),
 
-    ('!= bios',  ['bios'], []),
+    ('!= bios',  ['bios'], ['x86_64.3', 'aarch64.1']),
     ('!= bios',  ['bios', 'uefi'], ['x86_64.3', 'aarch64.1']),
     ('!= bios',  ['uefi'], ['x86_64.3', 'aarch64.1']),
 
@@ -112,7 +112,7 @@ def test_boot_method_selection(
     image: AWSPoolImageInfo,
     boot_method_constraint: str,
     image_boot_method: list[FlavorBootMethodType],
-    selected_flavors: list[str]
+    expected_flavors: list[str]
 ) -> None:
     image.boot.method = image_boot_method
 
@@ -122,4 +122,4 @@ def test_boot_method_selection(
 
     r_suitable_flavors = aws_pool._filter_flavors_hw_constraints(logger, session, guest_request, image, flavors)
 
-    assert [flavor.id for flavor in r_suitable_flavors.unwrap()] == selected_flavors 
+    assert [flavor.id for flavor in r_suitable_flavors.unwrap()] == expected_flavors
