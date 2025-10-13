@@ -306,6 +306,17 @@ KNOB_UPDATE_GUEST_REQUEST_TICK: Knob[int] = Knob(
     default=30,
 )
 
+KNOB_UPDATE_GUEST_REQUEST_LOG_TICK: Knob[int] = Knob(
+    'pool.update-guest-request.log-tick',
+    'How long, in seconds, to take between updating a guest log.',
+    # TODO: enable DB backing, but that will require more handling in drivers if fetching this value fails.
+    has_db=False,
+    per_entity=True,
+    envvar='ARTEMIS_UPDATE_GUEST_REQUEST_LOG_TICK',
+    cast_from_str=int,
+    default=300,
+)
+
 KNOB_LOGGING_CLI_OUTPUT: Knob[bool] = Knob(
     'logging.cli.commands',
     """
