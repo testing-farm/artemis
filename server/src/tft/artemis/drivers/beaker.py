@@ -2097,7 +2097,7 @@ class BeakerDriver(PoolDriver):
             'network[].max_size',
             'network.length',
             'network.expanded_length',
-            'system.numa_node',
+            'system.numa_nodes',
             'zcrypt.adapter',
             'zcrypt.mode',
         ]
