@@ -457,21 +457,20 @@ class PoolLogger(gluetool.log.ContextAdapter):
         return cast(str, self._contexts['pool_name'][1])
 
 
-class PoolErrorCauses(enum.Enum):
+class ErrorCause(enum.Enum):
     """
     A base class for enums listing various error causes recognized by pools for the purpose of collecting metrics.
     """
 
 
-class CommonPoolErrorCauses(enum.Enum):
-    NONE = 'none'
+class CommonErrorCause(ErrorCause):
     RESOURCE_METRICS_REFRESH_FAILED = 'resource-metrics-refresh-failed'
     FLAVOR_INFO_REFRESH_FAILED = 'flavor-info-refresh-failed'
     IMAGE_INFO_REFRESH_FAILED = 'image-info-refresh-failed'
 
 
 #: A type for callables extracting CLI error cause from process output.
-PoolErrorCauseExtractor = Callable[[gluetool.utils.ProcessOutput], PoolErrorCauses]
+PoolErrorCauseExtractor = Callable[[gluetool.utils.ProcessOutput], Optional[ErrorCause]]
 
 
 @dataclasses.dataclass(repr=False)
@@ -1279,8 +1278,6 @@ class PoolDriver(gluetool.log.LoggerMixin):
     image_info_class: type[PoolImageInfo] = PoolImageInfo
     flavor_info_class: type[Flavor] = Flavor
     pool_data_class: type[PoolData] = PoolData
-    pool_error_causes_enum: type[PoolErrorCauses]
-    cli_error_cause_extractor: Optional[PoolErrorCauseExtractor] = None
 
     #: Template for a cache key holding pool image info.
     POOL_IMAGE_INFO_CACHE_KEY = 'pool.{}.image-info'
@@ -1290,6 +1287,8 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
     #: Hold all known guest log updaters, with key being driver name, log name and its content type.
     guest_log_updaters: ClassVar[dict[tuple[str, str, GuestLogContentType], str]] = {}
+
+    error_cause_patterns: ClassVar[dict[ErrorCause, Pattern[str]]] = {}
 
     def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str, pool_config: dict[str, Any]) -> None:
         super().__init__(logger)
@@ -1443,6 +1442,36 @@ class PoolDriver(gluetool.log.LoggerMixin):
         correctness or anything else.
         """
         return Ok(True)
+
+    @classmethod
+    def extract_error_cause(cls, text: str) -> Optional[ErrorCause]:
+        for cause, pattern in cls.error_cause_patterns.items():
+            if not pattern.match(text):
+                continue
+
+            return cause
+
+        return None
+
+    @classmethod
+    def extract_error_cause_from_cli(cls, output: gluetool.utils.ProcessOutput) -> Optional[ErrorCause]:
+        if output.exit_code == 0:
+            return None
+
+        stdout = process_output_to_str(output, stream='stdout')
+        stderr = process_output_to_str(output, stream='stderr')
+
+        stdout = stdout.strip() if stdout is not None else None
+        stderr = stderr.strip() if stderr is not None else None
+
+        for cause, pattern in cls.error_cause_patterns.items():
+            if stdout and pattern.search(stdout):
+                return cause
+
+            if stderr and pattern.search(stderr):
+                return cause
+
+        return None
 
     def image_name_to_image_info(
         self, logger: gluetool.log.ContextAdapter, imagename: str
@@ -2256,7 +2285,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         r_resource_metrics = self.fetch_pool_resources_metrics(logger)
 
         if r_resource_metrics.is_error:
-            PoolMetrics(self.poolname).inc_error(self.poolname, CommonPoolErrorCauses.RESOURCE_METRICS_REFRESH_FAILED)
+            PoolMetrics(self.poolname).inc_error(self.poolname, CommonErrorCause.RESOURCE_METRICS_REFRESH_FAILED)
 
             return Error(r_resource_metrics.unwrap_error())
 
@@ -2403,7 +2432,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         r_image_info = self.fetch_pool_image_info()
 
         if r_image_info.is_error:
-            PoolMetrics(self.poolname).inc_error(self.poolname, CommonPoolErrorCauses.IMAGE_INFO_REFRESH_FAILED)
+            PoolMetrics(self.poolname).inc_error(self.poolname, CommonErrorCause.IMAGE_INFO_REFRESH_FAILED)
 
             return Error(r_image_info.unwrap_error())
 
@@ -2579,7 +2608,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         r_flavor_info = self.fetch_pool_flavor_info()
 
         if r_flavor_info.is_error:
-            PoolMetrics(self.poolname).inc_error(self.poolname, CommonPoolErrorCauses.FLAVOR_INFO_REFRESH_FAILED)
+            PoolMetrics(self.poolname).inc_error(self.poolname, CommonErrorCause.FLAVOR_INFO_REFRESH_FAILED)
 
             return Error(r_flavor_info.unwrap_error())
 
@@ -3416,7 +3445,7 @@ class CLISessionPermanentDir:
             command_scrubber=lambda cmd: [self.CLI_PREFIX, *options],
             poolname=self.pool.poolname,
             commandname=commandname,
-            cause_extractor=self.pool.cli_error_cause_extractor,
+            cause_extractor=self.pool.extract_error_cause_from_cli,
         )
 
         # Release the lock

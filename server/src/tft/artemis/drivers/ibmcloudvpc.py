@@ -33,9 +33,9 @@ from ..environment import (
 from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from . import (
+    ErrorCause as _ErrorCause,
     FlavorBasedPoolDriver,
     GuestTagsType,
-    PoolErrorCauses,
     PoolImageSSHInfo,
     ProvisioningProgress,
     ProvisioningState,
@@ -71,12 +71,6 @@ IBMCLOUD_RESOURCE_TYPE: dict[str, ResourceType] = {
     'floating-ip': ResourceType.STATIC_IP,
     'security-group': ResourceType.SECURITY_GROUP,
 }
-
-
-class IBMCloudVPCErrorCauses(PoolErrorCauses):
-    NONE = 'none'
-
-    UNEXPECTED_INSTANCE_STATE = 'unexpected-instance-state'
 
 
 # Limits imposed on tags in IBM VPC cloud.
@@ -244,6 +238,14 @@ class IBMCloudVPCDriver(FlavorBasedPoolDriver[IBMCloudVPCPoolImageInfo, IBMCloud
     pool_data_class = IBMCloudPoolData
 
     _image_map_hook_name = 'IBMCLOUD_VPC_ENVIRONMENT_TO_IMAGE'
+
+    class ErrorCause(_ErrorCause):
+        UNEXPECTED_INSTANCE_STATE = 'unexpected-instance-state'
+
+        # "Inherited" from CommonErrorCause:
+        RESOURCE_METRICS_REFRESH_FAILED = 'resource-metrics-refresh-failed'
+        FLAVOR_INFO_REFRESH_FAILED = 'flavor-info-refresh-failed'
+        IMAGE_INFO_REFRESH_FAILED = 'image-info-refresh-failed'
 
     def __init__(
         self,
@@ -734,7 +736,7 @@ class IBMCloudVPCDriver(FlavorBasedPoolDriver[IBMCloudVPCPoolImageInfo, IBMCloud
             return Ok(ProvisioningProgress(state=ProvisioningState.COMPLETE, pool_data=pool_data, address=ip_address))
 
         # Let's consider all other states as something unexpected and thus a failure
-        PoolMetrics.inc_error(self.poolname, IBMCloudVPCErrorCauses.UNEXPECTED_INSTANCE_STATE)
+        PoolMetrics.inc_error(self.poolname, IBMCloudVPCDriver.ErrorCause.UNEXPECTED_INSTANCE_STATE)
 
         return Ok(
             ProvisioningProgress(

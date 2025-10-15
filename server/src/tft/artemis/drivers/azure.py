@@ -17,7 +17,7 @@ from gluetool.result import Error, Ok, Result
 from gluetool.utils import normalize_bool_option
 from tmt.hardware import UNITS
 
-from tft.artemis.drivers.aws import awscli_error_cause_extractor
+from tft.artemis.drivers.aws import AWSDriver
 
 from .. import Failure, JSONType, log_dict_yaml, render_template
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, SnapshotRequest
@@ -225,7 +225,7 @@ class AzureSession:
             command_scrubber=lambda cmd: ['azure', *options],
             poolname=self.pool.poolname,
             commandname=commandname,
-            cause_extractor=awscli_error_cause_extractor,
+            cause_extractor=self.pool.extract_error_cause_from_cli,
         )
 
         if r_run.is_error:
@@ -276,6 +276,8 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
     pool_data_class = AzurePoolData
 
     _image_map_hook_name = 'AZURE_ENVIRONMENT_TO_IMAGE'
+
+    error_cause_patterns = AWSDriver.error_cause_patterns
 
     def __init__(
         self,

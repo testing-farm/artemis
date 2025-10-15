@@ -79,7 +79,7 @@ class Workspace(_Workspace):
                 ssh_options=self.pool.ssh_options,
                 poolname=self.pool.poolname,
                 commandname='prepare-verify-ssh.shell-ping',
-                cause_extractor=self.pool.cli_error_cause_extractor,
+                cause_extractor=self.pool.extract_error_cause_from_cli,
             )
 
             if r_ping.is_error:

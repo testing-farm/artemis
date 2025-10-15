@@ -52,7 +52,7 @@ from .guest import GuestState
 from .knobs import KNOB_POOL_ENABLED, KNOB_SHELF_MAX_GUESTS, KNOB_WORKER_PROCESS_METRICS_TTL
 
 if TYPE_CHECKING:
-    from .drivers import PoolErrorCauses
+    from .drivers import ErrorCause
     from .tasks import NamedActorArgumentsType
 
 
@@ -1019,7 +1019,7 @@ class PoolMetrics(PoolMetricsBase):
     @staticmethod
     @with_context
     def inc_error(
-        pool: str, error: 'PoolErrorCauses', logger: gluetool.log.ContextAdapter, cache: redis.Redis
+        pool: str, error: 'ErrorCause', logger: gluetool.log.ContextAdapter, cache: redis.Redis
     ) -> Result[None, Failure]:
         """
         Increase counter for a given pool error by 1.
@@ -1041,7 +1041,7 @@ class PoolMetrics(PoolMetricsBase):
         instance_id: Optional[str],
         compose: str,
         arch: str,
-        cause: 'PoolErrorCauses',
+        cause: Optional['ErrorCause'],
         logger: gluetool.log.ContextAdapter,
         cache: redis.Redis,
     ) -> Result[None, Failure]:
@@ -1062,7 +1062,7 @@ class PoolMetrics(PoolMetricsBase):
             logger,
             cache,
             PoolMetrics._KEY_ABORTS.format(poolname=pool),  # noqa: FS002
-            f'{instance_id or ""}:{compose}:{arch}:{cause.value}',
+            f'{instance_id or ""}:{compose}:{arch}:{cause.value if cause else "none"}',
         )
 
         return Ok(None)
@@ -1076,7 +1076,7 @@ class PoolMetrics(PoolMetricsBase):
         duration: float,
         logger: gluetool.log.ContextAdapter,
         cache: redis.Redis,
-        cause: Optional['PoolErrorCauses'] = None,
+        cause: Optional['ErrorCause'] = None,
     ) -> Result[None, Failure]:
         """
         Increase counter for a given CLI command by 1.

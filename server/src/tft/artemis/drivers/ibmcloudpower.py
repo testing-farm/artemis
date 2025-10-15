@@ -5,7 +5,7 @@ import dataclasses
 import datetime
 import re
 from re import Pattern
-from typing import Any, Optional, TypedDict, cast
+from typing import Any, ClassVar, Optional, TypedDict, cast
 
 import gluetool.log
 import sqlalchemy.orm.session
@@ -15,16 +15,16 @@ from tmt.hardware import UNITS
 from tft.artemis.drivers import PoolDriver, PoolImageInfo
 from tft.artemis.drivers.ibmcloudvpc import IBMCloudPoolData, IBMCloudPoolResourcesIDs, IBMCloudSession
 
-from .. import Failure, JSONType, log_dict_yaml, process_output_to_str
+from .. import Failure, JSONType, log_dict_yaml
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
 from ..environment import And, Constraint, ConstraintBase, Flavor, FlavorBoot, SizeType
 from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from . import (
+    ErrorCause as _ErrorCause,
     FlavorBasedPoolDriver,
     GuestLogUpdateProgress,
     PoolCapabilities,
-    PoolErrorCauses,
     PoolImageSSHInfo,
     ProvisioningProgress,
     ProvisioningState,
@@ -80,42 +80,6 @@ class APIImageType(TypedDict):
     specifications: dict[str, Any]
 
 
-class IBMCloudPowerErrorCauses(PoolErrorCauses):
-    NONE = 'none'
-
-    MISSING_INSTANCE = 'missing-instance'
-    INSTANCE_NOT_READY = 'instance-not-ready'
-    UNEXPECTED_INSTANCE_STATE = 'unexpected-instance-state'
-
-
-CLI_ERROR_PATTERNS = {
-    IBMCloudPowerErrorCauses.MISSING_INSTANCE: re.compile(r'pvm-instance does not exist'),
-    IBMCloudPowerErrorCauses.INSTANCE_NOT_READY: re.compile(
-        r'server is still initializing, wait a few minutes and try again'
-    ),
-}
-
-
-def ibm_cloud_power_error_cause_extractor(output: gluetool.utils.ProcessOutput) -> IBMCloudPowerErrorCauses:
-    if output.exit_code == 0:
-        return IBMCloudPowerErrorCauses.NONE
-
-    stdout = process_output_to_str(output, stream='stdout')
-    stderr = process_output_to_str(output, stream='stderr')
-
-    stdout = stdout.strip() if stdout is not None else None
-    stderr = stderr.strip() if stderr is not None else None
-
-    for cause, pattern in CLI_ERROR_PATTERNS.items():
-        if stdout and pattern.search(stdout):
-            return cause
-
-        if stderr and pattern.search(stderr):
-            return cause
-
-    return IBMCloudPowerErrorCauses.NONE
-
-
 class IBMCloudPowerSession(IBMCloudSession):
     def _login(self, logger: gluetool.log.ContextAdapter) -> Result[None, Failure]:
         # Login can be reused from parent class as is but need to additionally set the target workspace
@@ -150,6 +114,21 @@ class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flav
     pool_data_class = IBMCloudPoolData
 
     _image_map_hook_name = 'IBMCLOUD_POWER_ENVIRONMENT_TO_IMAGE'
+
+    class ErrorCause(_ErrorCause):
+        MISSING_INSTANCE = 'missing-instance'
+        INSTANCE_NOT_READY = 'instance-not-ready'
+        UNEXPECTED_INSTANCE_STATE = 'unexpected-instance-state'
+
+        # "Inherited" from CommonErrorCause:
+        RESOURCE_METRICS_REFRESH_FAILED = 'resource-metrics-refresh-failed'
+        FLAVOR_INFO_REFRESH_FAILED = 'flavor-info-refresh-failed'
+        IMAGE_INFO_REFRESH_FAILED = 'image-info-refresh-failed'
+
+    error_cause_patterns: ClassVar = {
+        ErrorCause.MISSING_INSTANCE: re.compile(r'pvm-instance does not exist'),
+        ErrorCause.INSTANCE_NOT_READY: re.compile(r'server is still initializing, wait a few minutes and try again'),
+    }
 
     def __init__(
         self,
@@ -546,7 +525,7 @@ class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flav
 
             return Ok(ProvisioningProgress(state=ProvisioningState.COMPLETE, pool_data=pool_data, address=ip_address))
 
-        PoolMetrics.inc_error(self.poolname, IBMCloudPowerErrorCauses.UNEXPECTED_INSTANCE_STATE)
+        PoolMetrics.inc_error(self.poolname, IBMCloudPowerDriver.ErrorCause.UNEXPECTED_INSTANCE_STATE)
 
         return Ok(
             ProvisioningProgress(
@@ -654,8 +633,8 @@ class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flav
             # Detect "instance not ready".
             if (
                 failure.command_output
-                and ibm_cloud_power_error_cause_extractor(failure.command_output)
-                == IBMCloudPowerErrorCauses.INSTANCE_NOT_READY
+                and self.extract_error_cause_from_cli(failure.command_output)
+                == IBMCloudPowerDriver.ErrorCause.INSTANCE_NOT_READY
             ):
                 return Ok(None)
 

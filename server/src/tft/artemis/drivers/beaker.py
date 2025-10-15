@@ -7,7 +7,7 @@ import os
 import re
 import stat
 from re import Pattern
-from typing import Any, Callable, Optional, cast
+from typing import Any, Callable, ClassVar, Optional, cast
 
 import bs4
 import gluetool.log
@@ -48,11 +48,11 @@ from ..metrics import PoolMetrics, PoolResourcesMetrics, PoolResourcesUsage, Res
 from . import (
     CanAcquire,
     CLIOutput,
+    ErrorCause as _ErrorCause,
     GuestLogUpdateProgress,
     PoolCapabilities,
     PoolData,
     PoolDriver,
-    PoolErrorCauses,
     PoolImageInfo,
     PoolImageSSHInfo,
     PoolResourcesIDs,
@@ -170,50 +170,6 @@ KNOB_BKR_COMMAND_TERMINATION_TIMEOUT: Knob[int] = Knob(
     cast_from_str=int,
     default=120,
 )
-
-
-class BkrErrorCauses(PoolErrorCauses):
-    NONE = 'none'
-    RESOURCE_METRICS_REFRESH_FAILED = 'resource-metrics-refresh-failed'
-    FLAVOR_INFO_REFRESH_FAILED = 'flavor-info-refresh-failed'
-    IMAGE_INFO_REFRESH_FAILED = 'image-info-refresh-failed'
-    NO_DISTRO_MATCHES_RECIPE = 'no-distro-matches-recipe'
-    NO_SYSTEM_MATCHES_RECIPE = 'no-system-matches-recipe'
-
-    JOB_FAILED = 'job-failed'
-    JOB_ABORTED = 'job-aborted'
-    JOB_CANCELLED = 'job-cancelled'
-    JOB_RESERVED_WITH_WARNING = 'job-reserved-with-warning'
-    JOB_INSTALLATION_TIMEOUT = 'job-installation-timeout'
-
-
-CLI_ERROR_PATTERNS = {
-    BkrErrorCauses.NO_DISTRO_MATCHES_RECIPE: re.compile(r'^Exception: .+:No distro tree matches Recipe:'),
-    BkrErrorCauses.NO_SYSTEM_MATCHES_RECIPE: re.compile(r'^Recipe ID \d+ does not match any systems'),
-}
-
-
-def error_cause_extractor(text: str) -> BkrErrorCauses:
-    for cause, pattern in CLI_ERROR_PATTERNS.items():
-        if not pattern.match(text):
-            continue
-
-        return cause
-
-    return BkrErrorCauses.NONE
-
-
-def bkr_error_cause_extractor(output: gluetool.utils.ProcessOutput) -> BkrErrorCauses:
-    if output.exit_code == 0:
-        return BkrErrorCauses.NONE
-
-    stderr = process_output_to_str(output, stream='stderr')
-    stderr = stderr.strip() if stderr is not None else None
-
-    if stderr is None:
-        return BkrErrorCauses.NONE
-
-    return error_cause_extractor(stderr)
 
 
 @dataclasses.dataclass
@@ -1041,6 +997,26 @@ class BeakerDriver(PoolDriver):
 
     _image_map_hook_name = 'BEAKER_ENVIRONMENT_TO_IMAGE'
 
+    class ErrorCause(_ErrorCause):
+        NO_DISTRO_MATCHES_RECIPE = 'no-distro-matches-recipe'
+        NO_SYSTEM_MATCHES_RECIPE = 'no-system-matches-recipe'
+
+        JOB_FAILED = 'job-failed'
+        JOB_ABORTED = 'job-aborted'
+        JOB_CANCELLED = 'job-cancelled'
+        JOB_RESERVED_WITH_WARNING = 'job-reserved-with-warning'
+        JOB_INSTALLATION_TIMEOUT = 'job-installation-timeout'
+
+        # "Inherited" from CommonErrorCause:
+        RESOURCE_METRICS_REFRESH_FAILED = 'resource-metrics-refresh-failed'
+        FLAVOR_INFO_REFRESH_FAILED = 'flavor-info-refresh-failed'
+        IMAGE_INFO_REFRESH_FAILED = 'image-info-refresh-failed'
+
+    error_cause_patterns: ClassVar = {
+        ErrorCause.NO_DISTRO_MATCHES_RECIPE: re.compile(r'^Exception: .+:No distro tree matches Recipe:'),
+        ErrorCause.NO_SYSTEM_MATCHES_RECIPE: re.compile(r'^Recipe ID \d+ does not match any systems'),
+    }
+
     #: Template for a cache key holding avoid groups hostnames.
     POOL_AVOID_GROUPS_HOSTNAMES_CACHE_KEY = 'pool.{}.avoid-groups.hostnames'
 
@@ -1193,7 +1169,7 @@ class BeakerDriver(PoolDriver):
             command_scrubber=lambda cmd: ['bkr', *options],
             poolname=self.poolname,
             commandname=commandname,
-            cause_extractor=bkr_error_cause_extractor,
+            cause_extractor=self.extract_error_cause_from_cli,
             deadline=datetime.timedelta(seconds=r_timeout.unwrap()),
         )
 
@@ -1212,7 +1188,7 @@ class BeakerDriver(PoolDriver):
 
         failure.recoverable = False
 
-        PoolMetrics.inc_error(self.poolname, BkrErrorCauses.NO_DISTRO_MATCHES_RECIPE)
+        PoolMetrics.inc_error(self.poolname, BeakerDriver.ErrorCause.NO_DISTRO_MATCHES_RECIPE)
 
         return Ok(ProvisioningProgress(state=ProvisioningState.CANCEL, pool_data=pool_data, pool_failures=[failure]))
 
@@ -1638,7 +1614,7 @@ class BeakerDriver(PoolDriver):
         job_task_results: list[JobTaskResult],
         job_result: str,
         job_status: str,
-        job_failed: Optional[BkrErrorCauses],
+        job_failed: Optional[ErrorCause],
         system: Optional[str],
         failure_details: dict[str, Any],
     ) -> Result[Optional[ProvisioningProgress], Failure]:
@@ -1668,7 +1644,7 @@ class BeakerDriver(PoolDriver):
         job_task_results: list[JobTaskResult],
         job_result: str,
         job_status: str,
-        job_failed: Optional[BkrErrorCauses],
+        job_failed: Optional[ErrorCause],
         system: Optional[str],
         failure_details: dict[str, Any],
     ) -> Result[Optional[ProvisioningProgress], Failure]:
@@ -1729,7 +1705,7 @@ class BeakerDriver(PoolDriver):
                     system,
                     guest_request.environment.os.compose,
                     guest_request.environment.hw.arch,
-                    BkrErrorCauses.JOB_INSTALLATION_TIMEOUT,
+                    BeakerDriver.ErrorCause.JOB_INSTALLATION_TIMEOUT,
                 )
 
                 return Ok(
@@ -1757,7 +1733,7 @@ class BeakerDriver(PoolDriver):
         job_task_results: list[JobTaskResult],
         job_result: str,
         job_status: str,
-        job_failed: Optional[BkrErrorCauses],
+        job_failed: Optional[ErrorCause],
         system: Optional[str],
         failure_details: dict[str, Any],
     ) -> Result[Optional[ProvisioningProgress], Failure]:
@@ -1824,7 +1800,7 @@ class BeakerDriver(PoolDriver):
         job_task_results: list[JobTaskResult],
         job_result: str,
         job_status: str,
-        job_failed: Optional[BkrErrorCauses],
+        job_failed: Optional[ErrorCause],
         system: Optional[str],
         failure_details: dict[str, Any],
     ) -> Result[Optional[ProvisioningProgress], Failure]:
@@ -1855,7 +1831,7 @@ class BeakerDriver(PoolDriver):
                 list[JobTaskResult],
                 str,
                 str,
-                Optional[BkrErrorCauses],
+                Optional[ErrorCause],
                 Optional[str],
                 dict[str, Any],
             ],
@@ -1918,28 +1894,28 @@ class BeakerDriver(PoolDriver):
             tablefmt='psql',
         )
 
-        job_failed: Optional[BkrErrorCauses] = None
+        job_failed: Optional[BeakerDriver.ErrorCause] = None
 
         if job_result == 'fail':
-            job_failed = BkrErrorCauses.JOB_FAILED
+            job_failed = BeakerDriver.ErrorCause.JOB_FAILED
 
         elif job_status == 'aborted':
-            job_failed = BkrErrorCauses.JOB_ABORTED
+            job_failed = BeakerDriver.ErrorCause.JOB_ABORTED
 
         elif job_status == 'cancelled':
-            job_failed = BkrErrorCauses.JOB_CANCELLED
+            job_failed = BeakerDriver.ErrorCause.JOB_CANCELLED
 
         elif job_status == 'reserved' and job_result == 'warn':
-            job_failed = BkrErrorCauses.JOB_RESERVED_WITH_WARNING
+            job_failed = BeakerDriver.ErrorCause.JOB_RESERVED_WITH_WARNING
 
         if any(
-            error_cause_extractor(result.message) == BkrErrorCauses.NO_SYSTEM_MATCHES_RECIPE
+            self.extract_error_cause(result.message) == BeakerDriver.ErrorCause.NO_SYSTEM_MATCHES_RECIPE
             for result in job_task_results
             if result.message
         ):
             logger.warning('no system matches recipe')
 
-            job_failed = BkrErrorCauses.NO_SYSTEM_MATCHES_RECIPE
+            job_failed = BeakerDriver.ErrorCause.NO_SYSTEM_MATCHES_RECIPE
 
         failure_details: dict[str, Any] = {
             'job_result': job_result,
@@ -2015,7 +1991,7 @@ class BeakerDriver(PoolDriver):
             ssh_options=self.ssh_options,
             poolname=self.poolname,
             commandname='bkr.extend',
-            cause_extractor=bkr_error_cause_extractor,
+            cause_extractor=self.extract_error_cause_from_cli,
         )
 
         if r_output.is_error:
@@ -2126,7 +2102,8 @@ class BeakerDriver(PoolDriver):
 
             if (
                 failure.command_output
-                and bkr_error_cause_extractor(failure.command_output) == BkrErrorCauses.NO_DISTRO_MATCHES_RECIPE
+                and self.extract_error_cause_from_cli(failure.command_output)
+                == BeakerDriver.ErrorCause.NO_DISTRO_MATCHES_RECIPE
             ):
                 return self._handle_no_distro_matches_recipe_error(failure, guest_request)
 

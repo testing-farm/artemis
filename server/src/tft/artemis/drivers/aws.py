@@ -11,13 +11,7 @@ import os
 import re
 from collections.abc import Generator, Iterator, MutableSequence
 from re import Pattern
-from typing import (
-    Any,
-    Callable,
-    Optional,
-    Union,
-    cast,
-)
+from typing import Any, Callable, ClassVar, Optional, Union, cast
 
 import gluetool.log
 import gluetool.utils
@@ -36,7 +30,6 @@ from .. import (
     SerializableContainer,
     log_dict_yaml,
     logging_filter,
-    process_output_to_str,
     render_template,
 )
 from ..cache import get_cached_mapping_item, get_cached_mapping_values
@@ -57,13 +50,13 @@ from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from ..security_group_rules import SecurityGroupRule, SecurityGroupRules
 from . import (
+    ErrorCause as _ErrorCause,
     FlavorBasedPoolDriver,
     GuestLogUpdateProgress,
     GuestTagsType,
     PoolCapabilities,
     PoolData,
     PoolDriver,
-    PoolErrorCauses,
     PoolImageInfo,
     PoolImageSSHInfo,
     PoolResourcesIDs,
@@ -173,52 +166,6 @@ ConfigImageFilter = TypedDict(
 
 
 AWS_VM_HYPERVISORS = ('nitro', 'xen')
-
-
-class AWSErrorCauses(PoolErrorCauses):
-    NONE = 'none'
-    RESOURCE_METRICS_REFRESH_FAILED = 'resource-metrics-refresh-failed'
-    FLAVOR_INFO_REFRESH_FAILED = 'flavor-info-refresh-failed'
-    IMAGE_INFO_REFRESH_FAILED = 'image-info-refresh-failed'
-    MISSING_INSTANCE = 'missing-instance'
-    MISSING_SPOT_INSTANCE_REQUEST = 'missing-spot-instance-request'
-    REQUEST_LIMIT_EXCEEDED = 'request-limit-exceeded'
-    SPOT_PRICE_NOT_DETECTED = 'spot-price-not-detected'
-    INSTANCE_BUILDING_TOO_LONG = 'instance-building-too-long'
-    INSTANCE_TERMINATED_PREMATURELY = 'instance-terminated-prematurely'
-    SPOT_INSTANCE_TERMINATED_PREMATURELY = 'spot-instance-terminated-prematurely'
-    SPOT_INSTANCE_TERMINATED_NO_CAPACITY = 'spot-instance-terminated-no-capacity'
-    SPOT_INSTANCE_TERMINATED_UNEXPECTEDLY = 'spot-instance-terminated-unexpectedly'
-
-
-CLI_ERROR_PATTERNS = {
-    AWSErrorCauses.MISSING_INSTANCE: re.compile(
-        r'.+\(InvalidInstanceID\.NotFound\).+The instance ID \'.+\' does not exist'
-    ),
-    AWSErrorCauses.MISSING_SPOT_INSTANCE_REQUEST: re.compile(
-        r'.+\(InvalidSpotInstanceRequestID\.NotFound\).+The spot instance request ID \'.+\' does not exist'
-    ),
-    AWSErrorCauses.REQUEST_LIMIT_EXCEEDED: re.compile(r'.+\(RequestLimitExceeded\).+Request limit exceeded'),
-}
-
-
-def awscli_error_cause_extractor(output: gluetool.utils.ProcessOutput) -> AWSErrorCauses:
-    if output.exit_code == 0:
-        return AWSErrorCauses.NONE
-
-    stderr = process_output_to_str(output, stream='stderr')
-    stderr = stderr.strip() if stderr is not None else None
-
-    if stderr is None:
-        return AWSErrorCauses.NONE
-
-    for cause, pattern in CLI_ERROR_PATTERNS.items():
-        if not pattern.match(stderr):
-            continue
-
-        return cause
-
-    return AWSErrorCauses.NONE
 
 
 AWS_INSTANCE_SPECIFICATION = Template("""
@@ -1347,6 +1294,32 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
 
     _image_map_hook_name = 'AWS_ENVIRONMENT_TO_IMAGE'
 
+    class ErrorCause(_ErrorCause):
+        MISSING_INSTANCE = 'missing-instance'
+        MISSING_SPOT_INSTANCE_REQUEST = 'missing-spot-instance-request'
+        REQUEST_LIMIT_EXCEEDED = 'request-limit-exceeded'
+        SPOT_PRICE_NOT_DETECTED = 'spot-price-not-detected'
+        INSTANCE_BUILDING_TOO_LONG = 'instance-building-too-long'
+        INSTANCE_TERMINATED_PREMATURELY = 'instance-terminated-prematurely'
+        SPOT_INSTANCE_TERMINATED_PREMATURELY = 'spot-instance-terminated-prematurely'
+        SPOT_INSTANCE_TERMINATED_NO_CAPACITY = 'spot-instance-terminated-no-capacity'
+        SPOT_INSTANCE_TERMINATED_UNEXPECTEDLY = 'spot-instance-terminated-unexpectedly'
+
+        # "Inherited" from CommonErrorCause:
+        RESOURCE_METRICS_REFRESH_FAILED = 'resource-metrics-refresh-failed'
+        FLAVOR_INFO_REFRESH_FAILED = 'flavor-info-refresh-failed'
+        IMAGE_INFO_REFRESH_FAILED = 'image-info-refresh-failed'
+
+    error_cause_patterns: ClassVar = {
+        ErrorCause.MISSING_INSTANCE: re.compile(
+            r'.+\(InvalidInstanceID\.NotFound\).+The instance ID \'.+\' does not exist'
+        ),
+        ErrorCause.MISSING_SPOT_INSTANCE_REQUEST: re.compile(
+            r'.+\(InvalidSpotInstanceRequestID\.NotFound\).+The spot instance request ID \'.+\' does not exist'
+        ),
+        ErrorCause.REQUEST_LIMIT_EXCEEDED: re.compile(r'.+\(RequestLimitExceeded\).+Request limit exceeded'),
+    }
+
     def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str, pool_config: dict[str, Any]) -> None:
         super().__init__(logger, poolname, pool_config)
         self.environ = {
@@ -1708,7 +1681,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
             env=self.environ,
             poolname=self.poolname,
             commandname=commandname,
-            cause_extractor=awscli_error_cause_extractor,
+            cause_extractor=self.extract_error_cause_from_cli,
         )
 
         if r_run.is_error:
@@ -1717,9 +1690,9 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
             # Detect "instance does not exist" - these errors are clearly irrecoverable. No matter how often we would
             # run these CLI commands, we would never ever made them work with instances that don't exist.
             if failure.command_output:
-                cause = awscli_error_cause_extractor(failure.command_output)
+                cause = self.extract_error_cause_from_cli(failure.command_output)
 
-                if cause in (AWSErrorCauses.MISSING_INSTANCE, AWSErrorCauses.MISSING_SPOT_INSTANCE_REQUEST):
+                if cause in (AWSDriver.ErrorCause.MISSING_INSTANCE, AWSDriver.ErrorCause.MISSING_SPOT_INSTANCE_REQUEST):
                     failure.recoverable = False
 
                     PoolMetrics.inc_error(self.poolname, cause)
@@ -1775,7 +1748,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
             current_price = float(prices[0]['SpotPrice'])
 
         except (KeyError, IndexError):
-            PoolMetrics.inc_error(self.poolname, AWSErrorCauses.SPOT_PRICE_NOT_DETECTED)
+            PoolMetrics.inc_error(self.poolname, AWSDriver.ErrorCause.SPOT_PRICE_NOT_DETECTED)
 
             return Error(Failure('failed to detect spot price'))
 
@@ -2294,7 +2267,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
 
         if state == 'open':  # noqa: SIM102
             if is_old_enough(logger, spot_instance['CreateTime'], KNOB_SPOT_OPEN_TIMEOUT.value):
-                PoolMetrics.inc_error(self.poolname, AWSErrorCauses.INSTANCE_BUILDING_TOO_LONG)
+                PoolMetrics.inc_error(self.poolname, AWSDriver.ErrorCause.INSTANCE_BUILDING_TOO_LONG)
 
                 return Ok(
                     ProvisioningProgress(
@@ -2305,7 +2278,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
                 )
 
         if state in ('cancelled', 'failed', 'closed', 'disabled'):
-            PoolMetrics.inc_error(self.poolname, AWSErrorCauses.SPOT_INSTANCE_TERMINATED_PREMATURELY)
+            PoolMetrics.inc_error(self.poolname, AWSDriver.ErrorCause.SPOT_INSTANCE_TERMINATED_PREMATURELY)
 
             spot_instance_fault = spot_instance.get('Fault', {})
 
@@ -2353,7 +2326,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-lifecycle.html
 
         if state == 'terminated' or state == 'shutting-down':
-            PoolMetrics.inc_error(self.poolname, AWSErrorCauses.INSTANCE_TERMINATED_PREMATURELY)
+            PoolMetrics.inc_error(self.poolname, AWSDriver.ErrorCause.INSTANCE_TERMINATED_PREMATURELY)
 
             return Ok(
                 ProvisioningProgress(
@@ -2365,7 +2338,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
 
         if state == 'pending':
             if is_old_enough(logger, instance['LaunchTime'], KNOB_PENDING_TIMEOUT.value):
-                PoolMetrics.inc_error(self.poolname, AWSErrorCauses.INSTANCE_BUILDING_TOO_LONG)
+                PoolMetrics.inc_error(self.poolname, AWSDriver.ErrorCause.INSTANCE_BUILDING_TOO_LONG)
 
                 return Ok(
                     ProvisioningProgress(
@@ -2482,11 +2455,11 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
             return Ok(WatchdogState.COMPLETE)
 
         if status == 'instance-terminated-no-capacity':
-            PoolMetrics.inc_error(self.poolname, AWSErrorCauses.SPOT_INSTANCE_TERMINATED_NO_CAPACITY)
+            PoolMetrics.inc_error(self.poolname, AWSDriver.ErrorCause.SPOT_INSTANCE_TERMINATED_NO_CAPACITY)
         else:
             # All other transitions go here, including weird unexpected ones like
             # cancelled / request-canceled-and-instance-running)
-            PoolMetrics.inc_error(self.poolname, AWSErrorCauses.SPOT_INSTANCE_TERMINATED_UNEXPECTEDLY)
+            PoolMetrics.inc_error(self.poolname, AWSDriver.ErrorCause.SPOT_INSTANCE_TERMINATED_UNEXPECTEDLY)
 
         msg = 'spot instance terminated prematurely'
         guest_request.log_error_event(
