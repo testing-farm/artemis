@@ -1,18 +1,16 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
-import pytest
-
 from typing import cast
 from unittest.mock import MagicMock
 
 import gluetool.log
+import pytest
 import sqlalchemy.orm.session
 from gluetool.result import Ok
-from tmt.hardware import UNITS
 
 from tft.artemis.db import GuestRequest
-from tft.artemis.drivers.aws import AWSDriver, AWSFlavor, AWSPoolImageInfo, FlavorBoot, FlavorBootMethodType
+from tft.artemis.drivers.aws import AWSDriver, AWSFlavor, AWSPoolImageInfo, FlavorBootMethodType
 from tft.artemis.environment import constraints_from_environment_requirements
 
 
@@ -86,23 +84,23 @@ def test_boot_method_mismatch(
     assert not r_suitable_flavors.unwrap()
 
 
-@pytest.mark.parametrize("boot_method_constraint, image_boot_method, expected_flavors", (
-    ('bios',   ['bios'], ['x86_64.1', 'x86_64.2', 'x86_64.3']),
-    ('bios',   ['bios', 'uefi'], ['x86_64.1', 'x86_64.2']),
-    ('bios',   ['uefi'], []),
-
-    ('!= bios',  ['bios'], ['x86_64.3', 'aarch64.1']),
-    ('!= bios',  ['bios', 'uefi'], ['x86_64.3', 'aarch64.1']),
-    ('!= bios',  ['uefi'], ['x86_64.3', 'aarch64.1']),
-
-    ('uefi',   ['uefi'], ['x86_64.3', 'aarch64.1']),
-    ('uefi',   ['bios', 'uefi'], ['x86_64.3', 'aarch64.1']),
-    ('uefi',   ['bios'], []),
-
-    ('!= uefi',  ['uefi'], []),
-    ('!= uefi',  ['bios', 'uefi'], ['x86_64.1', 'x86_64.2']),
-    ('!= uefi',  ['bios'], ['x86_64.1', 'x86_64.2', 'x86_64.3']),
-))
+@pytest.mark.parametrize(
+    'boot_method_constraint, image_boot_method, expected_flavors',
+    (
+        ('bios', ['bios'], ['x86_64.1', 'x86_64.2', 'x86_64.3']),
+        ('bios', ['bios', 'uefi'], ['x86_64.1', 'x86_64.2']),
+        ('bios', ['uefi'], []),
+        ('!= bios', ['bios'], ['x86_64.3', 'aarch64.1']),
+        ('!= bios', ['bios', 'uefi'], ['x86_64.3', 'aarch64.1']),
+        ('!= bios', ['uefi'], ['x86_64.3', 'aarch64.1']),
+        ('uefi', ['uefi'], ['x86_64.3', 'aarch64.1']),
+        ('uefi', ['bios', 'uefi'], ['x86_64.3', 'aarch64.1']),
+        ('uefi', ['bios'], []),
+        ('!= uefi', ['uefi'], []),
+        ('!= uefi', ['bios', 'uefi'], ['x86_64.1', 'x86_64.2']),
+        ('!= uefi', ['bios'], ['x86_64.1', 'x86_64.2', 'x86_64.3']),
+    ),
+)
 def test_boot_method_selection(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
@@ -112,7 +110,7 @@ def test_boot_method_selection(
     image: AWSPoolImageInfo,
     boot_method_constraint: str,
     image_boot_method: list[FlavorBootMethodType],
-    expected_flavors: list[str]
+    expected_flavors: list[str],
 ) -> None:
     image.boot.method = image_boot_method
 

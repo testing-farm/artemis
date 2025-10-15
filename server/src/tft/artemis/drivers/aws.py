@@ -1434,45 +1434,42 @@ def _aws_ami_boot_mode_to_boot_method(boot_mode: str, arch: str) -> list[FlavorB
 
 #: Matrix of supported boot modes: (image boot mode, flavor boot mode, constraint, supported)
 _AWS_BOOT_MODE_MATRIX = [
-    ('uefi',       'uefi',       'contains bios', False),
-    ('uefi',       'bios',       'contains bios', False),
-    ('uefi',       'bios, uefi', 'contains bios', False),
-    ('bios',       'bios',       'contains bios', True),
-    ('bios',       'uefi',       'contains bios', False),
-    ('bios',       'bios, uefi', 'contains bios', True),
-    ('bios, uefi', 'uefi',       'contains bios', False),
+    ('uefi', 'uefi', 'contains bios', False),
+    ('uefi', 'bios', 'contains bios', False),
+    ('uefi', 'bios, uefi', 'contains bios', False),
+    ('bios', 'bios', 'contains bios', True),
+    ('bios', 'uefi', 'contains bios', False),
+    ('bios', 'bios, uefi', 'contains bios', True),
+    ('bios, uefi', 'uefi', 'contains bios', False),
     ('bios, uefi', 'bios, uefi', 'contains bios', False),
-    ('bios, uefi', 'bios',       'contains bios', True),
-
-    ('uefi',       'uefi',       'not contains non exclusive bios', True),
-    ('uefi',       'bios',       'not contains non exclusive bios', False),
-    ('uefi',       'bios, uefi', 'not contains non exclusive bios', True),
-    ('bios',       'bios',       'not contains non exclusive bios', False),
-    ('bios',       'uefi',       'not contains non exclusive bios', False),
-    ('bios',       'bios, uefi', 'not contains non exclusive bios', False),
-    ('bios, uefi', 'uefi',       'not contains non exclusive bios', True),
-    ('bios, uefi', 'bios, uefi', 'not contains non exclusive bios', True),
-    ('bios, uefi', 'bios',       'not contains non exclusive bios', False),
-
-    ('uefi',       'uefi',       'contains uefi', True),
-    ('uefi',       'bios',       'contains uefi', False),
-    ('uefi',       'bios, uefi', 'contains uefi', True),
-    ('bios',       'bios',       'contains uefi', False),
-    ('bios',       'uefi',       'contains uefi', False),
-    ('bios',       'bios, uefi', 'contains uefi', False),
-    ('bios, uefi', 'uefi',       'contains uefi', True),
+    ('bios, uefi', 'bios', 'contains bios', True),
+    ('uefi', 'uefi', 'not contains exclusive bios', True),
+    ('uefi', 'bios', 'not contains exclusive bios', False),
+    ('uefi', 'bios, uefi', 'not contains exclusive bios', True),
+    ('bios', 'bios', 'not contains exclusive bios', False),
+    ('bios', 'uefi', 'not contains exclusive bios', False),
+    ('bios', 'bios, uefi', 'not contains exclusive bios', False),
+    ('bios, uefi', 'uefi', 'not contains exclusive bios', True),
+    ('bios, uefi', 'bios, uefi', 'not contains exclusive bios', True),
+    ('bios, uefi', 'bios', 'not contains exclusive bios', False),
+    ('uefi', 'uefi', 'contains uefi', True),
+    ('uefi', 'bios', 'contains uefi', False),
+    ('uefi', 'bios, uefi', 'contains uefi', True),
+    ('bios', 'bios', 'contains uefi', False),
+    ('bios', 'uefi', 'contains uefi', False),
+    ('bios', 'bios, uefi', 'contains uefi', False),
+    ('bios, uefi', 'uefi', 'contains uefi', True),
     ('bios, uefi', 'bios, uefi', 'contains uefi', True),
-    ('bios, uefi', 'bios',       'contains uefi', False),
-
-    ('uefi',       'uefi',       'not contains non exclusive uefi', False),
-    ('uefi',       'bios',       'not contains non exclusive uefi', False),
-    ('uefi',       'bios, uefi', 'not contains non exclusive uefi', False),
-    ('bios',       'bios',       'not contains non exclusive uefi', True),
-    ('bios',       'uefi',       'not contains non exclusive uefi', False),
-    ('bios',       'bios, uefi', 'not contains non exclusive uefi', True),
-    ('bios, uefi', 'uefi',       'not contains non exclusive uefi', False),
-    ('bios, uefi', 'bios, uefi', 'not contains non exclusive uefi', False),
-    ('bios, uefi', 'bios',       'not contains non exclusive uefi', True),
+    ('bios, uefi', 'bios', 'contains uefi', False),
+    ('uefi', 'uefi', 'not contains exclusive uefi', False),
+    ('uefi', 'bios', 'not contains exclusive uefi', False),
+    ('uefi', 'bios, uefi', 'not contains exclusive uefi', False),
+    ('bios', 'bios', 'not contains exclusive uefi', True),
+    ('bios', 'uefi', 'not contains exclusive uefi', False),
+    ('bios', 'bios, uefi', 'not contains exclusive uefi', True),
+    ('bios, uefi', 'uefi', 'not contains exclusive uefi', False),
+    ('bios, uefi', 'bios, uefi', 'not contains exclusive uefi', False),
+    ('bios, uefi', 'bios', 'not contains exclusive uefi', True),
 ]
 
 
@@ -1742,7 +1739,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
                     ', '.join(sorted(image.boot.method)),
                     ', '.join(sorted(flavor.boot.method)),
                     f'{constraint.operator.value} {constraint.value}',
-                    True
+                    True,
                 )
 
                 return needle in _AWS_BOOT_MODE_MATRIX
@@ -2757,7 +2754,6 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
                     return Error(Failure.from_exc('failed to parse AWS output', exc))
 
                 arch = _aws_arch_to_arch(image['Architecture'])
-                boot_method = _aws_ami_boot_mode_to_boot_method(aws_boot_mode, arch)
 
                 try:
                     images.append(
@@ -2766,7 +2762,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
                             name=image.get('Name') or image['ImageId'],
                             id=image['ImageId'],
                             arch=_aws_arch_to_arch(image['Architecture']),
-                            boot=image_boot,
+                            boot=_aws_ami_boot_mode_to_boot_method(aws_boot_mode, arch),
                             ssh=PoolImageSSHInfo(),
                             supports_kickstart=False,
                             platform_details=image['PlatformDetails'],

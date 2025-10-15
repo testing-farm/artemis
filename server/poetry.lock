@@ -6048,14 +6048,12 @@ widechars = ["wcwidth"]
 
 [[package]]
 name = "tmt"
-version = "1.58.0"
+version = "1.60.0.dev11+ga6685ff48"
 description = "Test Management Tool"
 optional = false
 python-versions = ">=3.9"
-files = [
-    {file = "tmt-1.58.0-py3-none-any.whl", hash = "sha256:00aac9fb13e56a0fb10422431886c1f8ca5bc075e19f10a746d35a517aae2fd7"},
-    {file = "tmt-1.58.0.tar.gz", hash = "sha256:e99de972cbe57b2ea16b6da1837de3a8139e4cf284ed80705327c42126a21385"},
-]
+files = []
+develop = false
 
 [package.dependencies]
 click = ">=8.0.3"
@@ -6083,6 +6081,12 @@ provision-virtual = ["testcloud (>=0.11.7)"]
 report-junit = ["lxml (>=4.6.5)"]
 report-polarion = ["lxml (>=4.6.5)", "pylero (>=0.1.0)"]
 test-convert = ["html2text (>=2020.1.16)", "markdown (>=3.3.4)", "nitrate (>=1.9.0)", "python-bugzilla (>=3.2.0)"]
+
+[package.source]
+type = "git"
+url = "https://github.com/teemtee/tmt.git"
+reference = "main"
+resolved_reference = "a6685ff48936ad09861606a7f461488c9c1a3bab"
 
 [[package]]
 name = "tomli"
@@ -6402,4 +6406,4 @@ full = ["awscli", "azure-cli", "beaker-client", "google-cloud-compute", "python-
 [metadata]
 lock-version = "2.0"
 python-versions = "~3.9.0"
-content-hash = "fc0afa49cf58645b38b76e21f45ff254ddfde36af733ea6b814372fa10a7abec"
+content-hash = "5dca90f757c555815c393d8e9747a00fcb3b26d54092c7cde31a3fa4bf3b1ce3"

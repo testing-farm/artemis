@@ -63,7 +63,7 @@ fastapi = "*"
 uvicorn = "*"
 google-cloud-compute = "*"
 pykickstart = "^3.58"
-tmt = "*"
+tmt = {git = "https://github.com/teemtee/tmt.git", rev = "main"}
 
 [tool.poetry.extras]
 full = [ "awscli", "azure-cli", "beaker-client", "python-openstackclient", "google-cloud-compute" ]
