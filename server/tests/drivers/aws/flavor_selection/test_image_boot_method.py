@@ -7,10 +7,44 @@ from unittest.mock import MagicMock
 import gluetool.log
 import pytest
 import sqlalchemy.orm.session
+from gluetool.result import Ok
 
 from tft.artemis.db import GuestRequest
-from tft.artemis.drivers.aws import AWSDriver, AWSFlavor, AWSPoolImageInfo, FlavorBootMethodType
-from tft.artemis.environment import constraints_from_environment_requirements
+from tft.artemis.drivers.aws import AWSDriver, AWSFlavor, AWSPoolImageInfo
+from tft.artemis.environment import FlavorBootMethodType, constraints_from_environment_requirements
+
+
+def test_irrelevant_hw_constraints(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    aws_pool: AWSDriver,
+    guest_request: GuestRequest,
+    flavors: list[AWSFlavor],
+    image: AWSPoolImageInfo,
+) -> None:
+    cast(MagicMock, guest_request).environment.get_hw_constraints = MagicMock(
+        return_value=constraints_from_environment_requirements({'memory': '> 0'})
+    )
+
+    r_suitable_flavors = aws_pool._filter_flavors_image_boot_method(logger, session, guest_request, image, flavors)
+
+    assert r_suitable_flavors.unwrap() == flavors
+
+
+def test_no_constraints(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    aws_pool: AWSDriver,
+    guest_request: GuestRequest,
+    flavors: list[AWSFlavor],
+    image: AWSPoolImageInfo,
+) -> None:
+    cast(MagicMock, guest_request).environment.get_hw_constraints = MagicMock(return_value=Ok(None))
+
+    r_suitable_flavors = aws_pool._filter_flavors_image_boot_method(logger, session, guest_request, image, flavors)
+
+    assert r_suitable_flavors.unwrap() == flavors
+
 
 _BOOT_METHOD_MATRIX = [
     (['bios'], '= bios', ['x86_64.1', 'x86_64.2', 'x86_64.3']),
@@ -54,8 +88,5 @@ def test_boot_method(
     )
 
     r_suitable_flavors = aws_pool._filter_flavors_image_boot_method(logger, session, guest_request, image, flavors)
-
-    if r_suitable_flavors.is_error:
-        r_suitable_flavors.unwrap_error().handle(logger)
 
     assert [flavor.id for flavor in r_suitable_flavors.unwrap()] == expected_flavors

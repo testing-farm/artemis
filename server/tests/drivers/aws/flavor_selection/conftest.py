@@ -24,7 +24,7 @@ def fixture_image() -> AWSPoolImageInfo:
         name='dummy-image',
         id='dummy-image',
         arch='x86_64',
-        boot=FlavorBoot(),
+        boot=FlavorBoot(method=['bios', 'uefi']),
         ssh=PoolImageSSHInfo(),
         platform_details='Linux/UNIX',
         block_device_mappings=[],

@@ -1338,9 +1338,9 @@ def _aws_boot_mode_to_boot_method(boot_mode: str) -> FlavorBootMethodType:
     return cast(FlavorBootMethodType, boot_mode)
 
 
-def _aws_ami_boot_mode_to_boot_method(boot_mode: str, arch: str) -> list[FlavorBootMethodType]:
-    if boot_mode:
-        boot_method = _aws_boot_mode_to_boot_method(boot_mode)
+def _aws_ami_boot_mode_to_boot_method(aws_boot_mode: str, arch: str) -> list[FlavorBootMethodType]:
+    if aws_boot_mode:
+        boot_method = _aws_boot_mode_to_boot_method(aws_boot_mode)
 
         if boot_method == 'uefi-preferred':
             return ['bios', 'uefi']
@@ -1682,10 +1682,14 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         Make sure that, if image supports a particular boot method only, we drop all flavors that do not support it
         """
 
+        # When image does not specify its boot methods, allow all flavors. This should be increasingly rare condition,
+        # but the property is a list and it may be empty.
         if not image.boot.method:
             return Ok(suitable_flavors)
 
-        if not guest_request.environment.has_hw_constraints:
+        # This is the baic filter: allow only flavors that support any of the image boot methods. When we are not needed
+        # to be picky, we will just make sure image and flavors can work together, nothing more.
+        def _basic_filter() -> Result[list[AWSFlavor], Failure]:
             return Ok(
                 list(
                     logging_filter(
@@ -1696,6 +1700,10 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
                     )
                 )
             )
+
+        # When the guest request has no HW requirement at all, use the basic filter.
+        if not guest_request.environment.has_hw_constraints:
+            return _basic_filter()
 
         r_constraints = guest_request.environment.get_hw_constraints()
 
@@ -1704,19 +1712,21 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
 
         constraints = r_constraints.unwrap()
 
+        # When the guest request has no HW requirement at all, use the basic filter.
         if constraints is None:
-            return Ok(
-                list(
-                    logging_filter(
-                        logger,
-                        suitable_flavors,
-                        'image boot method is supported',
-                        lambda logger, flavor: any(method in flavor.boot.method for method in image.boot.method),
-                    )
-                )
-            )
+            return _basic_filter()
+
+        # When the guest has HW requirements, but no boot.method ones, use the basic filter.
+        r_has_boot_constraint = constraints.uses_constraint(logger, 'boot.method')
+
+        if r_has_boot_constraint.is_error:
+            return Error(r_has_boot_constraint.unwrap_error())
+
+        if not r_has_boot_constraint.unwrap():
+            return _basic_filter()
 
         def _boot_method_requested(logger: ContextAdapter, flavor: AWSFlavor) -> bool:
+            # Focus on the default, selected span of constraints.
             r_span = _get_constraint_span(logger, guest_request, flavor)
 
             if r_span.is_error:
@@ -1726,30 +1736,37 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
 
             span = r_span.unwrap()
 
-            if not span:
+            # Collect boot.method constraints - it's pointless to consider other constraints.
+            boot_method_constraints = [
+                constraint
+                for constraint in span
+                if constraint.expand_name().property == 'boot' and constraint.expand_name().child_property == 'method'
+            ]
+
+            # This may still happen: we did check whether HW requirements contain any boot.method requirement, and they
+            # did, otherwise we wouldn't be here. Finding no such constraint in the span means these constraints are not
+            # compatible with the flavor, and therefore the flavor is not suitable at all.
+            if not boot_method_constraints:
                 return False
 
-            for constraint in span:
-                property_name, _, child_property, _ = constraint.expand_name()
+            # Construct the "needle", and peek into our master table whether it's there. Note that the needle contains
+            # the "allowed" flag as the last item. Master table contains all combinations, even disallowed ones.
+            needle = (
+                ', '.join(sorted(image.boot.method)),
+                ', '.join(sorted(flavor.boot.method)),
+                f'{boot_method_constraints[0].operator.value} {boot_method_constraints[0].value}',
+                # The combination must be marked as allowed.
+                True,
+            )
 
-                if property_name != 'boot' or child_property != 'method':
-                    continue
-
-                needle = (
-                    ', '.join(sorted(image.boot.method)),
-                    ', '.join(sorted(flavor.boot.method)),
-                    f'{constraint.operator.value} {constraint.value}',
-                    True,
-                )
-
-                return needle in _AWS_BOOT_MODE_MATRIX
+            return needle in _AWS_BOOT_MODE_MATRIX
 
         return Ok(
             list(
                 logging_filter(
                     logger,
                     suitable_flavors,
-                    'image and flavor boot methods match',
+                    'image and flavor boot methods combine into the requested guest boot method',
                     _boot_method_requested,
                 )
             )
@@ -2762,7 +2779,9 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
                             name=image.get('Name') or image['ImageId'],
                             id=image['ImageId'],
                             arch=_aws_arch_to_arch(image['Architecture']),
-                            boot=_aws_ami_boot_mode_to_boot_method(aws_boot_mode, arch),
+                            boot=FlavorBoot(method=_aws_ami_boot_mode_to_boot_method(aws_boot_mode, arch))
+                            if aws_boot_mode is not None
+                            else FlavorBoot(),
                             ssh=PoolImageSSHInfo(),
                             supports_kickstart=False,
                             platform_details=image['PlatformDetails'],

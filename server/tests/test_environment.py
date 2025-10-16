@@ -89,7 +89,7 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
               element: |
                 <key_value key="NETBOOT_METHOD" op="!=" value="efigrub"/>
 
-            - operator: not contains
+            - operator: not contains exclusive
               value: bios
               element: |
                 <key_value key="NETBOOT_METHOD" op="=" value="efigrub"/>
@@ -99,7 +99,7 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
               element: |
                 <key_value key="NETBOOT_METHOD" op="=" value="efigrub"/>
 
-            - operator: not contains
+            - operator: not contains exclusive
               value: uefi
               element: |
                 <key_value key="NETBOOT_METHOD" op="!=" value="efigrub"/>
@@ -624,7 +624,7 @@ def test_example_boot_not(logger: ContextAdapter) -> None:
                 name='dummy-flavor', id='dummy-flavor', boot=FlavorBoot(method=['bios', 'uefi'])
             ),
         )
-        is False
+        is True
     )
 
 
