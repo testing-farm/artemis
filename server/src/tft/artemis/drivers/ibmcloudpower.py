@@ -337,7 +337,7 @@ class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flav
                 raw_instances: list[dict[str, Any]] = []
 
                 for raw_instance_entry in cast(
-                    list[dict[str, Any]], cast(dict[str, Any], r_list_instances.unwrap()).get('pwmInstances', [])
+                    list[dict[str, Any]], cast(dict[str, Any], r_list_instances.unwrap()).get('pvmInstances', [])
                 ):
                     # To get network details need to additionally get instance details
                     r_show_instance = self._show_guest(logger, raw_instance_entry['id'])
