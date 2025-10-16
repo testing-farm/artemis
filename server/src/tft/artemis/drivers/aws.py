@@ -1317,7 +1317,7 @@ def _aws_arch_to_arch(arch: str) -> str:
 
 def _aws_boot_mode_to_boot_method(boot_mode: str) -> FlavorBootMethodType:
     """
-    Convert image/instance type boot method as known to AWS EC2 API to boot method as tracked by Artemis.
+    Convert image/instance type boot mode as known to AWS EC2 API to boot method as tracked by Artemis.
 
     There is at least one difference, AWS' ``legacy-bios`` is usually called just ``bios`` by other
     drivers supported by Artemis. This function serves as a small compatibility layer.
