@@ -1332,7 +1332,7 @@ def _aws_boot_mode_to_boot_method(boot_mode: str) -> FlavorBootMethodType:
     if boot_mode == 'uefi':
         return 'uefi'
 
-    if boot_mode == 'uefi-preffered':
+    if boot_mode == 'uefi-preferred':
         return 'uefi-preferred'
 
     return cast(FlavorBootMethodType, boot_mode)
@@ -2778,7 +2778,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
                             # .Name is optional and may be undefined or missing - use .ImageId in such a case
                             name=image.get('Name') or image['ImageId'],
                             id=image['ImageId'],
-                            arch=_aws_arch_to_arch(image['Architecture']),
+                            arch=arch,
                             boot=FlavorBoot(method=_aws_ami_boot_mode_to_boot_method(aws_boot_mode, arch))
                             if aws_boot_mode is not None
                             else FlavorBoot(),
