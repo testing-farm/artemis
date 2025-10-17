@@ -1285,7 +1285,7 @@ def _parse_boot(spec: Spec) -> ConstraintBase:
             constraint.change_operator(Operator.CONTAINS)
 
         elif constraint.operator == Operator.NEQ:
-            constraint.change_operator(Operator.NOTCONTAINS)
+            constraint.change_operator(Operator.NOTCONTAINS_EXCLUSIVE)
 
         group.constraints += [constraint]
 
