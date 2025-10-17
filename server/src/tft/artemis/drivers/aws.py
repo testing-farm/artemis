@@ -1687,8 +1687,8 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         if not image.boot.method:
             return Ok(suitable_flavors)
 
-        # This is the baic filter: allow only flavors that support any of the image boot methods. When we are not needed
-        # to be picky, we will just make sure image and flavors can work together, nothing more.
+        # This is the basic filter: allow only flavors that support any of the image boot methods. When we are not
+        # needed to be picky, we will just make sure image and flavors can work together, nothing more.
         def _basic_filter() -> Result[list[AWSFlavor], Failure]:
             return Ok(
                 list(
@@ -1758,6 +1758,8 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
                 # The combination must be marked as allowed.
                 True,
             )
+
+            logger.debug(f'boot method needle: {needle}')
 
             return needle in _AWS_BOOT_MODE_MATRIX
 
