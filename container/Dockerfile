@@ -42,6 +42,7 @@ RUN    microdnf --refresh \
                            crypto-policies-scripts \
                            curl \
                            gcc \
+                           git \
                            g++ \
                            hostname \
                            krb5-workstation \
