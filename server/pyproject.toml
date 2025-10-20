@@ -54,6 +54,7 @@ typing-extensions = "*"
 pendulum = "^2.0"
 periodiq = "*"
 redis = "*"
+returns = "*"
 jsonschema = "*"
 sentry-sdk = "^2.18"
 setuptools = "*"
@@ -82,7 +83,8 @@ httpx = "*"
 # This will be trimmed down to 0.730 or something because of much more specific mypy-extensions bellow. Blocked
 # by Gluetool.
 # TODO: 1.4.0 is the current release, but fails to play nicely with old typing-extensions
-mypy = "^0.991"
+# mypy = "^0.991"
+mypy = "*"
 pytest = "*"
 pre-commit = "*"
 pytest-flake8 = "*"
