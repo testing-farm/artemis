@@ -81,7 +81,7 @@ from ..script import hook_engine
 T = TypeVar('T')
 FlavorT = TypeVar('FlavorT', bound=Flavor)
 
-GuestTagsType = dict[str, str]
+Tags = dict[str, str]
 
 
 # Types for configuration of custom/patched flavors
@@ -1253,9 +1253,7 @@ def guest_log_updater(
     return wrapper
 
 
-def render_tags(
-    logger: gluetool.log.ContextAdapter, tags: GuestTagsType, vars: dict[str, Any]
-) -> Result[GuestTagsType, Failure]:
+def render_tags(logger: gluetool.log.ContextAdapter, tags: Tags, vars: dict[str, Any]) -> Result[Tags, Failure]:
     for name, tag_template in tags.items():
         r_rendered = render_template(tag_template, **vars)
 
@@ -1424,6 +1422,10 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
     def is_enabled(self, session: sqlalchemy.orm.session.Session) -> Result[bool, Failure]:
         return KNOB_POOL_ENABLED.get_value(session=session, entityname=self.poolname)
+
+    @property
+    def pool_tags(self) -> Tags:
+        return cast(Tags, self.pool_config.get('pool-tags', {}))
 
     @property
     def ssh_options(self) -> list[str]:
@@ -2061,9 +2063,28 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         return Result.Ok(capabilities)
 
+    def get_pool_tags(
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session
+    ) -> Result[Tags, Failure]:
+        """
+        Get all tags applicable for this pool.
+        """
+
+        tags: Tags = self.pool_config['pool-tags']
+
+        tags['poolname'] = self.poolname
+        tags['drivername'] = self.drivername
+
+        r_rendered_tags = render_tags(logger, tags, {'POOL': self})
+
+        if r_rendered_tags.is_error:
+            return Error(r_rendered_tags.unwrap_error())
+
+        return Ok(r_rendered_tags.unwrap())
+
     def get_guest_tags(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
-    ) -> Result[GuestTagsType, Failure]:
+    ) -> Result[Tags, Failure]:
         """
         Get all tags applicable for a given guest request.
 
@@ -2087,7 +2108,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         if pool_tags.is_error:
             return Error(pool_tags.unwrap_error())
 
-        tags: GuestTagsType = {
+        tags: Tags = {
             **{r.tag: r.value for r in system_tags.unwrap()},
             **{r.tag: r.value for r in pool_tags.unwrap()},
         }
