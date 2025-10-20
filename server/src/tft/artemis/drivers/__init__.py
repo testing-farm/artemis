@@ -34,6 +34,8 @@ import gluetool.utils
 import sqlalchemy
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
+from returns.pipeline import is_successful
+from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
 from typing_extensions import Literal, Protocol, Self, TypedDict
 
@@ -47,6 +49,7 @@ from .. import (
     logging_filter,
     process_output_to_str,
     render_template,
+    rewrap_to_gluetool,
     safe_call,
     template_environment,
 )
@@ -1261,20 +1264,19 @@ def guest_log_updater(
     return wrapper
 
 
-def render_tags(logger: gluetool.log.ContextAdapter, tags: Tags, vars: dict[str, Any]) -> Result[Tags, Failure]:
+@rewrap_to_gluetool
+def render_tags(logger: gluetool.log.ContextAdapter, tags: Tags, vars: dict[str, Any]) -> _Result[Tags, Failure]:
     for name, tag_template in tags.items():
         r_rendered = render_template(tag_template, **vars)
 
-        if r_rendered.is_error:
-            return Error(
-                Failure.from_failure(
-                    'failed to render guest tags', r_rendered.unwrap_error(), tag_template=tag_template
-                )
+        if not is_successful(r_rendered):
+            return _Error(
+                Failure.from_failure('failed to render guest tags', r_rendered.failure(), tag_template=tag_template)
             )
 
         tags[name] = r_rendered.unwrap()
 
-    return Ok(tags)
+    return _Ok(tags)
 
 
 class PoolDriver(gluetool.log.LoggerMixin):
@@ -2303,24 +2305,31 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         return Ok([])
 
-    def generate_post_install_script(self, guest_request: GuestRequest) -> Result[str, Failure]:
+    @rewrap_to_gluetool
+    def generate_post_install_script(self, guest_request: GuestRequest) -> _Result[str, Failure]:
         """
         A helper that combines pool-defined post-install-script template with portion of user-supplied
         post-install-script to generate final script to be passed to the pool driver.
         Any possible templating will be resolved at this point.
         """
-        post_install_template = self.pool_config.get('post-install-template')
 
-        if not post_install_template:
+        def _get_template() -> _Result[str, Failure]:
+            post_install_template = self.pool_config.get('post-install-template')
+
+            if post_install_template:
+                return _Ok(post_install_template)
+
             # No pool configuration for post-install means that default one will be used
             r_default_template = KNOB_DEFAULT_POST_INSTALL_TEMPLATE.get_value(entityname=self.poolname)
+
             if r_default_template.is_error:
-                return Error(r_default_template.unwrap_error())
+                return _Error(r_default_template.unwrap_error())
 
-            post_install_template = r_default_template.unwrap()
+            return _Ok(r_default_template.unwrap())
 
-        # pool configuration is a templated post-install-script, try to combine it with user data passed
-        return render_template(post_install_template, **template_environment(guest_request))
+        return _get_template().bind(
+            lambda post_install_template: render_template(post_install_template, **template_environment(guest_request))
+        )
 
     def _patch_pool_image_info_from_config(
         self, logger: gluetool.log.ContextAdapter, images: dict[str, PoolImageInfo]

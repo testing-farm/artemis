@@ -68,6 +68,8 @@ import sentry_sdk.types
 import sentry_sdk.utils
 import stackprinter
 from gluetool.result import Error, Ok, Result
+from returns.pipeline import is_successful
+from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
 from typing_extensions import ParamSpec, Self
 
@@ -125,6 +127,8 @@ ExceptionInfoType = Union[
 
 # Type variable used in generic types
 T = TypeVar('T')
+U = TypeVar('U')
+
 S = TypeVar('S', bound='SerializableContainer')
 P = ParamSpec('P')
 
@@ -1171,13 +1175,9 @@ class Failure:
                 self.submited_to_sentry = True
 
             if self.sentry_event_id and KNOB_SENTRY_EVENT_URL_TEMPLATE.value:
-                r_rendered = render_template(KNOB_SENTRY_EVENT_URL_TEMPLATE.value, EVENT_ID=self.sentry_event_id)
-
-                if r_rendered.is_error:
-                    r_rendered.unwrap_error().handle(logger, sentry=False)
-
-                else:
-                    self.sentry_event_url = r_rendered.unwrap()
+                render_template(KNOB_SENTRY_EVENT_URL_TEMPLATE.value, EVENT_ID=self.sentry_event_id).map(
+                    lambda sentry_event_url: setattr(self, 'sentry_event_url', sentry_event_url)
+                ).alt(lambda failure: failure.handle(logger, sentry=False))
 
     def reraise(self) -> NoReturn:
         if self.exception:
@@ -1381,6 +1381,18 @@ def safe_call_and_handle(
         return None
 
 
+def rewrap_to_gluetool(fn: Callable[P, _Result[T, U]]) -> Callable[P, Result[T, U]]:
+    def _rewrap_to_gluetool(*args: P.args, **kwargs: P.kwargs) -> Result[T, U]:
+        r = fn(*args, **kwargs)
+
+        if is_successful(r):
+            return Ok(r.unwrap())
+
+        return Error(r.failure())
+
+    return _rewrap_to_gluetool
+
+
 #: Custom type for JSON schema. We don't expect the schema structure though, all we do is loading it
 #: from a YAML file, then passing it to validators. The actual type could very well be ``Any``, but
 #: given how JSON schema looks like, it's pretty much going to be a mapping with string keys. So using
@@ -1509,7 +1521,7 @@ def _template_filter_shell_quote(s: str) -> str:
     return shlex.quote(s)
 
 
-def render_template(template: str, **kwargs: Any) -> Result[str, Failure]:
+def render_template(template: str, **kwargs: Any) -> _Result[str, Failure]:
     try:
         environment = jinja2.Environment(
             variable_start_string=TEMPLATE_VARIABLE_DELIMITERS[0],
@@ -1520,10 +1532,10 @@ def render_template(template: str, **kwargs: Any) -> Result[str, Failure]:
 
         environment.filters.update({'shell_quote': _template_filter_shell_quote})
 
-        return Ok(environment.from_string(template).render(**kwargs).strip())
+        return _Ok(environment.from_string(template).render(**kwargs).strip())
 
     except Exception as exc:
-        return Error(Failure.from_exc('failed to render template', exc, template=template, variables=kwargs))
+        return _Error(Failure.from_exc('failed to render template', exc, template=template, variables=kwargs))
 
 
 def template_environment(guest_request: Optional[artemis_db.GuestRequest]) -> dict[str, Any]:

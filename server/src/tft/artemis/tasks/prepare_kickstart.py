@@ -18,6 +18,8 @@ from typing import cast
 
 import gluetool.log
 import sqlalchemy.orm.session
+from gluetool.result import Error
+from returns.pipeline import is_successful
 
 from .. import Failure, render_template
 from ..db import DB, GuestLog, GuestLogContentType, GuestLogState, SafeQuery
@@ -294,8 +296,8 @@ class Workspace(_Workspace):
                     'failed to read the kickstart template',
                 )
 
-            if r_kickstart.is_error:
-                return self._error(r_kickstart, 'failed to render kickstart script')
+            if not is_successful(r_kickstart):
+                return self._error(Error(r_kickstart.failure()), 'failed to render kickstart script')
 
             kickstart_script = r_kickstart.unwrap()
             blob = GuestLogBlob.from_content(kickstart_script)

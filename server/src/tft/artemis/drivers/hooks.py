@@ -12,6 +12,7 @@ from typing import Optional
 import gluetool.log
 import gluetool.utils
 from gluetool.result import Error, Ok, Result
+from returns.pipeline import is_successful
 
 from .. import Failure, log_dict_yaml, render_template
 from ..environment import Environment
@@ -109,8 +110,8 @@ def map_environment_to_imagename_by_pattern_map(
 
     r_needle = render_template(needle_template, **environment.serialize())
 
-    if r_needle.is_error:
-        return Error(r_needle.unwrap_error())
+    if not is_successful(r_needle):
+        return Error(r_needle.failure())
 
     logger.debug(f'using pattern map {mapping_filepath}')
 

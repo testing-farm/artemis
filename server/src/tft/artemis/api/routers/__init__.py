@@ -12,6 +12,7 @@ from collections.abc import Generator
 from typing import Annotated, Any, Callable, Optional, TypeVar, Union, cast
 
 import fastapi
+import fastapi.openapi
 import gluetool.log
 import redis
 import sentry_sdk

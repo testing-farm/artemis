@@ -19,6 +19,7 @@ import sqlalchemy.orm.session
 from gluetool.log import ContextAdapter, log_blob, log_table, log_xml
 from gluetool.result import Error, Ok, Result
 from gluetool.utils import ProcessOutput
+from returns.pipeline import is_successful
 from tmt.hardware import Operator
 from typing_extensions import TypedDict
 
@@ -430,11 +431,11 @@ def _translate_constraint_by_config(
             translation['element'], CONSTRAINT=constraint, **template_environment(guest_request=guest_request)
         )
 
-        if r_rendered_raw_element.is_error:
+        if not is_successful(r_rendered_raw_element):
             return Error(
                 Failure.from_failure(
                     'failed to render constraint XML',
-                    r_rendered_raw_element.unwrap_error(),
+                    r_rendered_raw_element.failure(),
                     constraint=repr(constraint),
                     constraint_name=constraint.name,
                 )
@@ -1479,8 +1480,8 @@ class BeakerDriver(PoolDriver):
             r_whiteboard_template.unwrap(), **template_environment(guest_request=guest_request)
         )
 
-        if r_whiteboard.is_error:
-            return Error(r_whiteboard.unwrap_error())
+        if not is_successful(r_whiteboard):
+            return Error(r_whiteboard.failure())
 
         # Tags to expose in the job
         r_tags = self.get_guest_tags(logger, session, guest_request)
@@ -1527,8 +1528,8 @@ class BeakerDriver(PoolDriver):
             r_ks_meta_template.unwrap(), DISTRO=distro, **template_environment(guest_request=guest_request)
         )
 
-        if r_ks_meta.is_error:
-            return Error(r_ks_meta.unwrap_error())
+        if not is_successful(r_ks_meta):
+            return Error(r_ks_meta.failure())
 
         # Custom kickstart options
         if guest_request.environment.has_ks_specification:
@@ -1578,8 +1579,8 @@ class BeakerDriver(PoolDriver):
             **template_environment(guest_request),
         )
 
-        if r_command_rendered.is_error:
-            return Error(r_command_rendered.unwrap_error())
+        if not is_successful(r_command_rendered):
+            return Error(r_command_rendered.failure())
 
         log_blob(logger.debug, 'wow options', r_command_rendered.unwrap())
 
@@ -2271,8 +2272,8 @@ class BeakerDriver(PoolDriver):
             **template_environment(guest_request=guest_request),
         )
 
-        if r_command.is_error:
-            return Error(r_command.unwrap_error())
+        if not is_successful(r_command):
+            return Error(r_command.failure())
 
         r_output = run_remote(
             logger,
