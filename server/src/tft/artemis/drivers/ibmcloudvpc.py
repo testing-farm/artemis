@@ -584,6 +584,7 @@ class IBMCloudVPCDriver(FlavorBasedPoolDriver[IBMCloudVPCPoolImageInfo, IBMCloud
                     self.pool_config['master-key-name'],
                     '--output',
                     'json',
+                    '--metadata-service=true',
                 ]
                 # If root_disk_size is specified will be passing specific --volume details
                 if root_disk_size:
