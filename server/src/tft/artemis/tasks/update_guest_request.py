@@ -132,6 +132,19 @@ class Workspace(_Workspace):
                 ):
                     self._reschedule()
 
+            elif provisioning_progress.state == ProvisioningState.FAILED:
+                assert self.db
+
+                self._progress('provisioning-failed')
+
+                if not ProvisioningTailHandler(GuestState.PROMISED, GuestState.ERROR).handle_tail(
+                    self.logger,
+                    self.db,
+                    self.session,
+                    TaskCall(actor=update_guest_request, args=(self.guestname,), arg_names=('guestname',)),
+                ):
+                    self._reschedule()
+
             elif provisioning_progress.state == ProvisioningState.COMPLETE:
                 self._progress('address-assigned', address=provisioning_progress.address)
 

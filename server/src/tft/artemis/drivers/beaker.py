@@ -216,11 +216,19 @@ class BkrErrorCauses(PoolErrorCauses):
     JOB_CANCELLED = 'job-cancelled'
     JOB_RESERVED_WITH_WARNING = 'job-reserved-with-warning'
     JOB_INSTALLATION_TIMEOUT = 'job-installation-timeout'
+    JOB_INSTALLATION_KICKSTART_ERROR = 'job-installation-kickstart-error'
 
 
 CLI_ERROR_PATTERNS = {
     BkrErrorCauses.NO_DISTRO_MATCHES_RECIPE: re.compile(r'^Exception: .+:No distro tree matches Recipe:'),
     BkrErrorCauses.NO_SYSTEM_MATCHES_RECIPE: re.compile(r'^Recipe ID \d+ does not match any systems'),
+}
+
+
+INSTALLATION_ERROR_PATTERNS = {
+    BkrErrorCauses.JOB_INSTALLATION_KICKSTART_ERROR: re.compile(
+        r'^The following problem occurred on line \d+ of the kickstart file:'
+    ),
 }
 
 
@@ -1884,6 +1892,50 @@ class BeakerDriver(PoolDriver):
             )
         )
 
+    def _handle_job_update_installation_error(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        pool_data: BeakerPoolData,
+        job_results: bs4.BeautifulSoup,
+        job_task_results: list[JobTaskResult],
+        job_result: str,
+        job_status: str,
+        job_failed: Optional[BkrErrorCauses],
+        system: Optional[str],
+        failure_details: dict[str, Any],
+    ) -> Result[Optional[ProvisioningProgress], Failure]:
+        if job_failed is None or job_failed != BkrErrorCauses.JOB_FAILED:
+            return Ok(None)
+
+        # For some reason the installation error cause is hidden under the first task
+        for task in job_results.find_all('task'):
+            for result in task.find_all('result'):
+                # Each result should only ever contain 1 result
+                # Asserting on data from outside source is not a great idea
+                assert len(result.contents) == 1
+
+                for cause, pattern in INSTALLATION_ERROR_PATTERNS.items():
+                    if pattern.match(result.contents[0]):
+                        PoolMetrics.inc_aborts(
+                            self.poolname,
+                            system,
+                            guest_request.environment.os.compose,
+                            guest_request.environment.hw.arch,
+                            cause,
+                        )
+
+                        return Ok(
+                            ProvisioningProgress(
+                                state=ProvisioningState.FAILED,
+                                pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
+                                pool_failures=[Failure('beaker job failed', cause=cause.value, **failure_details)],
+                            )
+                        )
+
+        return Ok(None)
+
     def _handle_job_update_failed(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -1936,6 +1988,7 @@ class BeakerDriver(PoolDriver):
         _handle_job_update_successfully_completed,
         _handle_job_update_new,
         _handle_job_update_failed_avc_denials,
+        _handle_job_update_installation_error,
         # This one should be last, as it reports anything that failed and was not claimed by a previous handler.
         _handle_job_update_failed,
     )

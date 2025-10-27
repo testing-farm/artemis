@@ -670,6 +670,9 @@ class ProvisioningState(enum.Enum):
     #: For some driver-specirfic reasons, the provisioning should be cancelled.
     CANCEL = 'cancel'
 
+    #: Guest request cannot be satisfied but could not be determined before provisioning.
+    FAILED = 'failed'
+
 
 @dataclasses.dataclass
 class ProvisioningProgress:
