@@ -197,7 +197,7 @@ def set_cache_fields(
 
         return
 
-    safe_call_and_handle(logger, cast(RedisHMSet, cache.hmset), key, {field: value for field, value in fields.items()})
+    safe_call_and_handle(logger, cast(RedisHMSet, cache.hmset), key, fields)
 
     if ttl is not None:
         safe_call_and_handle(logger, cast(RedisExpireType, cache.expire), key, ttl)
@@ -237,7 +237,7 @@ def get_cache_fields(logger: gluetool.log.ContextAdapter, cache: redis.Redis, ke
     :returns: mapping between fields and their values.
     """
 
-    return {field: value for field, value in iter_cache_fields(logger, cache, key)}
+    return dict(iter_cache_fields(logger, cache, key))
 
 
 def iter_cache_keys(

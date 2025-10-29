@@ -587,12 +587,7 @@ class GCPDriver(PoolDriver):
         # Resource usage - instances and flavors
         def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[list[compute_v1.Instance], Failure]:
             return Ok(
-                [
-                    instance
-                    for instance in self._instances_client.list(
-                        project=self.pool_config['project'], zone=self.pool_config['zone']
-                    )
-                ]
+                list(self._instances_client.list(project=self.pool_config['project'], zone=self.pool_config['zone']))
             )
 
         def _update_instance_usage(

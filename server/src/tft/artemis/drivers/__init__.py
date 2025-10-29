@@ -800,7 +800,7 @@ class PoolResourcesIDs(SerializableContainer):
     ctime: Optional[datetime.datetime] = None
 
     def is_empty(self) -> bool:
-        return all([value is None for key, value in dataclasses.asdict(self).items() if key != 'ctime'])
+        return all(value is None for key, value in dataclasses.asdict(self).items() if key != 'ctime')
 
     def serialize(self) -> dict[str, Any]:
         serialized = super().serialize()
@@ -1687,10 +1687,8 @@ class PoolDriver(gluetool.log.LoggerMixin):
                 return Ok(CanAcquire.cannot('SSH access is required to perform non-native kickstart installation'))
 
             if guest_request.environment.kickstart.metadata is not None and any(
-                [
-                    m.split('=')[0] not in ['auth', 'autopart_type', 'no_autopart', 'ignoredisk', 'lang', 'packages']
-                    for m in guest_request.environment.kickstart.metadata.split()
-                ]
+                m.split('=')[0] not in ['auth', 'autopart_type', 'no_autopart', 'ignoredisk', 'lang', 'packages']
+                for m in guest_request.environment.kickstart.metadata.split()
             ):
                 return Ok(CanAcquire.cannot('unsupported kickstart metadata option specified'))
 

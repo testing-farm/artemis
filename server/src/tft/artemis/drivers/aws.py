@@ -1081,7 +1081,7 @@ class NetworkInterfaces(SerializableContainer, MutableSequence[APINetworkInterfa
             return None
 
     def find_free_device_index(self) -> int:
-        indices = [i for i in range(len(self.data) + 1)]
+        indices = list(range(len(self.data) + 1))
 
         for nic in self.data:
             if nic['DeviceIndex'] in indices:
