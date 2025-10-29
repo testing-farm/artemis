@@ -50,6 +50,7 @@ import pkg_resources
 import redis
 import ruamel.yaml
 import ruamel.yaml.compat
+import ruamel.yaml.nodes
 import sentry_sdk
 import sentry_sdk.integrations.argv
 import sentry_sdk.integrations.atexit
@@ -1260,9 +1261,7 @@ def get_broker(
 
         parsed_url = urllib.parse.urlparse(KNOB_BROKER_URL.value)
 
-        parsed_query: dict[str, Union[str, dict[str, str]]] = {
-            k: v for k, v in urllib.parse.parse_qsl(parsed_url.query)
-        }
+        parsed_query: dict[str, Union[str, dict[str, str]]] = dict(urllib.parse.parse_qsl(parsed_url.query))
 
         parsed_query['client_properties'] = client_properties
 

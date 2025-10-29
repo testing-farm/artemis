@@ -372,8 +372,8 @@ def fixture_current_message() -> Generator[dramatiq.MessageProxy, None, None]:
         queue_name='dummy-queue-name',
         actor_name='dummy-actor-name',
         args=(MagicMock(name='mock_actor_arg1'), MagicMock(name='mock_actor_arg2')),
-        kwargs=dict(),
-        options=dict(),
+        kwargs={},
+        options={},
     )
 
     proxy = dramatiq.MessageProxy(message)

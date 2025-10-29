@@ -341,7 +341,7 @@ task-request:
 
         assert r_tasks.is_ok
 
-        tasks = [task for task in r_tasks.unwrap()]
+        tasks = list(r_tasks.unwrap())
 
         assert len(tasks) == 1
 
@@ -356,7 +356,7 @@ task-request:
 
         assert r_guests.is_ok
 
-        guests = [guest for guest in r_guests.unwrap()]
+        guests = list(r_guests.unwrap())
 
         assert len(guests) == 3
 
@@ -423,7 +423,7 @@ def test_update_guest_state_and_request_task_no_such_guest(
 
         assert r_tasks.is_ok
 
-        tasks = [task for task in r_tasks.unwrap()]
+        tasks = list(r_tasks.unwrap())
 
         assert not tasks
 
@@ -431,7 +431,7 @@ def test_update_guest_state_and_request_task_no_such_guest(
 
         assert r_guests.is_ok
 
-        guests = [guest for guest in r_guests.unwrap()]
+        guests = list(r_guests.unwrap())
 
         assert len(guests) == 3
 
