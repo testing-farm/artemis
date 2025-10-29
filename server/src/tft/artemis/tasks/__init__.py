@@ -490,7 +490,7 @@ class TaskCall(SerializableContainer):
         """
 
         if self._named_args is None:
-            self._named_args = {name: arg for name, arg in zip(self.arg_names, self.args)}
+            self._named_args = dict(zip(self.arg_names, self.args))
 
         return self._named_args
 
@@ -501,7 +501,7 @@ class TaskCall(SerializableContainer):
         :param names: argument names to verify.
         """
 
-        return all([name in self.named_args for name in names])
+        return all(name in self.named_args for name in names)
 
     def extract_args(self, *names: str) -> list[ActorArgumentType]:
         """
@@ -1104,8 +1104,8 @@ def _task_core(
 
     db = db or get_root_db()
 
-    doer_args = doer_args or tuple()
-    doer_kwargs = doer_kwargs or dict()
+    doer_args = doer_args or ()
+    doer_kwargs = doer_kwargs or {}
 
     doer_result: DoerReturnType = Error(Failure('undefined doer result'))
 

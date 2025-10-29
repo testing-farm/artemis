@@ -29,7 +29,7 @@ def assert_task_core_call(
     assert args == (doer,)
 
     # Its arguments are given as a keyword argument...
-    assert kwargs.get('doer_args', tuple()) == doer_args
+    assert kwargs.get('doer_args', ()) == doer_args
 
     # ... and then there's a task logger object.
     assert isinstance(kwargs['logger'], TaskLogger)

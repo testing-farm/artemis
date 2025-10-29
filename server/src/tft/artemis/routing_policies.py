@@ -1048,7 +1048,8 @@ def run_routing_policies(
 
             if current_policy_ruling.cancel:
                 # Mark all input pools are excluded
-                map(lambda x: RoutingMetrics.inc_pool_excluded(policy_name, x.pool.poolname), final_ruling.pools)
+                for pool in final_ruling.pools:
+                    RoutingMetrics.inc_pool_excluded(policy_name, pool.pool.poolname)
 
                 RoutingMetrics.inc_policy_canceled(policy_name)
 
