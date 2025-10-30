@@ -21,7 +21,7 @@ from .. import (
     load_validation_schema,
     validate_data,
 )
-from ..db import DB, GuestShelf, GuestTag, Pool, PriorityGroup, SSHKey, User, UserRoles, upsert
+from ..db import DB, GuestShelf, GuestTag, Pool, PoolTag, PriorityGroup, SSHKey, User, UserRoles, upsert
 from ..drivers import PoolDriver, Tags
 from ..guest import GuestState
 from ..knobs import KNOB_DISABLE_CERT_VERIFICATION
@@ -215,7 +215,7 @@ def config_to_db(logger: gluetool.log.ContextAdapter, db: DB, server_config: dic
 
     with db.transaction(logger) as (session, t):
 
-        def _add_tags(poolname: str, input_tags: Tags) -> None:
+        def _add_guest_tags(poolname: str, input_tags: Tags) -> None:
             for tag, value in input_tags.items():
                 logger.info(f'  Adding {tag}={value}')
 
@@ -231,18 +231,42 @@ def config_to_db(logger: gluetool.log.ContextAdapter, db: DB, server_config: dic
 
                 assert r.is_ok and r.unwrap() is True, 'Failed to initialize guest tag record'
 
-        # Add system-level tags
+        def _add_pool_tags(poolname: str, input_tags: Tags) -> None:
+            for tag, value in input_tags.items():
+                logger.info(f'  Adding {tag}={value}')
+
+                r = upsert(
+                    logger,
+                    session,
+                    PoolTag,
+                    {PoolTag.poolname: poolname, PoolTag.tag: tag},
+                    PoolTag.__table_args__[0],
+                    insert_data={PoolTag.value: value},
+                    update_data={'value': value},
+                )
+
+                assert r.is_ok and r.unwrap() is True, 'Failed to initialize pool tag record'
+
+        # Add system-level guest tags
         logger.info('Adding system-level guest tags')
 
-        _add_tags(GuestTag.SYSTEM_POOL_ALIAS, cast(Tags, server_config.get('guest_tags', {})))
+        _add_guest_tags(GuestTag.SYSTEM_POOL_ALIAS, cast(Tags, server_config.get('guest_tags', {})))
 
-        # Add pool-level tags
+        # Add pool-level guest tags
         for pool_config in server_config.get('pools', []):
             poolname: str = pool_config['name']
 
             logger.info(f'Adding pool-level guest tags for pool {poolname}')
 
-            _add_tags(poolname, cast(Tags, pool_config.get('guest_tags', {})))
+            _add_guest_tags(poolname, cast(Tags, pool_config.get('guest_tags', {})))
+
+        # Add pool tags
+        for pool_config in server_config.get('pools', []):
+            poolname = pool_config['name']
+
+            logger.info(f'Adding pool tags for pool {poolname}')
+
+            _add_pool_tags(poolname, cast(Tags, pool_config.get('pool-tags', {})))
 
         logger.info('Adding priority groups')
 

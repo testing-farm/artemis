@@ -60,6 +60,7 @@ from ..db import (
     GuestRequest,
     GuestTag,
     Pool,
+    PoolTag,
     SafeQuery,
     SnapshotRequest,
     SSHKey,
@@ -1424,10 +1425,6 @@ class PoolDriver(gluetool.log.LoggerMixin):
         return KNOB_POOL_ENABLED.get_value(session=session, entityname=self.poolname)
 
     @property
-    def pool_tags(self) -> Tags:
-        return cast(Tags, self.pool_config.get('pool-tags', {}))
-
-    @property
     def ssh_options(self) -> list[str]:
         return gluetool.utils.normalize_multistring_option(self.pool_config.get('ssh-options', []))
 
@@ -2070,7 +2067,12 @@ class PoolDriver(gluetool.log.LoggerMixin):
         Get all tags applicable for this pool.
         """
 
-        tags: Tags = self.pool_config['pool-tags']
+        r_tags = PoolTag.fetch_pool_tags(session, self.poolname)
+
+        if r_tags.is_error:
+            return Error(r_tags.unwrap_error())
+
+        tags: Tags = {r.tag: r.value for r in r_tags.unwrap()}
 
         tags['poolname'] = self.poolname
         tags['drivername'] = self.drivername
