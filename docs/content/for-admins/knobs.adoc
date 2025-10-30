@@ -705,10 +705,42 @@ until cancelled and reprovisioned.
 
 5+|A template for Beaker job whiteboard.
 
+|`beaker.kickstart.metadata.template`
+|`str`
+|`ARTEMIS_BEAKER_KICKSTART_METADATA_TEMPLATE`
+|`{% if DISTRO.bootc_image %}ostree_container_url={{ DISTRO.bootc_image }} disable_debug_repos contained_harness no_ks_template{% endif %}`
+|no
+
+
+|`beaker.kickstart.metadata.template:$entityname`
+|
+|`ARTEMIS_BEAKER_KICKSTART_METADATA_TEMPLATE_$entityname`
+|
+|
+
+
+5+|A template for Beaker .
+
+|`beaker.kickstart.template-bootc.filepath`
+|`str`
+|`ARTEMIS_BEAKER_KICKSTART_TEMPLATE_BOOTC_FILEPATH`
+|`beaker-bootc-kickstart.ks`
+|no
+
+
+|`beaker.kickstart.template-bootc.filepath:$entityname`
+|
+|`ARTEMIS_BEAKER_KICKSTART_TEMPLATE_BOOTC_FILEPATH_$entityname`
+|
+|
+
+
+5+|Path to the kickstart template used for bootc installation.
+
 |`beaker.mapping.environment-to-image.pattern`
 |`str`
 |`ARTEMIS_BEAKER_ENVIRONMENT_TO_IMAGE_MAPPING_PATTERN`
-|`^(?P<distro>[^;]+)(?:;variant=(?P<variant>[a-zA-Z]+);?)?$`
+|`^(?P<distro>[^;]+)(?:;variant=(?P<variant>[a-zA-Z]+);?)?(?:;bootc_image=(?P<bootc_image>[a-zA-Z0-9._\-:/]+);?)?$`
 |no
 
 
@@ -766,7 +798,7 @@ until cancelled and reprovisioned.
 |`beaker.reservation.extension.command-template`
 |`str`
 |`ARTEMIS_BEAKER_RESERVATION_EXTENSION_COMMAND_TEMPLATE`
-|`echo {{ (EXTENSION_TIME / 3600) | int }} | extendtesttime.sh`
+|`{% set extension_cmd = "echo %s | extendtesttime.sh" % ((EXTENSION_TIME / 3600) | int | string) %}{% if POOL_DATA.is_bootc %}podman exec beaker-harness /bin/bash -c "{{ extension_cmd }}"{% else %}{{ extension_cmd }}{% endif %}`
 |no
 
 
