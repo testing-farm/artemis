@@ -15,7 +15,7 @@ from typing_extensions import Protocol, TypedDict
 
 from . import Failure, Sentry, SerializableContainer, TracingOp, partition
 from .db import GuestRequest
-from .drivers import CanAcquire, PoolCapabilities, PoolDriver, PoolLogger
+from .drivers import CanAcquire, PoolCapabilities, PoolDriver, PoolLogger, Tags
 from .knobs import Knob
 from .metrics import PoolMetrics
 
@@ -341,6 +341,29 @@ def collect_pool_metrics(pools: list[PoolDriver]) -> Result[list[tuple[PoolDrive
         metrics.sync()
 
     return Ok(pool_metrics)
+
+
+def collect_pool_tags(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    pools: list[PoolDriver],
+) -> Result[dict[str, Tags], Failure]:
+    r_answers = [(pool, pool.get_pool_tags(logger, session)) for pool in pools]
+
+    errors = [(p, r) for p, r in r_answers if r.is_error]
+
+    if errors:
+        pool, result = errors[0]
+
+        return Error(
+            Failure.from_failure(
+                'failed to get pool tags',
+                result.unwrap_error(),
+                poolname=pool.poolname,
+            )
+        )
+
+    return Ok({pool.poolname: r_tags.unwrap() for pool, r_tags in r_answers})
 
 
 def create_preferrence_filter_by_driver_class(policy_name: str, *preferred_drivers: type[PoolDriver]) -> PolicyType:

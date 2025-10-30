@@ -363,6 +363,13 @@ properties:
         driver:
           type: string
 
+        pool-tags:
+          type: object
+
+          patternProperties:
+            ^.*$:
+              type: string
+
         guest_tags:
           type: object
 

@@ -59,7 +59,6 @@ from ..security_group_rules import SecurityGroupRule, SecurityGroupRules
 from . import (
     FlavorBasedPoolDriver,
     GuestLogUpdateProgress,
-    GuestTagsType,
     PoolCapabilities,
     PoolData,
     PoolDriver,
@@ -71,6 +70,7 @@ from . import (
     ProvisioningState,
     ReleasePoolResourcesState,
     SerializedPoolResourcesIDs,
+    Tags,
     WatchdogState,
     guest_log_updater,
     run_cli_tool,
@@ -1244,7 +1244,7 @@ def create_network_interfaces(
     return Ok(r_nics.unwrap())
 
 
-def _sanitize_tags(tags: GuestTagsType) -> Generator[tuple[str, str], None, None]:
+def _sanitize_tags(tags: Tags) -> Generator[tuple[str, str], None, None]:
     """
     Sanitize tags to make their values acceptable for AWS API and CLI.
 
@@ -1260,7 +1260,7 @@ def _sanitize_tags(tags: GuestTagsType) -> Generator[tuple[str, str], None, None
         yield name, value or '""'
 
 
-def _serialize_tags(tags: GuestTagsType) -> list[str]:
+def _serialize_tags(tags: Tags) -> list[str]:
     """
     Serialize tags to make them acceptable for AWS CLI.
 
@@ -1276,7 +1276,7 @@ def _serialize_tags(tags: GuestTagsType) -> list[str]:
     return [f'Key={name},Value={value}' for name, value in _sanitize_tags(tags)]
 
 
-def _tags_to_tag_specifications(tags: GuestTagsType, *resource_types: str) -> list[str]:
+def _tags_to_tag_specifications(tags: Tags, *resource_types: str) -> list[str]:
     """
     Serialize tags to make them acceptable for ``--tag-specifications`` CLI option.
 
@@ -2655,7 +2655,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         # Nothing else to watch here, termination reported, we're done
         return Ok(WatchdogState.COMPLETE)
 
-    def _tag_resources(self, resource_ids: list[str], tags: GuestTagsType) -> Result[JSONType, Failure]:
+    def _tag_resources(self, resource_ids: list[str], tags: Tags) -> Result[JSONType, Failure]:
         return self._aws_command(
             ['ec2', 'create-tags', '--resources', *resource_ids, '--tags', *_serialize_tags(tags)],
             json_output=False,

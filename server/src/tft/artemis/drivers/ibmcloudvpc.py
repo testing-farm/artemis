@@ -34,13 +34,13 @@ from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from . import (
     FlavorBasedPoolDriver,
-    GuestTagsType,
     PoolErrorCauses,
     PoolImageSSHInfo,
     ProvisioningProgress,
     ProvisioningState,
     ReleasePoolResourcesState,
     SerializedPoolResourcesIDs,
+    Tags,
     create_tempfile,
 )
 
@@ -90,7 +90,7 @@ TAG_MAX_LENGTH = 128
 TAG_FORBIDDEN_CHARACTERS_PATTERN = re.compile(r'[^.a-zA-Z0-9 _\-]')
 
 
-def _sanitize_tags(tags: GuestTagsType) -> Generator[tuple[str, str], None, None]:
+def _sanitize_tags(tags: Tags) -> Generator[tuple[str, str], None, None]:
     """
     Sanitize tags to make their values acceptable for IBM API and CLI.
 
@@ -114,7 +114,7 @@ def _sanitize_tags(tags: GuestTagsType) -> Generator[tuple[str, str], None, None
             yield name, ''
 
 
-def _serialize_tags(tags: GuestTagsType) -> list[str]:
+def _serialize_tags(tags: Tags) -> list[str]:
     """
     Serialize tags to make them acceptable for IBM CLI.
 

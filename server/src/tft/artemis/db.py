@@ -1537,6 +1537,26 @@ class GuestTag(Base):
         return SafeQuery.from_session(session, cls).filter(cls.poolname == poolname).all()
 
 
+class PoolTag(Base):
+    __tablename__ = 'pool_tags'
+
+    poolname: Mapped[str]
+    tag: Mapped[str]
+    value: Mapped[str]
+
+    __table_args__ = (PrimaryKeyConstraint('poolname', 'tag'),)
+
+    @classmethod
+    def fetch_pool_tags(
+        cls, session: sqlalchemy.orm.session.Session, poolname: str
+    ) -> Result[list['PoolTag'], 'Failure']:
+        """
+        Load all pool tags for a given pool.
+        """
+
+        return SafeQuery.from_session(session, cls).filter(cls.poolname == poolname).all()
+
+
 class Metrics(Base):
     __tablename__ = 'metrics'
 
