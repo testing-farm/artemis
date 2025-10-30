@@ -234,7 +234,7 @@ def config_to_db(logger: gluetool.log.ContextAdapter, db: DB, server_config: dic
         # Add system-level tags
         logger.info('Adding system-level guest tags')
 
-        _add_tags(GuestTag.SYSTEM_POOL_ALIAS, cast(GuestTagsType, server_config.get('guest_tags', {})))
+        _add_tags(GuestTag.SYSTEM_POOL_ALIAS, cast(GuestTagsType, server_config.get('guest-tags', {})))
 
         # Add pool-level tags
         for pool_config in server_config.get('pools', []):
@@ -242,7 +242,7 @@ def config_to_db(logger: gluetool.log.ContextAdapter, db: DB, server_config: dic
 
             logger.info(f'Adding pool-level guest tags for pool {poolname}')
 
-            _add_tags(poolname, cast(GuestTagsType, pool_config.get('guest_tags', {})))
+            _add_tags(poolname, cast(GuestTagsType, pool_config.get('guest-tags', {})))
 
         logger.info('Adding priority groups')
 

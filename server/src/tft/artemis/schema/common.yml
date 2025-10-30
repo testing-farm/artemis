@@ -345,7 +345,7 @@ properties:
       required:
        - name
 
-  guest_tags:
+  guest-tags:
     type: object
 
     patternProperties:
@@ -363,7 +363,7 @@ properties:
         driver:
           type: string
 
-        guest_tags:
+        guest-tags:
           type: object
 
           patternProperties:
