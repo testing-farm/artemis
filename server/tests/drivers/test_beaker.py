@@ -888,15 +888,15 @@ def test_create_beaker_filter(
 
     assert r_filter.is_ok
 
-    filter = r_filter.unwrap()
+    filter_ = r_filter.unwrap()
 
-    if filter is None:
-        assert filter is expected
+    if filter_ is None:
+        assert filter_ is expected
 
     else:
         assert expected
 
-        assert filter.prettify().strip() == textwrap.dedent(expected).strip()
+        assert filter_.prettify().strip() == textwrap.dedent(expected).strip()
 
 
 @pytest.mark.parametrize(

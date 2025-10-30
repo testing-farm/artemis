@@ -139,6 +139,7 @@ target-version = "py39"
 # The following comes from the tmt project - pretty much everything is disabled for now, and we
 # will enable them one by one or in groups, to keep patches reviewable.
 lint.select = [
+    "A",      # flake8-builtins
     "ASYNC",  # flake8-async
     "C4",     # flake8-comprehensions
     "E",      # pycodestyle error

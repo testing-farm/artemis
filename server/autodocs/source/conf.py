@@ -53,7 +53,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = 'Artemis'
-copyright = '2020, Red Hat Inc.'
+project_copyright = '2020, Red Hat Inc.'
 author = 'Testing Farm Team'
 
 # The version info for the project you're documenting, acts as replacement for
