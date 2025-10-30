@@ -312,22 +312,26 @@ def collect_pool_can_acquire(
     pools: list[PoolDriver],
     guest_request: GuestRequest,
 ) -> Result[list[tuple[PoolDriver, CanAcquire]], Failure]:
-    r_answers = [(pool, pool.can_acquire(PoolLogger(logger, pool.poolname), session, guest_request)) for pool in pools]
+    can_acquire: list[tuple[PoolDriver, CanAcquire]] = []
 
-    errors = [(p, r) for p, r in r_answers if r.is_error]
+    for pool in pools:
+        with Sentry.start_span(TracingOp.FUNCTION, description='PoolDriver.can_acquire') as tracing_span:
+            tracing_span.set_tag('poolname', pool.poolname)
 
-    if errors:
-        pool, result = errors[0]
+            r_answer = pool.can_acquire(PoolLogger(logger, pool.poolname), session, guest_request)
 
-        return Error(
-            Failure.from_failure(
-                'failed to get pool can-acquire answer',
-                result.unwrap_error(),
-                poolname=pool.poolname,
+        if r_answer.is_error:
+            return Error(
+                Failure.from_failure(
+                    'failed to get pool can-acquire answer',
+                    r_answer.unwrap_error(),
+                    poolname=pool.poolname,
+                )
             )
-        )
 
-    return Ok([(pool, r.unwrap()) for pool, r in r_answers])
+        can_acquire.append((pool, r_answer.unwrap()))
+
+    return Ok(can_acquire)
 
 
 def collect_pool_metrics(pools: list[PoolDriver]) -> Result[list[tuple[PoolDriver, PoolMetrics]], Failure]:
