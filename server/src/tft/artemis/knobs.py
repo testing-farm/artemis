@@ -311,7 +311,7 @@ class Knob(Generic[T]):
     def __init__(
         self,
         knobname: str,
-        help: str,
+        help: str,  # noqa: A002
         has_db: bool = True,
         per_entity: bool = False,
         envvar: Optional[str] = None,
