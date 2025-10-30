@@ -291,7 +291,7 @@ class MetricsBase:
         """
         Load values from the storage and update this container with up-to-date values.
 
-                .. note::
+        .. note::
 
            **Requires** the context variables defined in :py:mod:`tft.artemis` to be set properly.
 

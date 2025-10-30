@@ -1257,9 +1257,11 @@ def guest_log_updater(
     return wrapper
 
 
-def render_tags(logger: gluetool.log.ContextAdapter, tags: Tags, vars: dict[str, Any]) -> Result[Tags, Failure]:
+def render_tags(
+    logger: gluetool.log.ContextAdapter, tags: Tags, template_vars: dict[str, Any]
+) -> Result[Tags, Failure]:
     for name, tag_template in tags.items():
-        r_rendered = render_template(tag_template, **vars)
+        r_rendered = render_template(tag_template, **template_vars)
 
         if r_rendered.is_error:
             return Error(
