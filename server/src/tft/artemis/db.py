@@ -1296,7 +1296,7 @@ class GuestRequest(Base):
         return [(cast(str, actorname), cast(list['ActorArgumentType'], args)) for actorname, args in on_ready]
 
     @classmethod
-    def to_yaml(cls, representer: ruamel.yaml.representer.Representer, guest_request: 'GuestRequest') -> Any:
+    def to_yaml(cls, representer: ruamel.yaml.representer.Representer, guest_request: 'GuestRequest') -> Any:  # noqa: ANN401
         return representer.represent_dict(guest_request.serialize())
 
 
@@ -1639,7 +1639,12 @@ def _log_db_statement(statement: str) -> None:
 
 @sqlalchemy.event.listens_for(sqlalchemy.engine.Engine, 'before_cursor_execute')
 def before_cursor_execute(
-    conn: sqlalchemy.engine.Connection, cursor: Any, statement: Any, parameters: Any, context: Any, executemany: Any
+    conn: sqlalchemy.engine.Connection,
+    cursor: sqlalchemy.engine.interfaces.DBAPICursor,
+    statement: str,
+    parameters: Any,  # noqa: ANN401  # Actual type sqlalchemy.engine.interfaces._DBAPIAnyExecuteParams
+    context: Optional[sqlalchemy.engine.ExecutionContext],
+    executemany: bool,
 ) -> None:
     _log_db_statement(statement)
 
@@ -1648,7 +1653,12 @@ def before_cursor_execute(
 
 @sqlalchemy.event.listens_for(sqlalchemy.engine.Engine, 'after_cursor_execute')
 def after_cursor_execute(
-    conn: sqlalchemy.engine.Connection, cursor: Any, statement: Any, parameters: Any, context: Any, executemany: Any
+    conn: sqlalchemy.engine.Connection,
+    cursor: sqlalchemy.engine.interfaces.DBAPICursor,
+    statement: str,
+    parameters: Any,  # noqa: ANN401  # Actual type sqlalchemy.engine.interfaces._DBAPIAnyExecuteParams
+    context: Optional[sqlalchemy.engine.ExecutionContext],
+    executemany: bool,
 ) -> None:
     from .knobs import KNOB_LOGGING_DB_SLOW_QUERIES, KNOB_LOGGING_DB_SLOW_QUERY_THRESHOLD
 
@@ -1900,7 +1910,11 @@ class DB:
             session.execute(sqlalchemy.text(f"SET application_name TO '{name}'"))
 
 
-def convert_column_str_to_json(op: Any, tablename: str, columnname: str, rename_to: Optional[str] = None) -> None:
+# Alias for alembic.op. The object is not imported in Artemis, therefore we cannot check typing properly.
+AlembicOp = Any
+
+
+def convert_column_str_to_json(op: AlembicOp, tablename: str, columnname: str, rename_to: Optional[str] = None) -> None:
     """
     Generate SQL statements for converting a column from a text type to JSON while preserving data.
 
@@ -1939,7 +1953,7 @@ def convert_column_str_to_json(op: Any, tablename: str, columnname: str, rename_
         batch_op.drop_column(f'__tmp_{columnname}')
 
 
-def convert_column_json_to_str(op: Any, tablename: str, columnname: str, rename_to: Optional[str] = None) -> None:
+def convert_column_json_to_str(op: AlembicOp, tablename: str, columnname: str, rename_to: Optional[str] = None) -> None:
     """
     Generate SQL statements for converting a column from a JSON type to a text type while preserving data.
 

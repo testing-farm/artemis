@@ -15,8 +15,10 @@ import jinja2
 import jinja2.defaults
 import jinja2_ansible_filters.core_filters
 
+from tft.artemis.knobs import Knob
 
-def _knob_envvar(knob) -> Optional[str]:
+
+def _knob_envvar(knob: Knob[Any]) -> Optional[str]:
     """ """
 
     from tft.artemis.knobs import KnobSourceEnv
@@ -30,7 +32,7 @@ def _knob_envvar(knob) -> Optional[str]:
     return None
 
 
-def _knob_editable(knob) -> bool:
+def _knob_editable(knob: Knob[Any]) -> bool:
     from tft.artemis.knobs import KnobSourceDB
 
     for source in knob._sources:
@@ -42,7 +44,7 @@ def _knob_editable(knob) -> bool:
     return False
 
 
-def _knob_default(knob) -> Optional[str]:
+def _knob_default(knob: Knob[Any]) -> Optional[str]:
     from tft.artemis.knobs import KnobSourceDefault
 
     for source in knob._sources:
@@ -73,7 +75,7 @@ from tft.artemis.knobs import Knob  # noqa: E402
 def extract_knobs(options: argparse.Namespace) -> list[Knob]:
     knobs = []
 
-    def is_knob(o: Any) -> bool:
+    def is_knob(o: object) -> bool:
         return isinstance(o, Knob)
 
     known_knobs: list[str] = []
@@ -100,7 +102,7 @@ def render_page(options: argparse.Namespace, knobs: Knob) -> str:
     return template.render(KNOBS=knobs)
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         '--template-file',

@@ -707,7 +707,7 @@ class TaskLogger(gluetool.log.ContextAdapter):
         self.error(f'failed:\n{stackprinter.format(failure.exception)}')
 
 
-def actor_control_value(actor_name: str, var_name: str, default: Any) -> Any:
+def actor_control_value(actor_name: str, var_name: str, default: Any) -> Any:  # noqa: ANN401
     var_value = os.getenv(f'ARTEMIS_ACTOR_{actor_name.upper()}_{var_name}', default)
 
     # We don't bother about milliseconds in backoff values. For a sake of simplicity

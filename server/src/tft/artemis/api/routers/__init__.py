@@ -21,6 +21,7 @@ import sentry_sdk.tracing
 import sqlalchemy
 import sqlalchemy.exc
 import sqlalchemy.orm.exc
+import sqlalchemy.sql.dml
 from fastapi import Depends, Request, Response, status
 from typing_extensions import ParamSpec
 
@@ -679,7 +680,7 @@ class GuestEventManager:
 def execute_dml(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
-    query: Any,
+    query: sqlalchemy.sql.dml.UpdateBase,
     conflict_error: Union[
         type[errors.ConflictError], type[errors.NoSuchEntityError], type[errors.InternalServerError]
     ] = errors.ConflictError,

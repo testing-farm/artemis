@@ -118,8 +118,9 @@ class GCPDriver(PoolDriver):
         return _Ok(capabilities)
 
     @cached_property
-    def _service_account_info(self) -> Any:
-        return self.pool_config['service-account-info']
+    def _service_account_info(self) -> dict[Any, Any]:
+        # The type is validated using pool's jsonschema (object)
+        return cast(dict[Any, Any], self.pool_config['service-account-info'])
 
     def image_name_to_image_info(
         self, logger: gluetool.log.ContextAdapter, image_name: str

@@ -3102,7 +3102,9 @@ class FlavorBasedPoolDriver(PoolDriver, Generic[PoolImageInfoT, FlavorT]):
         return Ok(CanAcquire())
 
 
-def vm_info_to_ip(output: Any, key: str, regex: Optional[Pattern[str]] = None) -> Result[Optional[str], Failure]:
+def vm_info_to_ip(
+    output: dict[str, Any], key: str, regex: Optional[Pattern[str]] = None
+) -> Result[Optional[str], Failure]:
     if not output[key]:
         # It's ok! That means the instance is not ready yet. We need to wait a bit for ip address.
         return Ok(None)

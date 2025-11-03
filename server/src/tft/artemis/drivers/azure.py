@@ -603,7 +603,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
             def _update_instance_usage(
                 logger: gluetool.log.ContextAdapter,
                 usage: PoolResourcesUsage,
-                raw_instance: Any,
+                raw_instance: Any,  # noqa: ANN401
                 flavor: Optional[Flavor],
             ) -> Result[None, Failure]:
                 assert usage.instances is not None  # narrow type
