@@ -602,8 +602,12 @@ class SerializableContainer:
         return cls.unserialize(get_yaml().load(serialized))
 
     @classmethod
-    def to_yaml(cls, representer: ruamel.yaml.representer.Representer, container: S) -> Any:
+    def to_yaml(cls, representer: ruamel.yaml.representer.Representer, container: S) -> Any:  # noqa: ANN401
         return representer.represent_dict(container.serialize())
+
+
+# ruamel.yaml does not narrow the type
+_RuamelYamlDataType = Any
 
 
 # Two logging helpers, very similar to `format_dict` and `log_dict`, but emitting a YAML-ish output.
@@ -611,7 +615,7 @@ class SerializableContainer:
 # more readable output.
 #
 # TODO: move to gluetool - posibly as a switch to log_dict, no need for a stand-alone functions.
-def format_dict_yaml(data: Any) -> str:
+def format_dict_yaml(data: _RuamelYamlDataType) -> str:
     stream = ruamel.yaml.compat.StringIO()
 
     yaml = get_yaml()
@@ -628,7 +632,7 @@ def format_dict_yaml(data: Any) -> str:
     return stream.getvalue()
 
 
-def log_dict_yaml(writer: gluetool.log.LoggingFunctionType, intro: str, data: Any) -> None:
+def log_dict_yaml(writer: gluetool.log.LoggingFunctionType, intro: str, data: _RuamelYamlDataType) -> None:
     writer(f'{intro}:\n{format_dict_yaml(data)}', extra={'raw_intro': intro, 'raw_struct': data})
 
 
@@ -683,7 +687,7 @@ class Failure:
         environment: Optional['Environment'] = None,
         task_call: Optional['TaskCall'] = None,
         **details: Any,
-    ):
+    ) -> None:
         self.message = message
         self.exc_info = exc_info
         self.details = details
@@ -1385,7 +1389,7 @@ def safe_call_and_handle(
 JSONSchemaType = dict[str, Any]
 
 
-def construct_validation_schema(data: Any) -> Result[JSONSchemaType, Failure]:
+def construct_validation_schema(data: str) -> Result[JSONSchemaType, Failure]:
     """
     Construct a JSON schema for future use in data validation.
 
@@ -1427,7 +1431,7 @@ def load_packaged_validation_schema(schema_subpath: str) -> Result[JSONSchemaTyp
     return load_validation_schema(os.path.join(root_schema_dirpath, schema_subpath))
 
 
-def validate_data(data: Any, schema: JSONSchemaType) -> Result[list[str], Failure]:
+def validate_data(data: JSONType, schema: JSONSchemaType) -> Result[list[str], Failure]:
     """
     Validate a given data using a JSON schema.
 

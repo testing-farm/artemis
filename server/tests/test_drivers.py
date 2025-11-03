@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from re import Pattern
-from typing import Optional, cast
+from typing import Any, Optional, cast
 from unittest.mock import MagicMock
 
 import gluetool
@@ -48,7 +48,7 @@ runcmd:
     ],
 )
 def test_vm_info_to_ip(
-    output: tft.artemis.JSONType, key: str, regex: Optional[Pattern[str]], expected: Result[str, tft.artemis.Failure]
+    output: dict[str, Any], key: str, regex: Optional[Pattern[str]], expected: Result[str, tft.artemis.Failure]
 ) -> None:
     r_ip = vm_info_to_ip(output, key, regex=regex)
 

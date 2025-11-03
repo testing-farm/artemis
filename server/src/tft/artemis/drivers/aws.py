@@ -345,7 +345,7 @@ KNOB_REMOVE_SECURITY_GROUP_DELAY: Knob[int] = Knob(
 
 
 class FailedSpotRequest(Failure):
-    def __init__(self, message: str, spot_instance_id: str, **kwargs: Any):
+    def __init__(self, message: str, spot_instance_id: str, **kwargs: Any) -> None:
         super().__init__(message, **kwargs)
         self.spot_instance_id = spot_instance_id
 
@@ -425,7 +425,7 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
     host helper methods we use for modifications of mappings.
     """
 
-    def __init__(self, mappings: Optional[list[APIBlockDeviceMappingType]] = None):
+    def __init__(self, mappings: Optional[list[APIBlockDeviceMappingType]] = None) -> None:
         super().__init__()
 
         self.data = mappings[:] if mappings else []
@@ -992,7 +992,7 @@ class NetworkInterfaces(SerializableContainer, MutableSequence[APINetworkInterfa
     host helper methods we use for modifications of network interface list.
     """
 
-    def __init__(self, interfaces: Optional[list[APINetworkInterfaceType]] = None):
+    def __init__(self, interfaces: Optional[list[APINetworkInterfaceType]] = None) -> None:
         super().__init__()
 
         self.data = interfaces[:] if interfaces else []

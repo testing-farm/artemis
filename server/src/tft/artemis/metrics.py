@@ -26,6 +26,7 @@ import threading
 import time
 from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar, Union, cast
 
+import dramatiq.worker
 import gluetool.log
 import prometheus_client.utils
 import redis
@@ -3149,7 +3150,7 @@ class WorkerMetrics(MetricsBase):
         interval: int,
         metrics_getter: Callable[[Any], Result[tuple[int, int], Failure]],
         thread_name: str = 'worker-metrics-refresher',
-        worker_instance: Optional[Any] = None,
+        worker_instance: Optional[dramatiq.worker.Worker] = None,
     ) -> threading.Thread:
         """
         Create and start a thread to refresh cached worker metrics.
