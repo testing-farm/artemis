@@ -327,8 +327,8 @@ def config_to_db(logger: gluetool.log.ContextAdapter, db: DB, server_config: dic
             logger.info(f'Adding user "{username}" with role "{role.name}"')
 
             # TODO: must handle case when the user exists, since we basically overwrite the tokens...
-            admin_token, admin_token_hash = User.generate_token()
-            provisioning_token, provisioning_token_hash = User.generate_token()
+            _, admin_token_hash = User.generate_token()
+            _, provisioning_token_hash = User.generate_token()
 
             r = upsert(
                 logger,

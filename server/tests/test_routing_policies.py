@@ -100,7 +100,7 @@ def mock_inputs() -> MockInputs:
 
 @pytest.fixture
 def mock_policies(mock_inputs: MockInputs) -> list[tft.artemis.routing_policies.PolicyType]:
-    mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
+    _, _, mock_pools, _ = mock_inputs
 
     return [
         MagicMock(
@@ -190,7 +190,7 @@ def test_boilerplate_crash(mock_inputs: MockInputs) -> None:
 
 
 def test_collect_pool_capabilities(mock_inputs: MockInputs, mockpatch: MockPatcher) -> None:
-    mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
+    _, _, mock_pools, _ = mock_inputs
 
     mock_capabilities = [MagicMock(name=f'{pool.poolname}.capabilities<mock>') for pool in mock_pools]
 
@@ -216,7 +216,7 @@ def test_collect_pool_capabilities(mock_inputs: MockInputs, mockpatch: MockPatch
 def test_collect_pool_capabilities_error(
     mock_inputs: MockInputs, monkeypatch: _pytest.monkeypatch.MonkeyPatch, mockpatch: MockPatcher
 ) -> None:
-    mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
+    _, _, mock_pools, _ = mock_inputs
 
     mockpatch(mock_pools[0], 'capabilities').return_value = Ok(
         MagicMock(name=f'{mock_pools[0].poolname}.capabilities<mock>')
