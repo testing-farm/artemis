@@ -424,13 +424,13 @@ def config_to_db(logger: gluetool.log.ContextAdapter, db: DB, server_config: dic
 
 @click.group()
 @click.pass_context
-def cmd_root(ctx: Any) -> None:
+def cmd_root(ctx: click.Context) -> None:
     pass
 
 
 @cmd_root.command(name='config-to-db', help='Write the given configuration into DB. Obeys all environment variables.')
 @click.pass_context
-def cmd_config_to_db(ctx: Any) -> None:
+def cmd_config_to_db(ctx: click.Context) -> None:
     logger = get_logger()
     server_config = get_config()
     db = get_db(logger)
@@ -450,7 +450,7 @@ def cmd_config_to_db(ctx: Any) -> None:
     help='If specified, the given schema would be used instead of the packaged one.',
 )
 @click.pass_context
-def cmd_validate_config(ctx: Any, custom_schema: Optional[str] = None) -> None:
+def cmd_validate_config(ctx: click.Context, custom_schema: Optional[str] = None) -> None:
     logger = get_logger()
     server_config = get_config()
 

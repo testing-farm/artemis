@@ -625,7 +625,7 @@ class SerializableContainer:
         return cls.unserialize(get_yaml().load(serialized))
 
     @classmethod
-    def to_yaml(cls, representer: ruamel.yaml.representer.Representer, container: S) -> Any:
+    def to_yaml(cls, representer: ruamel.yaml.representer.Representer, container: S) -> Any:  # noqa: ANN401
         return representer.represent_dict(container.serialize())
 
 
@@ -658,12 +658,16 @@ def is_logging_writer_visible(writer: gluetool.log.LoggingFunctionType) -> bool:
     return KNOB_LOGGING_LEVEL.value <= loglevel_threshold
 
 
+# ruamel.yaml does not narrow the type
+_RuamelYamlDataType = Any
+
+
 # Two logging helpers, very similar to `format_dict` and `log_dict`, but emitting a YAML-ish output.
 # YAML is often more readable for humans, and, sometimes, we might use these on purpose, to provide
 # more readable output.
 #
 # TODO: move to gluetool - posibly as a switch to log_dict, no need for a stand-alone functions.
-def format_dict_yaml(data: Any) -> str:
+def format_dict_yaml(data: _RuamelYamlDataType) -> str:
     stream = ruamel.yaml.compat.StringIO()
 
     yaml = get_yaml()
@@ -680,7 +684,7 @@ def format_dict_yaml(data: Any) -> str:
     return stream.getvalue()
 
 
-def log_dict_yaml(writer: gluetool.log.LoggingFunctionType, intro: str, data: Any) -> None:
+def log_dict_yaml(writer: gluetool.log.LoggingFunctionType, intro: str, data: _RuamelYamlDataType) -> None:
     if not is_logging_writer_visible(writer):
         return
 
@@ -738,7 +742,7 @@ class Failure:
         environment: Optional['Environment'] = None,
         task_call: Optional['TaskCall'] = None,
         **details: Any,
-    ):
+    ) -> None:
         self.message = message
         self.exc_info = exc_info
         self.details = details
@@ -1426,7 +1430,7 @@ def rewrap_to_gluetool(fn: Callable[P, _Result[T, U]]) -> Callable[P, Result[T, 
 JSONSchemaType = dict[str, Any]
 
 
-def construct_validation_schema(data: Any) -> Result[JSONSchemaType, Failure]:
+def construct_validation_schema(data: str) -> Result[JSONSchemaType, Failure]:
     """
     Construct a JSON schema for future use in data validation.
 
@@ -1468,7 +1472,7 @@ def load_packaged_validation_schema(schema_subpath: str) -> Result[JSONSchemaTyp
     return load_validation_schema(os.path.join(root_schema_dirpath, schema_subpath))
 
 
-def validate_data(data: Any, schema: JSONSchemaType) -> Result[list[str], Failure]:
+def validate_data(data: JSONType, schema: JSONSchemaType) -> Result[list[str], Failure]:
     """
     Validate a given data using a JSON schema.
 

@@ -20,7 +20,7 @@ import tft.artemis.db
 from tft.artemis import __VERSION__
 from tft.artemis.api.environment import CURRENT_MILESTONE_VERSION
 from tft.artemis.api.middleware import AuthorizationMiddleware, rewrite_request_path
-from tft.artemis.api.models import AuthContext, _add_to_headers
+from tft.artemis.api.models import AuthContext, TokenTypes, _add_to_headers
 from tft.artemis.environment import Environment, HWRequirements, Kickstart, OsRequirements
 
 from . import MockPatcher
@@ -336,7 +336,7 @@ def test_auth_context_verify_auth_basic_empty(
 ) -> None:
     auth_context.is_empty = True
 
-    auth_context.verify_auth_basic(session, 'whatever')
+    auth_context.verify_auth_basic(session, TokenTypes.ADMIN)
 
     assert auth_context.is_empty is True
     assert auth_context.is_invalid_request is False
@@ -352,7 +352,7 @@ def test_auth_context_verify_auth_basic_invalid(
     auth_context.is_empty = True
     auth_context.is_invalid_request = True
 
-    auth_context.verify_auth_basic(session, 'whatever')
+    auth_context.verify_auth_basic(session, TokenTypes.ADMIN)
 
     assert auth_context.is_empty is True
     assert auth_context.is_invalid_request is True
@@ -370,7 +370,7 @@ def test_auth_context_verify_auth_basic_no_such_user(
         auth_context.request, ('Authorization', f'Basic {base64.b64encode(b"wrong-username:dummy-password").decode()}')
     )
 
-    auth_context.verify_auth_basic(session, 'whatever')
+    auth_context.verify_auth_basic(session, TokenTypes.PROVISIONING)
 
     assert auth_context.is_empty is False
     assert auth_context.is_invalid_request is False
@@ -389,7 +389,7 @@ def test_auth_context_verify_auth_basic_provisioning_valid(
         ('Authorization', f'Basic {base64.b64encode(b"dummy-user:dummy-user-provisioning-token").decode()}'),
     )
 
-    auth_context.verify_auth_basic(session, 'provisioning')
+    auth_context.verify_auth_basic(session, TokenTypes.PROVISIONING)
 
     assert auth_context.is_empty is False
     assert auth_context.is_invalid_request is False
@@ -408,7 +408,7 @@ def test_auth_context_verify_auth_basic_provisioning_invalid_type(
         ('Authorization', f'Basic {base64.b64encode(b"dummy-user:dummy-user-provisioning-token").decode()}'),
     )
 
-    auth_context.verify_auth_basic(session, 'admin')
+    auth_context.verify_auth_basic(session, TokenTypes.ADMIN)
 
     assert auth_context.is_empty is False
     assert auth_context.is_invalid_request is False
@@ -426,7 +426,7 @@ def test_auth_context_verify_auth_basic_provisioning_invalid_token(
         auth_context.request, ('Authorization', f'Basic {base64.b64encode(b"dummy-user:wrong-password").decode()}')
     )
 
-    auth_context.verify_auth_basic(session, 'admin')
+    auth_context.verify_auth_basic(session, TokenTypes.ADMIN)
 
     assert auth_context.is_empty is False
     assert auth_context.is_invalid_request is False
@@ -445,7 +445,7 @@ def test_auth_context_verify_auth_basic_admin_valid(
         ('Authorization', f'Basic {base64.b64encode(b"dummy-admin:dummy-admin-admin-token").decode()}'),
     )
 
-    auth_context.verify_auth_basic(session, 'admin')
+    auth_context.verify_auth_basic(session, TokenTypes.ADMIN)
 
     assert auth_context.is_empty is False
     assert auth_context.is_invalid_request is False
@@ -464,7 +464,7 @@ def test_auth_context_verify_auth_basic_admin_invalid_type(
         ('Authorization', f'Basic {base64.b64encode(b"dummy-admin:dummy-admin-admin-token").decode()}'),
     )
 
-    auth_context.verify_auth_basic(session, 'provisioning')
+    auth_context.verify_auth_basic(session, TokenTypes.PROVISIONING)
 
     assert auth_context.is_empty is False
     assert auth_context.is_invalid_request is False
@@ -482,7 +482,7 @@ def test_auth_context_verify_auth_basic_admin_invalid_token(
         auth_context.request, ('Authorization', f'Basic {base64.b64encode(b"dummy-admin:wrong-password").decode()}')
     )
 
-    auth_context.verify_auth_basic(session, 'admin')
+    auth_context.verify_auth_basic(session, TokenTypes.ADMIN)
 
     assert auth_context.is_empty is False
     assert auth_context.is_invalid_request is False
@@ -519,8 +519,8 @@ def test_auth_context_verify_auth_provisioning(
 
     mock_user = MagicMock(name='user<mock>')
 
-    def mock_verify_auth_basic(session: sqlalchemy.orm.session.Session, token_type: str) -> None:
-        assert token_type == 'provisioning'
+    def mock_verify_auth_basic(session: sqlalchemy.orm.session.Session, token_type: TokenTypes) -> None:
+        assert token_type == TokenTypes.PROVISIONING
 
         auth_context.user = mock_user
         auth_context.is_authenticated = True
@@ -548,8 +548,8 @@ def test_auth_context_verify_auth_admin(
 
     mock_user = MagicMock(name='user<mock>', role=tft.artemis.db.UserRoles.ADMIN, is_admin=True)
 
-    def mock_verify_auth_basic(session: sqlalchemy.orm.session.Session, token_type: str) -> None:
-        assert token_type == 'admin'
+    def mock_verify_auth_basic(session: sqlalchemy.orm.session.Session, token_type: TokenTypes) -> None:
+        assert token_type == TokenTypes.ADMIN
 
         auth_context.user = mock_user
         auth_context.is_authenticated = True
@@ -577,8 +577,8 @@ def test_auth_context_verify_auth_admin_with_user_role(
 
     mock_user = MagicMock(name='user<mock>', role=tft.artemis.db.UserRoles.USER, is_admin=False)
 
-    def mock_verify_auth_basic(session: sqlalchemy.orm.session.Session, token_type: str) -> None:
-        assert token_type == 'admin'
+    def mock_verify_auth_basic(session: sqlalchemy.orm.session.Session, token_type: TokenTypes) -> None:
+        assert token_type == TokenTypes.ADMIN
 
         auth_context.user = mock_user
         auth_context.is_authenticated = True
