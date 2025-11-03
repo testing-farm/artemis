@@ -707,7 +707,7 @@ def _honor_constraint_disk(
 ) -> Result[bool, Failure]:
     logger.debug(f'honor-constraint-disk: {constraint}')
 
-    property_name, index, child_property_name, _ = constraint.expand_name()
+    _, index, child_property_name, _ = constraint.expand_name()
 
     if child_property_name == 'size':
         log_dict_yaml(logger.debug, '  mappings before', mappings.serialize())
@@ -2488,7 +2488,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         if r_output.is_error:
             return Error(r_output.unwrap_error())
 
-        instance, owner = r_output.unwrap()
+        instance, _ = r_output.unwrap()
 
         state = instance['State']['Name']
 

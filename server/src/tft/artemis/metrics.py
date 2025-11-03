@@ -3491,7 +3491,7 @@ class Metrics(MetricsBase):
         """
 
         def _render() -> bytes:
-            with db.transaction(logger, read_only=True) as (session, t):
+            with db.transaction(logger, read_only=True) as (session, _):
                 SESSION.set(session)
 
                 with Sentry.start_span(TracingOp.FUNCTION, description='metrics.sync'):
