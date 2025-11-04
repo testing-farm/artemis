@@ -1956,7 +1956,7 @@ class Workspace:
             GuestRequest.log_error_event_by_guestname(self.logger, self.session, self.guestname, label, failure)
 
         else:
-            self._event(label, failure=failure.get_event_details())
+            self._event(label, failure=failure.as_guest_event)
 
         if not no_effect:
             if failure.recoverable is True:

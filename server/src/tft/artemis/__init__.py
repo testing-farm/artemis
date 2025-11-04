@@ -862,7 +862,8 @@ class Failure:
     def command_output(self) -> Optional[gluetool.utils.ProcessOutput]:
         return self.details.get('command_output')
 
-    def get_event_details(self) -> dict[str, Any]:
+    @property
+    def as_guest_event(self) -> dict[str, Any]:
         """
         Returns a mapping of failure details, suitable for storing in DB as a guest event details.
         """
@@ -890,7 +891,7 @@ class Failure:
             event_details['task_call'] = event_details['task_call'].serialize()
 
         if self.caused_by:
-            event_details['caused_by'] = self.caused_by.get_event_details()
+            event_details['caused_by'] = self.caused_by.as_guest_event
 
         if self.sentry_event_url:
             event_details['sentry'] = {'event_id': self.sentry_event_id, 'event_url': self.sentry_event_url}
@@ -980,7 +981,15 @@ class Failure:
             'stacktrace': {'frames': result},
         }
 
-    def get_sentry_contexts(self) -> dict[str, dict[str, Any]]:
+    @classmethod
+    def _serialize_simplified_traceback(
+        cls,
+        frames: _traceback.StackSummary,
+    ) -> list[str]:
+        return [f'{frame.filename}:{frame.lineno} {frame.name} >> {frame.line} <<' for frame in frames]
+
+    @property
+    def sentry_contexts(self) -> dict[str, dict[str, Any]]:
         contexts: dict[str, dict[str, Any]] = Sentry.get_default_contexts()
 
         # https://docs.sentry.io/platforms/python/enriching-events/context/#structured-context
@@ -992,7 +1001,8 @@ class Failure:
 
         return contexts
 
-    def get_sentry_details(self) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    @property
+    def as_sentry(self) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
         """
         Returns three mappings, data, tags and extra, accepted by Sentry as issue details.
         """
@@ -1051,13 +1061,49 @@ class Failure:
         )
 
         if self.caused_by:
-            caused_by_data, caused_by_tags, caused_by_extra = self.caused_by.get_sentry_details()
+            caused_by_data, caused_by_tags, caused_by_extra = self.caused_by.as_pruned_sentry
 
-            extra['caused_by'] = {'data': caused_by_data, 'tags': caused_by_tags, 'extra': caused_by_extra}
+            extra['caused_by'] = {'event': caused_by_data, 'tags': caused_by_tags, 'extra': caused_by_extra}
 
         return event, tags, extra
 
-    def get_log_details(self) -> dict[str, Any]:
+    @property
+    def as_pruned_sentry(self) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+        """
+        Returns three mappings, data, tags and extra, accepted by Sentry as issue details.
+        """
+
+        event, tags, extra = self.as_sentry
+
+        event.pop('env', None)
+        event.pop('exception', None)
+
+        if self.exc_info:
+            event = {
+                'level': 'error',
+                'exception': Failure._serialize_simplified_traceback(self.traceback),
+            }
+
+        elif self.traceback:
+            # Convert our traceback to format understood by Sentry, and store it in `data['stacktrace']` where Sentry
+            # expects it to find when generating the message for submission.
+
+            event.update(
+                {
+                    'level': 'error',
+                    'exception': Failure._serialize_simplified_traceback(self.traceback),
+                }
+            )
+
+        if self.caused_by:
+            caused_by_data, caused_by_tags, caused_by_extra = self.caused_by.as_pruned_sentry
+
+            extra['caused_by'] = {'event': caused_by_data, 'tags': caused_by_tags, 'extra': caused_by_extra}
+
+        return event, tags, extra
+
+    @property
+    def as_log(self) -> dict[str, Any]:
         """
         Returns a mapping of failure details, suitable for logging subsystem.
         """
@@ -1095,7 +1141,7 @@ class Failure:
             details['task_call'] = details['task_call'].serialize()
 
         if self.caused_by:
-            details['caused-by'] = self.caused_by.get_log_details()
+            details['caused-by'] = self.caused_by.as_log
 
         if self.sentry_event_url:
             details['sentry'] = {'event_id': self.sentry_event_id, 'event_url': self.sentry_event_url}
@@ -1103,7 +1149,7 @@ class Failure:
         return details
 
     def _printable(self, label: str = _DEFAULT_FAILURE_LOG_LABEL) -> str:
-        return f'{label}\n\n{format_dict_yaml(self.get_log_details())}'
+        return f'{label}\n\n{format_dict_yaml(self.as_log)}'
 
     def __str__(self) -> str:
         return self._printable()
@@ -1123,9 +1169,9 @@ class Failure:
         if not SENTRY.enabled:
             return
 
-        event, tags, extra = self.get_sentry_details()
+        event, tags, extra = self.as_sentry
 
-        event['contexts'] = self.get_sentry_contexts()
+        event['contexts'] = self.sentry_contexts
 
         if additional_tags:
             tags.update(additional_tags)

@@ -132,7 +132,7 @@ class RulingHistoryItem(SerializableContainer):
             serialized['cancel'] = self.ruling.cancel
 
         if self.failure is not None:
-            serialized['failure'] = self.failure.get_event_details()
+            serialized['failure'] = self.failure.as_guest_event
 
         return serialized
 

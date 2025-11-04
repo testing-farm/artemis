@@ -1152,7 +1152,7 @@ class GuestRequest(Base):
         :param details: additional event details. The mapping will be stored as a JSON blob.
         """
 
-        details['failure'] = failure.get_event_details()
+        details['failure'] = failure.as_guest_event
 
         return cls.log_event_by_guestname(logger, session, guestname, 'error', error=message, **details)
 
@@ -1198,7 +1198,7 @@ class GuestRequest(Base):
         """
 
         if failure is not None:
-            details['failure'] = failure.get_event_details()
+            details['failure'] = failure.as_guest_event
 
         return cls.log_event_by_guestname(logger, session, guestname, 'warning', error=message, **details)
 
