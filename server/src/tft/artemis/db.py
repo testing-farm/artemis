@@ -1936,9 +1936,9 @@ def convert_column_str_to_json(op: AlembicOp, tablename: str, columnname: str, r
 
     # copy data from the existing column to the temporary one, and cast them to JSON type
     if op.get_bind().dialect.name == 'postgresql':
-        op.get_bind().execute(sqlalchemy.text(f'UPDATE {tablename} SET __tmp_{columnname} = {columnname}::json'))
+        op.get_bind().execute(sqlalchemy.text(f'UPDATE {tablename} SET __tmp_{columnname} = {columnname}::json'))  # noqa: S608
     else:
-        op.get_bind().execute(sqlalchemy.text(f'UPDATE {tablename} SET __tmp_{columnname} = {columnname}'))
+        op.get_bind().execute(sqlalchemy.text(f'UPDATE {tablename} SET __tmp_{columnname} = {columnname}'))  # noqa: S608
 
     # drop the original column, and create it as JSON
     with op.batch_alter_table(tablename, schema=None) as batch_op:
@@ -1946,7 +1946,7 @@ def convert_column_str_to_json(op: AlembicOp, tablename: str, columnname: str, r
         batch_op.add_column(Column(final_columnname, JSON(), nullable=False, server_default='{}'))
 
     # copy data from the temporary column to its final location (no casting needed, they have the very same type)
-    op.get_bind().execute(sqlalchemy.text(f'UPDATE {tablename} SET {final_columnname} = __tmp_{columnname}'))
+    op.get_bind().execute(sqlalchemy.text(f'UPDATE {tablename} SET {final_columnname} = __tmp_{columnname}'))  # noqa: S608
 
     # drop the temporary column
     with op.batch_alter_table(tablename, schema=None) as batch_op:
@@ -1975,9 +1975,9 @@ def convert_column_json_to_str(op: AlembicOp, tablename: str, columnname: str, r
 
     # copy data from the existing column to the temporary one, and them to text
     if op.get_bind().dialect.name == 'postgresql':
-        op.get_bind().execute(sqlalchemy.text(f'UPDATE {tablename} SET __tmp_{columnname} = {columnname}::text'))
+        op.get_bind().execute(sqlalchemy.text(f'UPDATE {tablename} SET __tmp_{columnname} = {columnname}::text'))  # noqa: S608
     else:
-        op.get_bind().execute(sqlalchemy.text(f'UPDATE {tablename} SET __tmp_{columnname} = {columnname}'))
+        op.get_bind().execute(sqlalchemy.text(f'UPDATE {tablename} SET __tmp_{columnname} = {columnname}'))  # noqa: S608
 
     # drop the original column, and create it as text
     with op.batch_alter_table(tablename, schema=None) as batch_op:
@@ -1985,7 +1985,7 @@ def convert_column_json_to_str(op: AlembicOp, tablename: str, columnname: str, r
         batch_op.add_column(Column(final_columnname, Text(), nullable=False, server_default='{}'))
 
     # copy data from the temporary column to its final location (no casting needed, they have the very same type)
-    op.get_bind().execute(sqlalchemy.text(f'UPDATE {tablename} SET {final_columnname} = __tmp_{columnname}'))
+    op.get_bind().execute(sqlalchemy.text(f'UPDATE {tablename} SET {final_columnname} = __tmp_{columnname}'))  # noqa: S608
 
     # drop the temporary column
     with op.batch_alter_table(tablename, schema=None) as batch_op:

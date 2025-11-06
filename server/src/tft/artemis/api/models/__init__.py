@@ -64,6 +64,11 @@ def _add_to_headers(request: Request, new_data_tuple: tuple[str, Any]) -> None:
     request.scope.update(headers=request.headers.raw)
 
 
+class TokenTypes(enum.Enum):
+    PROVISIONING = 'provisioning'
+    ADMIN = 'admin'
+
+
 @dataclasses.dataclass
 class AuthContext:
     request: Request
@@ -168,7 +173,7 @@ class AuthContext:
         except Exception:
             self.is_invalid_request = True
 
-    def verify_auth_basic(self, session: sqlalchemy.orm.session.Session, token_type: str) -> None:
+    def verify_auth_basic(self, session: sqlalchemy.orm.session.Session, token_type: TokenTypes) -> None:
         self._extract_credentials_basic()
 
         if self.is_empty:
@@ -194,12 +199,12 @@ class AuthContext:
         if not user:
             return
 
-        if token_type == 'provisioning' and user.provisioning_token == artemis_db.User.hash_token(self.token):
+        if token_type == TokenTypes.PROVISIONING and user.provisioning_token == artemis_db.User.hash_token(self.token):
             self.user = user
             self.is_authenticated = True
             return
 
-        if token_type == 'admin' and user.admin_token == artemis_db.User.hash_token(self.token):
+        if token_type == TokenTypes.ADMIN and user.admin_token == artemis_db.User.hash_token(self.token):
             self.user = user
             self.is_authenticated = True
             return
@@ -213,14 +218,14 @@ class AuthContext:
 
         with get_session(logger, db, read_only=True) as (session, _):
             if matches_path(self.request, PROVISIONING_AUTH):
-                self.verify_auth_basic(session, 'provisioning')
+                self.verify_auth_basic(session, TokenTypes.PROVISIONING)
 
                 if self.user and self.is_authenticated:
                     self.is_authorized = True
                     return
 
             if matches_path(self.request, ADMIN_AUTH):
-                self.verify_auth_basic(session, 'admin')
+                self.verify_auth_basic(session, TokenTypes.ADMIN)
 
                 if self.user and self.is_authenticated and self.user.is_admin:
                     self.is_authorized = True
@@ -359,11 +364,6 @@ class KnobResponse:
     help: str
     editable: bool
     cast: Optional[str]
-
-
-class TokenTypes(enum.Enum):
-    PROVISIONING = 'provisioning'
-    ADMIN = 'admin'
 
 
 @dataclasses.dataclass
