@@ -161,6 +161,7 @@ lint.select = [
     "N",      # pep8-naming
     "RSE",    # flake8-raise
     "RUF",    # Ruff-specific rules
+    "S",      # flake8-bandit
     "SIM",    # flake8-simplify
     "T10",    # flake8-debugger
     "TRY",    # tryceratops
@@ -171,6 +172,14 @@ lint.select = [
 lint.ignore = [
     "PLC0415",  # `import` should be at the top-level of a file
     "S101",     # Use of `assert` detected
+    # We use temp paths primarily when pushing data to guests
+    "S108",     # Probable insecure usage of temporary file or directory
+    # Not doing cryptographically-secure random
+    "S311",     # Standard pseudo-random generators are not suitable for cryptographic purposes
+    # execve calls are used to spawn different artemis components
+    "S606",     # Starting a process without a shell
+    # We do not serve content HTML/XML content that might be affected by XSS
+    "S701",     # Using jinja2 templates with autoescape=False is dangerous and can lead to XSS
     # Conflicts with our use of other linters that ruff does not recognize.
     "RUF100",   # unused-noqa	Unused noqa directive
     # Creating our own exceptions does not seem tempting for now.
@@ -186,7 +195,7 @@ lint.task-tags = ["TODO", "FIXME", "NEW"]
 # This file was generated, ignore it
 "autodocs/source/conf.py" = ["ERA"]
 # Lax typing for tests
-"tests/**" = ["ANN401"]
+"tests/**" = ["ANN401", "S105", "S603"]
 # These files have valid commented out code blocks which should be ignored, there is no better way to ignore them
 "src/tft/artemis/drivers/azure.py" = ["ERA"]
 "src/tft/artemis/drivers/ibmcloudvpc.py" = ["ERA"]

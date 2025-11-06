@@ -392,6 +392,26 @@ for the requested action.
 
 5+|Which engine to user for API server, gunicorn or uvicorn.
 
+|`api.engine.bind.address`
+|`str`
+|`ARTEMIS_API_ENGINE_BIND_ADDRESS`
+|`0.0.0.0`
+|no
+
+
+
+5+|Address to bind the listening socket to.
+
+|`api.engine.bind.port`
+|`int`
+|`ARTEMIS_API_ENGINE_BIND_PORT`
+|`8001`
+|no
+
+
+
+5+|Port to bind the listening socket to.
+
 |`api.engine.debug`
 |`bool`
 |`ARTEMIS_API_ENGINE_DEBUG`

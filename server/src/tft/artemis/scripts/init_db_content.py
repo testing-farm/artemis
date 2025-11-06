@@ -24,7 +24,7 @@ from .. import (
 from ..db import DB, GuestShelf, GuestTag, Pool, PoolTag, PriorityGroup, SSHKey, User, UserRoles, upsert
 from ..drivers import PoolDriver, Tags
 from ..guest import GuestState
-from ..knobs import KNOB_DISABLE_CERT_VERIFICATION
+from ..knobs import KNOB_DISABLE_CERT_VERIFICATION, KNOB_HTTP_TIMEOUT
 
 
 def _load_bundled_schema(logger: gluetool.log.ContextAdapter) -> tuple[JSONSchemaType, dict[str, JSONSchemaType]]:
@@ -101,7 +101,9 @@ def _load_remote_schema(
         logger.debug(f'fetching schema {url}')
 
         try:
-            response = requests.get(url, verify=not KNOB_DISABLE_CERT_VERIFICATION.value)
+            response = requests.get(
+                url, verify=not KNOB_DISABLE_CERT_VERIFICATION.value, timeout=KNOB_HTTP_TIMEOUT.value
+            )
 
             if response.status_code == 404:
                 return Ok({})
