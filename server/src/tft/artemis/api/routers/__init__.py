@@ -707,7 +707,7 @@ def execute_dml(
 
 @contextlib.contextmanager
 def get_session(
-    logger: gluetool.log.ContextAdapter, db: artemis_db.DB, read_only: bool = False
+    logger: gluetool.log.ContextAdapter, db: artemis_db.DB, *, read_only: bool = False
 ) -> Generator[tuple[sqlalchemy.orm.session.Session, artemis_db.TransactionResult], None, None]:
     with db.get_session(logger, read_only=read_only) as session:
         with artemis_db.transaction(logger, session) as t:

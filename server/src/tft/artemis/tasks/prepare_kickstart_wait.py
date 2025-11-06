@@ -114,7 +114,7 @@ class Workspace(_Workspace):
 
             ssh_timeout = r_ssh_timeout.unwrap()
 
-            def _pull_log(log_type: AnacondaLogType, finished: bool = False) -> None:
+            def _pull_log(log_type: AnacondaLogType, *, finished: bool = False) -> None:
                 """
                 Pull the specified log from the system.
                 """
@@ -185,10 +185,10 @@ class Workspace(_Workspace):
                                 r_store_blob, f'failed to store the blob for the log {logname}', no_effect=True
                             )
 
-            def _pull_logs(finished: bool = False) -> Result[None, Failure]:
+            def _pull_logs(*, finished: bool = False) -> Result[None, Failure]:
                 try:
                     for log_type in AnacondaLogType:
-                        _pull_log(log_type, finished)
+                        _pull_log(log_type, finished=finished)
                 except Exception as exc:
                     return Error(Failure.from_exc('failed getting logs from the guest', exc))
 

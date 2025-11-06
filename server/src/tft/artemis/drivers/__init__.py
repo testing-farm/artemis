@@ -704,7 +704,7 @@ class CanAcquire:
     reason: Optional[Failure] = None
 
     @classmethod
-    def cannot(cls, message: str, recoverable: bool = False) -> 'CanAcquire':
+    def cannot(cls, message: str, *, recoverable: bool = False) -> 'CanAcquire':
         return CanAcquire(can_acquire=False, reason=Failure(message, recoverable=recoverable))
 
 
@@ -1145,6 +1145,7 @@ class GuestLogBlob:
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_log: GuestLog,
+        *,
         overwrite: bool = False,
     ) -> Result[None, Failure]:
         if guest_log.blobs and overwrite:
@@ -1426,7 +1427,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
     @staticmethod
     def load_all(
-        logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, enabled_only: bool = True
+        logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, *, enabled_only: bool = True
     ) -> Result[list['PoolDriver'], Failure]:
         r_pools = SafeQuery.from_session(session, Pool).all()
 
@@ -1950,7 +1951,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         raise NotImplementedError
 
     def update_snapshot(
-        self, guest_request: GuestRequest, snapshot_request: SnapshotRequest, start_again: bool = True
+        self, guest_request: GuestRequest, snapshot_request: SnapshotRequest, *, start_again: bool = True
     ) -> Result[ProvisioningProgress, Failure]:
         """
         Update progress of snapshot creation.
@@ -3122,6 +3123,7 @@ def vm_info_to_ip(
 def run_cli_tool(
     logger: gluetool.log.ContextAdapter,
     command: list[str],
+    *,
     json_output: bool = False,
     command_scrubber: Optional[Callable[[list[str]], list[str]]] = None,
     allow_empty: bool = True,
@@ -3546,6 +3548,7 @@ class CLISessionPermanentDir:
         self,
         logger: gluetool.log.ContextAdapter,
         options: list[str],
+        *,
         json_format: bool = True,
         commandname: Optional[str] = None,
     ) -> Result[Union[JSONType, str], Failure]:
@@ -3599,10 +3602,11 @@ class CLISessionPermanentDir:
         self,
         logger: gluetool.log.ContextAdapter,
         options: list[str],
+        *,
         json_format: bool = True,
         commandname: Optional[str] = None,
     ) -> Result[Union[JSONType, str], Failure]:
         if self._login_result is not None and self._login_result.is_error:
             return Error(self._login_result.unwrap_error())
 
-        return self._run_cmd(logger, options, json_format, commandname=commandname)
+        return self._run_cmd(logger, options, json_format=json_format, commandname=commandname)

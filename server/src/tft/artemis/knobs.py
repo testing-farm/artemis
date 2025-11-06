@@ -312,6 +312,7 @@ class Knob(Generic[T]):
         self,
         knobname: str,
         help: str,  # noqa: A002
+        *,
         has_db: bool = True,
         per_entity: bool = False,
         envvar: Optional[str] = None,
@@ -376,7 +377,7 @@ class Knob(Generic[T]):
         # by a DB record. We must skip sources that deal with DB or per-entity-capable sources - these
         # are dynamic, their output depends on inputs (like entity name...).
 
-        def _get_static_value(skip_db: bool = False, skip_per_entity: bool = False) -> T:
+        def _get_static_value(*, skip_db: bool = False, skip_per_entity: bool = False) -> T:
             value, failure = self._get_value(skip_db=skip_db, skip_per_entity=skip_per_entity)
 
             # If we fail to get value from envvar/default sources, then something is wrong. Maybe there's
@@ -412,7 +413,7 @@ class Knob(Generic[T]):
         return f'<Knob: {self.knobname}: {" ".join(traits)}>'
 
     def _get_value(
-        self, skip_db: bool = False, skip_per_entity: bool = False, **kwargs: Any
+        self, *, skip_db: bool = False, skip_per_entity: bool = False, **kwargs: Any
     ) -> tuple[Optional[T], Optional['Failure']]:
         """
         The core method for getting the knob value. Returns two items:

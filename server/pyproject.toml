@@ -147,6 +147,7 @@ lint.select = [
     "ERA",    # eradicate
     "F",      # pyflakes
     "FAST",   # FastAPI
+    "FBT",    # flake8-boolean-trap
     "FLY",    # flynt
     "FURB",   # refurb
     "I",      # isort
@@ -194,8 +195,9 @@ lint.task-tags = ["TODO", "FIXME", "NEW"]
 [tool.ruff.lint.per-file-ignores]
 # This file was generated, ignore it
 "autodocs/source/conf.py" = ["ERA"]
-# Lax typing for tests
-"tests/**" = ["ANN401", "S105", "S603"]
+# ANN: Lax typing for tests
+# FBT: A lot of parametrized tests accepting boolean parameters
+"tests/**" = ["ANN401", "FBT", "S105", "S603"]
 # These files have valid commented out code blocks which should be ignored, there is no better way to ignore them
 "src/tft/artemis/drivers/azure.py" = ["ERA"]
 "src/tft/artemis/drivers/ibmcloudvpc.py" = ["ERA"]
@@ -205,6 +207,14 @@ lint.task-tags = ["TODO", "FIXME", "NEW"]
 
 [tool.ruff.lint.flake8-annotations]
 allow-star-arg-any = true
+
+[tool.ruff.lint.flake8-boolean-trap]
+# Based on the docs description, sort of abuse of the parameter but does what we want
+extend-allowed-calls = [
+    # `gluetool.result.Result` generic constructors, which might be used to wrap a bool (`Result[bool]`)
+    "gluetool.result.Error",
+    "gluetool.result.Ok",
+]
 
 [tool.ruff.lint.isort]
 combine-as-imports = true
