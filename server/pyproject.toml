@@ -144,6 +144,7 @@ lint.select = [
     "E",      # pycodestyle error
     "F",      # pyflakes
     "FAST",   # FastAPI
+    "FBT",    # flake8-boolean-trap
     "FLY",    # flynt
     "FURB",   # refurb
     "I",      # isort
@@ -189,6 +190,14 @@ lint.ignore = [
 
 [tool.ruff.lint.flake8-annotations]
 allow-star-arg-any = true
+
+[tool.ruff.lint.flake8-boolean-trap]
+# Based on the docs description, sort of abuse of the parameter but does what we want
+extend-allowed-calls = [
+    # `gluetool.result.Result` generic constructors, which might be used to wrap a bool (`Result[bool]`)
+    "gluetool.result.Error",
+    "gluetool.result.Ok",
+]
 
 [tool.ruff.lint.isort]
 combine-as-imports = true

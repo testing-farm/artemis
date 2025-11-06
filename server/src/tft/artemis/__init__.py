@@ -158,7 +158,7 @@ def get_yaml() -> ruamel.yaml.main.YAML:
 def get_logger() -> gluetool.log.ContextAdapter:
     from .knobs import KNOB_LOGGING_JSON, KNOB_LOGGING_LEVEL
 
-    gluetool.color.switch(True)
+    gluetool.color.switch(enabled=True)
 
     return gluetool.log.Logging.setup_logger(level=KNOB_LOGGING_LEVEL.value, json_output=KNOB_LOGGING_JSON.value)
 
@@ -675,6 +675,7 @@ class Failure:
     def __init__(
         self,
         message: str,
+        *,
         exc_info: Optional[ExceptionInfoType] = None,
         traceback: Optional[_traceback.StackSummary] = None,
         caused_by: Optional['Failure'] = None,
@@ -751,6 +752,7 @@ class Failure:
         cls,
         message: str,
         exc: Exception,
+        *,
         caused_by: Optional['Failure'] = None,
         sentry: Optional[bool] = True,
         recoverable: bool = True,
@@ -780,6 +782,7 @@ class Failure:
         cls,
         message: str,
         caused_by: 'Failure',
+        *,
         sentry: Optional[bool] = True,
         # these are common "details" so we add them as extra keyword arguments with their types
         scrubbed_command: Optional[list[str]] = None,
@@ -1170,6 +1173,7 @@ class Failure:
         self,
         logger: gluetool.log.ContextAdapter,
         label: str = _DEFAULT_FAILURE_LOG_LABEL,
+        *,
         sentry: bool = True,
         **details: Any,
     ) -> None:

@@ -304,6 +304,7 @@ class GCPDriver(PoolDriver):
         disks: list[compute_v1.AttachedDisk],
         machine_type: Optional[str] = None,
         network_link: Optional[str] = None,
+        *,
         delete_protection: bool = False,
     ) -> Result[compute_v1.Instance, Failure]:
         network_link = network_link or self.pool_config['network-resource-url']
@@ -462,7 +463,7 @@ class GCPDriver(PoolDriver):
         raise NotImplementedError
 
     def update_snapshot(
-        self, guest_request: GuestRequest, snapshot_request: SnapshotRequest, start_again: bool = True
+        self, guest_request: GuestRequest, snapshot_request: SnapshotRequest, *, start_again: bool = True
     ) -> Result[ProvisioningProgress, Failure]:
         raise NotImplementedError
 

@@ -475,6 +475,7 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
     @staticmethod
     def create_mapping(
         device_name: str,
+        *,
         # common volume properties
         delete_on_termination: Optional[bool] = None,
         encrypted: Optional[bool] = None,
@@ -511,6 +512,7 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
     @staticmethod
     def update_mapping(
         mapping: APIBlockDeviceMappingType,
+        *,
         device_name: Optional[str] = None,
         # common volume properties
         delete_on_termination: Optional[bool] = None,
@@ -584,6 +586,7 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
     def enlarge(
         self,
         count: int,
+        *,
         # common volume properties
         delete_on_termination: Optional[bool] = None,
         encrypted: Optional[bool] = None,
@@ -630,6 +633,7 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
     def append_mapping(
         self,
         device_name: str,
+        *,
         # common volume properties
         delete_on_termination: Optional[bool] = None,
         encrypted: Optional[bool] = None,
@@ -668,6 +672,7 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
 
     def update_root_volume(
         self,
+        *,
         # common volume properties
         delete_on_termination: Optional[bool] = None,
         encrypted: Optional[bool] = None,
@@ -898,6 +903,7 @@ def setup_root_volume(
     image: AWSPoolImageInfo,
     flavor: Flavor,
     default_root_disk_size: Optional[SizeType] = None,
+    *,
     # common volume properties
     delete_on_termination: Optional[bool] = None,
     encrypted: Optional[bool] = None,
@@ -1035,6 +1041,7 @@ class NetworkInterfaces(SerializableContainer, MutableSequence[APINetworkInterfa
         device_index: int,
         subnet_id: str,
         security_groups: list[str],
+        *,
         delete_on_termination: bool = True,
         associate_public_ip_address: bool = False,
     ) -> Result[APINetworkInterfaceType, Failure]:
@@ -1051,6 +1058,7 @@ class NetworkInterfaces(SerializableContainer, MutableSequence[APINetworkInterfa
     @staticmethod
     def update_nic(
         nic: APINetworkInterfaceType,
+        *,
         device_index: Optional[int] = None,
         subnet_id: Optional[str] = None,
         security_groups: Optional[list[str]] = None,
@@ -1095,8 +1103,9 @@ class NetworkInterfaces(SerializableContainer, MutableSequence[APINetworkInterfa
         count: int,
         subnet_id: str,
         security_groups: list[str],
-        delete_on_termination: bool,
-        associate_public_ip_address: bool,
+        *,
+        delete_on_termination: bool = True,
+        associate_public_ip_address: bool = False,
     ) -> Result[None, Failure]:
         current_count = len(self)
 
@@ -1121,6 +1130,7 @@ class NetworkInterfaces(SerializableContainer, MutableSequence[APINetworkInterfa
         device_index: int,
         subnet_id: str,
         security_groups: list[str],
+        *,
         delete_on_termination: bool = True,
         associate_public_ip_address: bool = False,
     ) -> Result[APINetworkInterfaceType, Failure]:
@@ -1845,7 +1855,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         return Ok(cast(list[dict[str, Any]], r_output.unwrap())[0])
 
     def _aws_command(
-        self, args: list[str], json_output: bool = True, key: Optional[str] = None, commandname: Optional[str] = None
+        self, args: list[str], *, json_output: bool = True, key: Optional[str] = None, commandname: Optional[str] = None
     ) -> Result[JSONType, Failure]:
         """
         Runs command via aws cli and returns a dictionary with command reply.
