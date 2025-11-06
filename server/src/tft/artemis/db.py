@@ -263,7 +263,7 @@ def stringify_query(session: sqlalchemy.orm.session.Session, query: sqlalchemy.s
 
 
 def assert_not_in_transaction(
-    logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, rollback: bool = True
+    logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, *, rollback: bool = True
 ) -> bool:
     if session._transaction is None:
         return True
@@ -1057,8 +1057,8 @@ class GuestRequest(Base):
         ssh_username: str,
         priorityname: Optional[str],
         user_data: Optional[UserDataType],
-        bypass_shelf_lookup: bool,
-        skip_prepare_verify_ssh: bool,
+        bypass_shelf_lookup: bool,  # noqa: FBT001
+        skip_prepare_verify_ssh: bool,  # noqa: FBT001
         post_install_script: Optional[str],
         log_types: list[tuple[str, GuestLogContentType]],
         watchdog_dispatch_delay: Optional[int],
@@ -1644,7 +1644,7 @@ def before_cursor_execute(
     statement: str,
     parameters: Any,  # noqa: ANN401  # Actual type sqlalchemy.engine.interfaces._DBAPIAnyExecuteParams
     context: Optional[sqlalchemy.engine.ExecutionContext],
-    executemany: bool,
+    executemany: bool,  # noqa: FBT001
 ) -> None:
     _log_db_statement(statement)
 
@@ -1658,7 +1658,7 @@ def after_cursor_execute(
     statement: str,
     parameters: Any,  # noqa: ANN401  # Actual type sqlalchemy.engine.interfaces._DBAPIAnyExecuteParams
     context: Optional[sqlalchemy.engine.ExecutionContext],
-    executemany: bool,
+    executemany: bool,  # noqa: FBT001
 ) -> None:
     from .knobs import KNOB_LOGGING_DB_SLOW_QUERIES, KNOB_LOGGING_DB_SLOW_QUERY_THRESHOLD
 
@@ -1833,7 +1833,7 @@ class DB:
 
     @contextmanager
     def get_session(
-        self, logger: gluetool.log.ContextAdapter, read_only: bool = False
+        self, logger: gluetool.log.ContextAdapter, *, read_only: bool = False
     ) -> Iterator[sqlalchemy.orm.session.Session]:
         """
         Create new DB session.
@@ -1891,7 +1891,7 @@ class DB:
 
     @contextmanager
     def transaction(
-        self, logger: gluetool.log.ContextAdapter, read_only: bool = False
+        self, logger: gluetool.log.ContextAdapter, *, read_only: bool = False
     ) -> Iterator[tuple[sqlalchemy.orm.session.Session, TransactionResult]]:
         """
         Create new DB session & transaction.

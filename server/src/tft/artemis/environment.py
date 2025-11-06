@@ -1005,6 +1005,7 @@ class Constraint(ConstraintBase):
         cls,
         name: str,
         raw_value: str,
+        *,
         as_quantity: bool = True,
         as_cast: Optional[Callable[[str], ConstraintValueType]] = None,
         original_constraint: Optional['Constraint'] = None,

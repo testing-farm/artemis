@@ -541,7 +541,7 @@ def policy_supports_guest_logs(
 
 
 def _prefer_spot_or_dedicated_instances(
-    pools: list[PoolDriver], guest_request: GuestRequest, supports_spot_instances: bool
+    pools: list[PoolDriver], guest_request: GuestRequest, *, supports_spot_instances: bool
 ) -> PolicyReturnType:
     # If request does insist on using spot or non-spot instance, we should not mess with its request by
     # possibly removing the group it requests. For such environments, do nothing and let other policies
@@ -579,7 +579,7 @@ def policy_prefer_spot_instances(
     Prefer pools capable of using spot instances to satisfy the request. If there are no such pools,
     all given pools are returned - *prefer*, not *allow only*.
     """
-    return _prefer_spot_or_dedicated_instances(pools, guest_request, True)
+    return _prefer_spot_or_dedicated_instances(pools, guest_request, supports_spot_instances=True)
 
 
 @policy_boilerplate
@@ -593,7 +593,7 @@ def policy_prefer_dedicated_instances(
     Prefer pools capable of using dedicated instances to satisfy the request. If there are no such pools,
     all given pools are returned - *prefer*, not *allow only*.
     """
-    return _prefer_spot_or_dedicated_instances(pools, guest_request, False)
+    return _prefer_spot_or_dedicated_instances(pools, guest_request, supports_spot_instances=False)
 
 
 @policy_boilerplate

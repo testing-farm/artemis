@@ -22,7 +22,7 @@ class Profiler:
     Bundles together various parameters and helpers for profiling a code.
     """
 
-    def __init__(self, verbose: bool = False) -> None:
+    def __init__(self, *, verbose: bool = False) -> None:
         """
         Bundles together various parameters and helpers for profiling a code.
 

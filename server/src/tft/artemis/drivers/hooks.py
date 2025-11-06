@@ -35,7 +35,7 @@ _PATTERN_MAP_CACHE_LOCK = threading.Lock()
 
 
 def get_pattern_map(
-    logger: gluetool.log.ContextAdapter, filepath: str, use_cache: bool = True
+    logger: gluetool.log.ContextAdapter, filepath: str, *, use_cache: bool = True
 ) -> Result[gluetool.utils.PatternMap, Failure]:
     if not use_cache:
         try:
