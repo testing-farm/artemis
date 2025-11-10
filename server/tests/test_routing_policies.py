@@ -443,7 +443,7 @@ def do_test_policy_supports_architecture(
         assert ruling.allowed_pools == []
 
     else:
-        assert False, 'unreachable'
+        raise AssertionError('unreachable')
 
 
 def test_policy_supports_architecture(
@@ -506,7 +506,7 @@ def do_test_policy_supports_snapshots(
         assert ruling.allowed_pools == mock_pools
 
     else:
-        assert False, 'unreachable'
+        raise AssertionError('unreachable')
 
 
 def test_policy_supports_snapshots(mock_inputs: MockInputs, monkeypatch: _pytest.monkeypatch.MonkeyPatch) -> None:

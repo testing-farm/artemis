@@ -364,7 +364,7 @@ class GuestRequestManager:
                 guest_logger.info,
                 f'requested task #{task_request_id}',
                 TaskCall.from_call(
-                    guest_delete_task, guestname, task_request_id=task_request_id, *extra_actor_args
+                    guest_delete_task, guestname, *extra_actor_args, task_request_id=task_request_id
                 ).serialize(),
             )
 
@@ -553,7 +553,7 @@ def _parse_environment(
             logger=logger,
             caused_by=Failure.from_exc('failed to parse environment', exc),
             failure_details=failure_details,
-        )
+        ) from exc
 
 
 def _parse_security_group_rules(
@@ -570,7 +570,7 @@ def _parse_security_group_rules(
             logger=logger,
             caused_by=Failure.from_exc('failed to parse security group rules', exc),
             failure_details=failure_details,
-        )
+        ) from exc
 
 
 def _parse_log_types(
@@ -589,7 +589,7 @@ def _parse_log_types(
                 logger=logger,
                 caused_by=Failure.from_exc('cannot convert log type to GuestLogContentType object', exc),
                 failure_details=failure_details,
-            )
+            ) from exc
 
     return parsed_log_types
 
@@ -1117,7 +1117,7 @@ class KnobManager:
             )
 
         # Second, update editable knobs.
-        for knobname, knob in Knob.DB_BACKED_KNOBS.items():
+        for knobname, _ in Knob.DB_BACKED_KNOBS.items():
             assert knobname in knobs
 
             knobs[knobname].editable = True
@@ -1226,7 +1226,7 @@ class KnobManager:
                     logger=logger,
                     caused_by=Failure.from_exc('cannot cast knob value', exc),
                     failure_details=failure_details,
-                )
+                ) from exc
 
             artemis_db.upsert(
                 logger,
@@ -1382,8 +1382,8 @@ class UserManager:
         try:
             actual_role = artemis_db.UserRoles(user_request.role)
 
-        except ValueError:
-            raise errors.BadRequestError(failure_details={'username': username, 'role': user_request.role})
+        except ValueError as exc:
+            raise errors.BadRequestError(failure_details={'username': username, 'role': user_request.role}) from exc
 
         manager.create_user(logger, username, actual_role)
 
@@ -1403,8 +1403,8 @@ class UserManager:
         try:
             actual_tokentype = TokenTypes(tokentype)
 
-        except ValueError:
-            raise errors.BadRequestError(failure_details={'username': username, 'tokentype': tokentype})
+        except ValueError as exc:
+            raise errors.BadRequestError(failure_details={'username': username, 'tokentype': tokentype}) from exc
 
         return manager.reset_token(logger, username, actual_tokentype)
 
@@ -1476,7 +1476,7 @@ class UserManager:
                 )
 
             else:
-                assert False, 'Unreachable'
+                raise AssertionError('Unreachable')
 
             execute_dml(logger, session, query, failure_details={'username': username, 'tokentype': tokentype.value})
 

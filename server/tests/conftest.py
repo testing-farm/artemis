@@ -310,7 +310,7 @@ def fixture_redis(
     def get_cache(logger: gluetool.log.ContextAdapter) -> redislite.Redis:
         return redislite.Redis(dbfilename=str(redis_db_file))
 
-    mock_contextvar = contextvars.ContextVar('CACHE', default=get_cache(logger))
+    mock_contextvar = contextvars.ContextVar('CACHE', default=get_cache(logger))  # noqa: B039
 
     monkeypatch.setattr(tft.artemis, 'get_cache', get_cache)
     monkeypatch.setattr(tft.artemis.context, 'get_cache', get_cache)

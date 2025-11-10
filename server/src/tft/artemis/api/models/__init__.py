@@ -418,8 +418,8 @@ class EventSearchParameters:
             if req_params.get('until') is not None:
                 params.since = req_params['until']
 
-        except (ValueError, AttributeError):
-            raise errors.BadRequestError(request=request)
+        except (ValueError, AttributeError) as exc:
+            raise errors.BadRequestError(request=request) from exc
 
         return params
 

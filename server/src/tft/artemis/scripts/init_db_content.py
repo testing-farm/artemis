@@ -356,8 +356,8 @@ def config_to_db(logger: gluetool.log.ContextAdapter, db: DB, server_config: dic
                 try:
                     role = UserRoles[user_config['role'].upper()]
 
-                except KeyError:
-                    raise Exception(f'Unknown role "{user_config["role"]}" of user "{username}"')
+                except KeyError as exc:
+                    raise Exception(f'Unknown role "{user_config["role"]}" of user "{username}"') from exc
 
             else:
                 role = UserRoles.USER
@@ -421,7 +421,7 @@ def config_to_db(logger: gluetool.log.ContextAdapter, db: DB, server_config: dic
 
         t.failure.handle(logger)
 
-        assert False, 'Failed to successfully populate DB'
+        raise AssertionError('Failed to successfully populate DB')
 
 
 @click.group()
