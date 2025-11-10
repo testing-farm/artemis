@@ -142,6 +142,7 @@ lint.select = [
     "A",      # flake8-builtins
     "ANN",    # flake8-annotations
     "ASYNC",  # flake8-async
+    "B",      # flake8-bugbear
     "C4",     # flake8-comprehensions
     "E",      # pycodestyle error
     "ERA",    # eradicate
@@ -152,6 +153,7 @@ lint.select = [
     "FURB",   # refurb
     "I",      # isort
     "ICN",    # flake8-import-conventions
+    "INP",    # flake8-no-pep420
     "INT",    # flake8-gettext
     "ISC",    # flake8-implicit-str-concat
     "PGH",    # pygrep-hooks
@@ -160,6 +162,7 @@ lint.select = [
     "PLE",    # pylint-error
     "PYI",    # flake8-pyi
     "N",      # pep8-naming
+    "Q",      # flake8-quotes
     "RSE",    # flake8-raise
     "RUF",    # Ruff-specific rules
     "S",      # flake8-bandit
@@ -195,6 +198,9 @@ lint.task-tags = ["TODO", "FIXME", "NEW"]
 [tool.ruff.lint.per-file-ignores]
 # This file was generated, ignore it
 "autodocs/source/conf.py" = ["ERA"]
+# These are not modules, the no-implicit-namespaces rule should not apply
+"alembic/**" = ["INP"]
+"configuration/**" = ["INP"]
 # ANN: Lax typing for tests
 # FBT: A lot of parametrized tests accepting boolean parameters
 "tests/**" = ["ANN401", "FBT", "S105", "S603"]
@@ -215,6 +221,9 @@ extend-allowed-calls = [
     "gluetool.result.Error",
     "gluetool.result.Ok",
 ]
+
+[tool.ruff.lint.flake8-quotes]
+inline-quotes = "single"
 
 [tool.ruff.lint.isort]
 combine-as-imports = true

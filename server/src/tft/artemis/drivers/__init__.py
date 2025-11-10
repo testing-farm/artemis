@@ -447,7 +447,7 @@ if hasattr(shlex, 'join'):
     # And there is no way to disable *that* report :/ See https://github.com/python/mypy/issues/8823
     # Trying to work around this with a bit of `getattr()` - we *know* the attribute exists, and the types
     # are a match, we just need to fool mypy a bit.
-    command_join = getattr(shlex, 'join')
+    command_join = shlex.join
 
 else:
 
@@ -1043,7 +1043,7 @@ def _patch_flavors(
 
         else:
             # guarded by schema validation, we should always have `name` or `name-regex`
-            assert False, 'unreachable'
+            raise AssertionError('unreachable')
 
         if not target_flavors:
             return Error(Failure('unknown patched flavor', flavorname=flavorname))
@@ -2503,7 +2503,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
                 target_images = [image for image in images.values() if image_name_pattern.match(image.name) is not None]
 
             else:
-                assert False, 'unreachable'
+                raise AssertionError('unreachable')
 
             if not target_images:
                 return Error(Failure('unknown patched image', imagename=imagename))
