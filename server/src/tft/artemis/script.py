@@ -8,7 +8,7 @@ from typing import Any, Callable
 import gluetool.utils
 from gluetool.result import Error, Ok, Result
 
-from . import Failure
+from . import Failure, Sentry, TracingOp
 
 
 class ScriptEngine:
@@ -54,7 +54,10 @@ class ScriptEngine:
         return self.functions[name](**kwargs)
 
     def run_hook(self, name: str, **kwargs: Any) -> Result[Any, Failure]:
-        return self.run(f'hook_{name.upper()}', **kwargs)
+        with Sentry.start_span(TracingOp.FUNCTION, description='ScriptEngine.run_hook') as tracing_span:
+            tracing_span.set_tag('hookname', name)
+
+            return self.run(f'hook_{name.upper()}', **kwargs)
 
 
 def hook_engine(hook_name: str) -> Result[ScriptEngine, Failure]:

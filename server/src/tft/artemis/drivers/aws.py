@@ -33,7 +33,9 @@ from typing_extensions import Literal, TypedDict
 from .. import (
     Failure,
     JSONType,
+    Sentry,
     SerializableContainer,
+    TracingOp,
     log_dict_yaml,
     logging_filter,
     process_output_to_str,
@@ -2923,7 +2925,12 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         Retrieve all flavor info known to the pool.
         """
 
-        return get_cached_mapping_values(CACHE.get(), self.flavor_info_cache_key, AWSFlavor)
+        with Sentry.start_span(
+            TracingOp.FUNCTION, description='PoolDriver.get_cached_pool_flavor_infos'
+        ) as tracing_span:
+            tracing_span.set_tag('poolname', self.poolname)
+
+            return get_cached_mapping_values(CACHE.get(), self.flavor_info_cache_key, AWSFlavor)
 
     def fetch_pool_resources_metrics(
         self, logger: gluetool.log.ContextAdapter
