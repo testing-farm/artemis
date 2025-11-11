@@ -182,6 +182,7 @@ class AWSErrorCauses(PoolErrorCauses):
     IMAGE_INFO_REFRESH_FAILED = 'image-info-refresh-failed'
     MISSING_INSTANCE = 'missing-instance'
     MISSING_SPOT_INSTANCE_REQUEST = 'missing-spot-instance-request'
+    MISSING_SECURITY_GROUP = 'missing-security-group'
     REQUEST_LIMIT_EXCEEDED = 'request-limit-exceeded'
     SPOT_PRICE_NOT_DETECTED = 'spot-price-not-detected'
     INSTANCE_BUILDING_TOO_LONG = 'instance-building-too-long'
@@ -197,6 +198,9 @@ CLI_ERROR_PATTERNS = {
     ),
     AWSErrorCauses.MISSING_SPOT_INSTANCE_REQUEST: re.compile(
         r'.+\(InvalidSpotInstanceRequestID\.NotFound\).+The spot instance request ID \'.+\' does not exist'
+    ),
+    AWSErrorCauses.MISSING_SECURITY_GROUP: re.compile(
+        r'.+\(InvalidGroup\.NotFound\).+The security group \'.+\' does not exist'
     ),
     AWSErrorCauses.REQUEST_LIMIT_EXCEEDED: re.compile(r'.+\(RequestLimitExceeded\).+Request limit exceeded'),
 }
@@ -1868,7 +1872,11 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
             if failure.command_output:
                 cause = awscli_error_cause_extractor(failure.command_output)
 
-                if cause in (AWSErrorCauses.MISSING_INSTANCE, AWSErrorCauses.MISSING_SPOT_INSTANCE_REQUEST):
+                if cause in (
+                    AWSErrorCauses.MISSING_INSTANCE,
+                    AWSErrorCauses.MISSING_SPOT_INSTANCE_REQUEST,
+                    AWSErrorCauses.MISSING_SECURITY_GROUP,
+                ):
                     failure.recoverable = False
 
                     PoolMetrics.inc_error(self.poolname, cause)
