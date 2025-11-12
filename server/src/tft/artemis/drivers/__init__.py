@@ -2649,14 +2649,24 @@ class PoolDriver(gluetool.log.LoggerMixin):
         Retrieve pool image info for all known images.
         """
 
-        return get_cached_mapping_values(CACHE.get(), self.image_info_cache_key, self.image_info_class)
+        with Sentry.start_span(
+            TracingOp.FUNCTION, description='PoolDriver.get_cached_pool_image_infos'
+        ) as tracing_span:
+            tracing_span.set_tag('poolname', self.poolname)
+
+            return get_cached_mapping_values(CACHE.get(), self.image_info_cache_key, self.image_info_class)
 
     def get_cached_pool_flavor_infos(self) -> Result[list[Flavor], Failure]:
         """
         Retrieve all flavor info known to the pool.
         """
 
-        return get_cached_mapping_values(CACHE.get(), self.flavor_info_cache_key, self.flavor_info_class)
+        with Sentry.start_span(
+            TracingOp.FUNCTION, description='PoolDriver.get_cached_pool_flavor_infos'
+        ) as tracing_span:
+            tracing_span.set_tag('poolname', self.poolname)
+
+            return get_cached_mapping_values(CACHE.get(), self.flavor_info_cache_key, self.flavor_info_class)
 
 
 class FlavorFilter(Protocol, Generic[FlavorT]):
