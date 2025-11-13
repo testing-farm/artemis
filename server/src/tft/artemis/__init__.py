@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import platform
+import re
 import resource
 import shlex
 import sys
@@ -53,6 +54,7 @@ import redis
 import ruamel.yaml
 import ruamel.yaml.compat
 import sentry_sdk
+import sentry_sdk._types
 import sentry_sdk.integrations.argv
 import sentry_sdk.integrations.atexit
 import sentry_sdk.integrations.dedupe
@@ -94,6 +96,7 @@ from .knobs import (  # noqa: E402
     KNOB_SENTRY_EVENT_URL_TEMPLATE,
     KNOB_SENTRY_INTEGRATIONS,
     KNOB_SENTRY_ISSUES_SAMPLE_RATE,
+    KNOB_SENTRY_TRACING_SAMPLE_PATTERN,
     KNOB_SENTRY_TRACING_SAMPLE_RATE,
     KNOB_TEMPLATE_BLOCK_DELIMITERS,
     KNOB_TEMPLATE_VARIABLE_DELIMITERS,
@@ -315,6 +318,27 @@ class Sentry:
         # value of 10 is pretty small, 1000 should be more than enough for anything we ever encounter.
         sentry_sdk.serializer.MAX_DATABAG_BREADTH = 1000
 
+        traces_sampler: Optional[sentry_sdk._types.TracesSampler]
+
+        if KNOB_SENTRY_TRACING_SAMPLE_PATTERN.value.strip() != '.*':
+
+            def traces_sampler(sampling_context: sentry_sdk._types.SamplingContext) -> float:
+                # Use the parent sampling decision if we have an incoming trace.
+                # Note: Sentry strongly recommends respecting the parent sampling decision,
+                # as this ensures traces will be complete!
+                parent_sampling_decision = sampling_context['parent_sampled']
+
+                if parent_sampling_decision is not None:
+                    return float(parent_sampling_decision)
+
+                if _SENTRY_TRACING_SAMPLE_PATTERN.match(sampling_context['transaction_context']['name']):
+                    return 1.0
+
+                return KNOB_SENTRY_TRACING_SAMPLE_RATE.value
+
+        else:
+            traces_sampler = None
+
         sentry_sdk.init(
             dsn=KNOB_SENTRY_DSN.value,
             release=get_release(),
@@ -335,6 +359,7 @@ class Sentry:
             # Tracing
             enable_tracing=KNOB_TRACING_ENABLED.value,
             traces_sample_rate=KNOB_SENTRY_TRACING_SAMPLE_RATE.value,
+            traces_sampler=traces_sampler,
             # Profiling
             # We do not use Sentry for profiling
             profiles_sample_rate=0.0,
@@ -1484,6 +1509,18 @@ def logging_filter(
 
         else:
             log_dict_yaml(logger.debug, f'filter {filter_name}: denied', item)
+
+
+# Pre-compile Sentry tracing pattern.
+try:
+    _SENTRY_TRACING_SAMPLE_PATTERN = re.compile(KNOB_SENTRY_TRACING_SAMPLE_PATTERN.value)
+
+except Exception as exc:
+    Failure.from_exc(
+        'failed to compile Sentry tracing sample pattern', exc, pattern=KNOB_SENTRY_TRACING_SAMPLE_PATTERN.value
+    ).handle(get_logger())
+
+    sys.exit(1)
 
 
 # Pre-compile template delimiters.

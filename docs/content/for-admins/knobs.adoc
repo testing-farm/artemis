@@ -1620,6 +1620,16 @@ for said guest request again.
 5+|The sampling rate of issues reported to Sentry, between 0.0 (no events reported) and 1.0
 (all events reported).
 
+|`sentry.tracing.sample-pattern`
+|`str`
+|`ARTEMIS_SENTRY_TRACING_SAMPLE_PATTERN`
+|`.*`
+|no
+
+
+
+5+|Only tasks matching this pattern would be reporting their tracing data to Sentry.
+
 |`sentry.tracing.sample-rate`
 |`float`
 |`ARTEMIS_SENTRY_TRACING_SAMPLE_RATE`
