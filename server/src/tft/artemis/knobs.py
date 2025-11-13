@@ -820,6 +820,15 @@ KNOB_SENTRY_TRACING_SAMPLE_RATE: Knob[float] = Knob(
     default=1.0,
 )
 
+KNOB_SENTRY_TRACING_SAMPLE_PATTERN: Knob[str] = Knob(
+    'sentry.tracing.sample-pattern',
+    'Only tasks matching this pattern would be reporting their tracing data to Sentry.',
+    has_db=False,
+    envvar='ARTEMIS_SENTRY_TRACING_SAMPLE_PATTERN',
+    cast_from_str=str,
+    default='.*',
+)
+
 KNOB_LOGGING_SENTRY: Knob[bool] = Knob(
     'logging.sentry',
     'When enabled, Artemis would log more Sentry-related debug info.',
