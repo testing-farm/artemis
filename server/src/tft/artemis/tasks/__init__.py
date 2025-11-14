@@ -1099,13 +1099,6 @@ def _task_core(
 
     actor_name = caller_frame.frame.f_code.co_name
 
-    profile_actor = gluetool.utils.normalize_bool_option(actor_control_value(actor_name, 'PROFILE', False))
-    verbose_profile = gluetool.utils.normalize_bool_option(actor_control_value(actor_name, 'VERBOSE_PROFILE', False))
-
-    if profile_actor:
-        profiler = Profiler(verbose=verbose_profile)
-        profiler.start()
-
     db = db or get_root_db()
 
     doer_args = doer_args or tuple()
@@ -1196,10 +1189,6 @@ def _task_core(
         failure.handle(logger)
 
         doer_result = Error(failure)
-
-    if profile_actor:
-        profiler.stop()
-        profiler.log(logger, 'profiling report (outer)')
 
     CURRENT_TASK.set(None)
 
