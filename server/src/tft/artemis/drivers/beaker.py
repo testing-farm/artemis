@@ -1300,18 +1300,22 @@ class BeakerDriver(PoolDriver):
         groups = match.groupdict()
 
         try:
-            return Ok(
-                BeakerPoolImageInfo(
-                    name=groups['distro'],
-                    id=groups['distro'],
-                    arch=None,
-                    boot=FlavorBoot(),
-                    ssh=PoolImageSSHInfo(),
-                    supports_kickstart=groups['bootc_image'] is None,
-                    variant=groups['variant'],
-                    bootc_image=groups['bootc_image'],
-                )
+            image = BeakerPoolImageInfo(
+                name=groups['distro'],
+                id=groups['distro'],
+                arch=None,
+                boot=FlavorBoot(),
+                ssh=PoolImageSSHInfo(),
+                supports_kickstart=groups['bootc_image'] is None,
             )
+
+            if groups['variant'] is not None:
+                image.variant = groups['variant']
+
+            if groups['bootc_image'] is not None:
+                image.bootc_image = groups['bootc_image']
+
+            return Ok(image)
 
         except Exception as exc:
             return Error(
