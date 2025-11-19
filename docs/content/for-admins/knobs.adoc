@@ -692,7 +692,7 @@ until cancelled and reprovisioned.
 |
 
 
-5+|A template for the "create job recipe" command.
+5+|A template for the ``bkr`` subcommand that, when executed, would create a Beaker job XML.
 
 |`beaker.guest-watchdog.ssh.connect-timeout`
 |`int`
