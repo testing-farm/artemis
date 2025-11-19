@@ -170,7 +170,7 @@ KNOB_INSTALLATION_TIMEOUT: Knob[int] = Knob(
 
 KNOB_BKR_CREATE_COMMAND_TEMPLATE: Knob[str] = Knob(
     'beaker.command.create.template',
-    'A template for the "create job recipe" command.',
+    'A template for the ``bkr`` subcommand that, when executed, would create a Beaker job XML.',
     has_db=False,
     per_entity=True,
     envvar='ARTEMIS_BEAKER_BKR_CREATE_COMMAND_TEMPLATE',
