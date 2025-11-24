@@ -140,6 +140,7 @@ lint.select = [
     "ASYNC",  # flake8-async
     "E",      # pycodestyle error
     "F",      # pyflakes
+    "FAST",   # FastAPI
     "FLY",    # flynt
     "FURB",   # refurb
     "I",      # isort
