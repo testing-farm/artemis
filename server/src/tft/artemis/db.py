@@ -72,7 +72,6 @@ TOKEN_SIZE = 32
 TOKEN_HASH_SIZE = 64
 
 
-# Base = sqlalchemy.ext.declarative.declarative_base()
 class Base(sqlalchemy.orm.DeclarativeBase):
     pass
 
@@ -819,7 +818,7 @@ class GuestEvent(Base):
         except AttributeError:
             return Error(Failure('cannot sort events', sort_field=sort_field, sort_order=sort_order))
 
-        # E.g. order_by(GuestEvent.updated.desc())
+        # E.g. order_by(GuestEvent.updated.desc())  # noqa: ERA001
         query = query.order_by(sort_field_direction())
 
         if page_size is not None:
@@ -1813,7 +1812,7 @@ class DB:
         with Sentry.start_span(TracingOp.DB_SESSION):
             session = session_factory(
                 autoflush=True,
-                # autobegin=False,
+                # autobegin=False,  # noqa: ERA001
                 expire_on_commit=True,
                 twophase=False,
             )

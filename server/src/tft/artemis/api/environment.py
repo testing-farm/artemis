@@ -54,7 +54,7 @@ API_MILESTONES: list[tuple[str, list[str]]] = [
     ('v0.0.58', []),
     # NEW: added user defined watchdog delays
     # NEW: guest shelf management
-    # NEW: preprovisioning
+    # NEW: preprovisioning  # noqa: ERA001
     ('v0.0.56', []),
     # NEW: no change, fixes issues with validation
     ('v0.0.55', []),

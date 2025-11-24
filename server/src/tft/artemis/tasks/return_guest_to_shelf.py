@@ -39,8 +39,6 @@ class Workspace(_Workspace):
 
     TASKNAME = 'return-guest-to-shelf'
 
-    # shelf: Optional[GuestShelf]
-    # shelved_count: int
     current_state: GuestState
 
     @step

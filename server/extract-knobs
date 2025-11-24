@@ -81,7 +81,7 @@ def extract_knobs(options: argparse.Namespace) -> list[Knob]:
     for module_info in pkgutil.walk_packages(['src/tft/artemis'], 'tft.artemis.'):
         module = importlib.import_module(module_info.name)
 
-        # print(module_info.name, inspect.getmembers(module, is_knob))
+        # print(module_info.name, inspect.getmembers(module, is_knob))  # noqa: ERA001
 
         for _, knob in inspect.getmembers(module, is_knob):
             if knob.knobname in known_knobs:

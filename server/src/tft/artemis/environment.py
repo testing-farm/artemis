@@ -249,6 +249,7 @@ class _FlavorSequenceContainer(_FlavorSubsystemContainer, Sequence[U]):
 #  network:
 #      - type: eth
 #      - type: eth
+#
 
 
 FlavorBootMethodType = Literal['bios', 'uefi', 'uefi-preferred']

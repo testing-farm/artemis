@@ -587,7 +587,7 @@ class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flav
 
         # there should be a list of assorted vm resources, but given the fact there are no tags yet /
         # cumulative pi resources overview it will be empty
-        # assorted_resource_ids: List[Dict[str, str]] = []
+        # assorted_resource_ids: List[Dict[str, str]] = []  # noqa: ERA001
 
         return self.dispatch_resource_cleanup(
             logger, session, IBMCloudPoolResourcesIDs(instance_id=pool_data.instance_id), guest_request=guest_request

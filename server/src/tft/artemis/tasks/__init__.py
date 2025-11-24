@@ -1704,7 +1704,7 @@ def _update_guest_state_and_request_task(
     )
 
     # TODO: without immediate commit, these two are dubious...
-    # logger.warning(f'state switch: {current_state_label} => {new_state.value}: succeeded')
+    # logger.warning(f'state switch: {current_state_label} => {new_state.value}: succeeded')  # noqa: ERA001
     metrics.ProvisioningMetrics.inc_guest_state_transition(poolname, current_state, new_state)
 
     return Ok(None)

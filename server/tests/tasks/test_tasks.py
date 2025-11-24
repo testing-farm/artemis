@@ -107,20 +107,6 @@ def test_dispatcher_task_exception(
     )
 
 
-# def test_foo(db, broker, worker):
-#     with db.get_session() as session:
-#         print(session.query(tft.artemis.db.Guest).all())
-#
-#    tft.artemis.tasks.foo_task.send()
-#
-#    broker.join(tft.artemis.tasks.foo_task.queue_name, fail_fast=True, timeout=5000)
-#    worker.join()
-#
-#    with db.get_session() as session:
-#        print(session.query(tft.artemis.db.Guest).all())
-#
-#    assert False
-
 TaskCoreArgsType = tuple[
     tft.artemis.tasks.TaskLogger, MagicMock, MagicMock, tuple[MagicMock, MagicMock], dict[str, MagicMock]
 ]
@@ -411,7 +397,6 @@ def test_update_guest_state_and_request_task_no_such_guest(
     assert failure.caused_by.details['statement'].startswith('UPDATE')
 
     assert_log(caplog, message=SEARCH(r'state switch: routing => provisioning'), levelno=logging.WARN)
-    # assert_log(caplog, message=SEARCH(r'state switched routing => provisioning'), levelno=logging.INFO)
     # assert_log(
     #    caplog,
     #    message=SEARCH(r'requested task #1 acquire_guest_request\(dummy-guest, dummy-pool, delay=79\)'),

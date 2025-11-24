@@ -1603,11 +1603,11 @@ class BeakerDriver(PoolDriver):
 
         # Parse job id from output
         try:
-            # Submitted: ['J:1806666']
+            # Submitted: ['J:1806666']  # noqa: ERA001
             first_job_index = bkr_output.stdout.index("'") + 1
             last_job_index = len(bkr_output.stdout) - bkr_output.stdout[::-1].index("'") - 1
 
-            # J:1806666
+            # J:1806666  # noqa: ERA001
             job_id = bkr_output.stdout[first_job_index:last_job_index]
 
         except Exception as exc:
