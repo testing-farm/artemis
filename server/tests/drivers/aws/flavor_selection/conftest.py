@@ -1,10 +1,8 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
-# import sqlalchemy.orm.session
 from unittest.mock import MagicMock
 
-# import gluetool.log
 import pytest
 from tmt.hardware import UNITS
 

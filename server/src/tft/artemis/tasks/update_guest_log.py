@@ -102,7 +102,7 @@ class Workspace(_Workspace):
 
             # TODO logs: it'd be nice to change logs' state to something final
             if self.gr.state in (GuestState.CONDEMNED, GuestState.ERROR):
-                # logger.warning('guest can no longer provide any useful logs')
+                # logger.warning('guest can no longer provide any useful logs')  # noqa: ERA001
 
                 _log_state_event(resolution='guest-condemned')
 
@@ -120,7 +120,7 @@ class Workspace(_Workspace):
                 return
 
             if self.gr.pool is None:
-                # logger.warning('guest request has no pool at this moment, reschedule')
+                # logger.warning('guest request has no pool at this moment, reschedule')  # noqa: ERA001
 
                 _log_state_event(resolution='guest-not-routed')
 

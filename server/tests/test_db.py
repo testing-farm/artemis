@@ -22,8 +22,6 @@ from tft.artemis.guest import GuestState
 
 from . import MockPatcher, assert_failure_log
 
-# Base = sqlalchemy.ext.declarative.declarative_base()
-
 
 class Counters(Base):
     """

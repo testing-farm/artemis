@@ -37,9 +37,6 @@ class Workspace(_Workspace):
 
     guest_template: GuestRequestSchema
     guest_count: int
-    # ownername: str
-    # environment: Environment
-    # log_types: List[Tuple[str, GuestLogContentType]]
 
     def __init__(
         self,
