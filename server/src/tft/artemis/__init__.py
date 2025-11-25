@@ -8,6 +8,7 @@ import importlib
 import inspect
 import itertools
 import json
+import logging
 import os
 import platform
 import resource
@@ -605,6 +606,35 @@ class SerializableContainer:
         return representer.represent_dict(container.serialize())
 
 
+_LOGGING_WRITER_THRESHOLDS = {
+    loglevel_name.lower(): loglevel for loglevel_name, loglevel in logging._nameToLevel.items()
+}
+
+
+def is_logging_writer_visible(writer: gluetool.log.LoggingFunctionType) -> bool:
+    """
+    Check whether the current logging level is high enough for the writer to be actually acting.
+
+    Formatting structures as YAML can be costly. This helper will try to guess whether the given writer would actually
+    emit any output given the current loggign level. The guessing is best effort only, trying to match known logging
+    method names against :py:mod:`logging` levels.
+
+    :param writer: a logging method to inspect.
+    :returns: ``True`` if the ``writer`` name is known, and the current logging level, as set via
+        :py:data:`KNOB_LOGGING_LEVEL`, is equal or lower than the loglevel of the same name; ``False`` is returned
+        otherwise.
+    """
+
+    loglevel_threshold = _LOGGING_WRITER_THRESHOLDS.get(writer.__name__)
+
+    if loglevel_threshold is None:
+        return True
+
+    from .knobs import KNOB_LOGGING_LEVEL
+
+    return KNOB_LOGGING_LEVEL.value <= loglevel_threshold
+
+
 # Two logging helpers, very similar to `format_dict` and `log_dict`, but emitting a YAML-ish output.
 # YAML is often more readable for humans, and, sometimes, we might use these on purpose, to provide
 # more readable output.
@@ -628,6 +658,9 @@ def format_dict_yaml(data: Any) -> str:
 
 
 def log_dict_yaml(writer: gluetool.log.LoggingFunctionType, intro: str, data: Any) -> None:
+    if not is_logging_writer_visible(writer):
+        return
+
     writer(f'{intro}:\n{format_dict_yaml(data)}', extra={'raw_intro': intro, 'raw_struct': data})
 
 
