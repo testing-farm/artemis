@@ -2128,7 +2128,7 @@ class Workspace:
 
     def load_guest_events(self, eventname: Optional[str] = None) -> None:
         if self.result:
-            return
+            return None
 
         assert self.guestname
 

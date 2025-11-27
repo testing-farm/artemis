@@ -632,7 +632,7 @@ def delete_guest(
 
     manager.delete_by_guestname(guestname, logger)
 
-    return None
+    return
 
 
 class GuestEventManager:
@@ -776,7 +776,7 @@ class GuestShelfManager:
 
         manager.delete_by_shelfname(shelfname, logger)
 
-        return None
+        return
 
     @staticmethod
     def entry_delete_shelved_guest(
@@ -796,7 +796,7 @@ class GuestShelfManager:
         metrics.ShelfMetrics.inc_forced_removals(guest.shelf)
         metrics.ShelfMetrics.inc_removals(guest.shelf)
 
-        return None
+        return
 
     def __init__(self, db: Annotated[artemis_db.DB, Depends(get_db)]) -> None:
         self.db = db
@@ -1104,7 +1104,7 @@ class KnobManager:
     def entry_delete_knob(manager: 'KnobManager', logger: gluetool.log.ContextAdapter, knobname: str) -> None:
         manager.delete_knob(logger, knobname)
 
-        return None
+        return
 
     def get_knobs(self, logger: gluetool.log.ContextAdapter) -> list[KnobResponse]:
         knobs: dict[str, KnobResponse] = {}
@@ -1281,7 +1281,7 @@ class CacheManager:
         if r_dispatch.is_error:
             raise errors.InternalServerError(caused_by=r_dispatch.unwrap_error(), logger=logger)
 
-        return None
+        return
 
     #
     # Entry points hooked to routes
@@ -1393,7 +1393,7 @@ class UserManager:
     def entry_delete_user(manager: 'UserManager', logger: gluetool.log.ContextAdapter, username: str) -> None:
         manager.delete_user(logger, username)
 
-        return None
+        return
 
     @staticmethod
     def entry_reset_token(
@@ -1606,7 +1606,7 @@ def create_guest_request_log(
             guest_logger, session, guestname, 'guest-log-requested', logname=logname, contenttype=contenttype
         )
 
-    return None
+    return
 
 
 def get_metrics(
@@ -1708,4 +1708,4 @@ def preprovision_guest(
 
     manager.preprovision(shelfname, preprovisioning_request, ownername, logger, schemas[api_version])
 
-    return None
+    return

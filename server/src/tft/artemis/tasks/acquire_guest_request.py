@@ -40,7 +40,7 @@ class Workspace(_Workspace):
             self.test_pool_enabled()
 
             if self.result:
-                return
+                return None
 
             assert self.gr
             assert self.pool
@@ -105,7 +105,7 @@ class Workspace(_Workspace):
                     # TODO: we failed to save pool data & request follow-up task, must retry - and that will
                     # cause acquire-guest-task to allocate new resources while those we have *now* would not
                     # be tracked.
-                    return
+                    return None
 
                 self._progress('pool-resources-requested', pool_data=provisioning_progress.pool_data.serialize())
 
@@ -172,7 +172,7 @@ class Workspace(_Workspace):
                     # TODO: we failed to save pool data & request follow-up task, must retry - and that will
                     # cause acquire-guest-task to allocate new resources while those we have *now* would not
                     # be tracked.
-                    return
+                    return None
 
                 self._progress('successfully acquired')
 

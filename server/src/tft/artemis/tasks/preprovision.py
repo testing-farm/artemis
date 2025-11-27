@@ -87,7 +87,7 @@ class Workspace(_Workspace):
             self.load_shelf(self.shelfname, state=GuestState.READY)
 
             if self.result:
-                return
+                return None
 
             assert self.shelf
 
@@ -95,7 +95,7 @@ class Workspace(_Workspace):
 
             for _ in range(self.guest_count):
                 if self.result:
-                    return
+                    return None
 
                 guestname = str(uuid.uuid4())
 

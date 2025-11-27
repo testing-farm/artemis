@@ -57,7 +57,7 @@ class Workspace(_Workspace):
             self.test_pool_enabled()
 
             if self.result:
-                return
+                return None
 
             assert self.gr
             assert self.pool

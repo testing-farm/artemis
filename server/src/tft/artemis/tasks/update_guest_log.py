@@ -53,7 +53,7 @@ class Workspace(_Workspace):
             self.load_guest_request(self.guestname)
 
             if self.result:
-                return
+                return None
 
             assert self.gr
 
@@ -117,7 +117,7 @@ class Workspace(_Workspace):
                 if r_log_update.is_error:
                     return self._error(r_log_update, 'failed to update the log')
 
-                return
+                return None
 
             if self.gr.pool is None:
                 # logger.warning('guest request has no pool at this moment, reschedule')
@@ -129,7 +129,7 @@ class Workspace(_Workspace):
             self.load_gr_pool()
 
             if self.result:
-                return
+                return None
 
             assert self.pool
             assert self.gr.poolname
@@ -165,7 +165,7 @@ class Workspace(_Workspace):
                     if r_log_update.is_error:
                         return self._error(r_log_update, 'failed to update the log')
 
-                    return
+                    return None
 
                 r_update: Result[GuestLogUpdateProgress, Failure] = Ok(
                     GuestLogUpdateProgress(state=GuestLogState.UNSUPPORTED)
@@ -188,7 +188,7 @@ class Workspace(_Workspace):
                     if r_log_update.is_error:
                         return self._error(r_log_update, 'failed to update the log')
 
-                    return
+                    return None
 
                 r_update = self.pool.update_guest_log(self.logger, self.gr, guest_log)
 
@@ -196,7 +196,7 @@ class Workspace(_Workspace):
                 if not guest_log.is_expired:
                     _log_state_event(resolution='complete-not-expired')
 
-                    return
+                    return None
 
                 r_update = self.pool.update_guest_log(self.logger, self.gr, guest_log)
 
@@ -228,10 +228,10 @@ class Workspace(_Workspace):
                     return self._error(r_blob_update, 'failed to store a log blob')
 
             if update_progress.state == GuestLogState.COMPLETE:
-                return
+                return None
 
             if update_progress.state == GuestLogState.ERROR:
-                return
+                return None
 
             # PENDING, IN_PROGRESS and UNSUPPORTED proceed the same way
             self.request_task(

@@ -49,7 +49,7 @@ class Workspace(_Workspace):
             self.load_pools()
 
             if self.result:
-                return
+                return None
 
             assert self.gr
 
@@ -67,7 +67,7 @@ class Workspace(_Workspace):
 
                 self.update_guest_state(GuestState.ERROR, current_state=GuestState.ROUTING)
 
-                return
+                return None
 
             # If no suitable pools found
             if not ruling.allows_pools:

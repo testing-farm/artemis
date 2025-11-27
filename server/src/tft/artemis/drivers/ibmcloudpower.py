@@ -289,26 +289,24 @@ class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flav
                 return Ok(['--virtual-cores', str(int(constraint.value))])
             if constraint_name.child_property == 'processors':
                 return Ok(['--processors', str(float(constraint.value))])
-            else:
-                # other cpu properties, like ex. stepping, are not supported, so let's raise a clear error
-                return Error(
-                    Failure(
-                        'constraint not supported by driver',
-                        constraint=repr(constraint),
-                        constraint_name=constraint.name,
-                    )
+            # other cpu properties, like ex. stepping, are not supported, so let's raise a clear error
+            return Error(
+                Failure(
+                    'constraint not supported by driver',
+                    constraint=repr(constraint),
+                    constraint_name=constraint.name,
                 )
-        elif constraint_name.property == 'memory':
+            )
+        if constraint_name.property == 'memory':
             # Although not mentioned in the docs, there are minimal constraints here, the amount of memory cannot be
             # less than 2 GB. So need to take that into consideration.
             return Ok(['--memory', str(max(float(cast(SizeType, constraint.value).to('GB').magnitude), 2))])
-        else:
-            # Nothing else is supported yet
-            return Error(
-                Failure(
-                    'constraint not supported by driver', constraint=repr(constraint), constraint_name=constraint.name
-                )
+        # Nothing else is supported yet
+        return Error(
+            Failure(
+                'constraint not supported by driver', constraint=repr(constraint), constraint_name=constraint.name
             )
+        )
 
         return Ok(res)
 

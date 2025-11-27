@@ -68,7 +68,7 @@ class Workspace(_Workspace):
             self.load_guest_request(self.guestname, state=GuestState.SHELVED)
 
             if self.result:
-                return
+                return None
 
             assert self.gr
 
@@ -79,7 +79,7 @@ class Workspace(_Workspace):
             self.load_master_ssh_key()
 
             if self.result:
-                return
+                return None
 
             assert self.pool
             assert self.master_key

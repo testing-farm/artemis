@@ -159,6 +159,7 @@ lint.select = [
     "PLC",    # pylint-convention
     "PLE",    # pylint-error
     "PYI",    # flake8-pyi
+    "RET",    # flake8-return
     "N",      # pep8-naming
     "Q",      # flake8-quotes
     "RSE",    # flake8-raise
@@ -180,6 +181,8 @@ lint.ignore = [
     "S311",     # Standard pseudo-random generators are not suitable for cryptographic purposes
     # execve calls are used to spawn different artemis components
     "S606",     # Starting a process without a shell
+    # Used all over the place
+    "RET503",   # Missing explicit `return` at the end of function able to return non-`None` value
     # Conflicts with our use of other linters that ruff does not recognize.
     "RUF100",   # unused-noqa	Unused noqa directive
     # Creating our own exceptions does not seem tempting for now.

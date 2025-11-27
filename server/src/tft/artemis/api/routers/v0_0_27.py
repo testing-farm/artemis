@@ -145,7 +145,7 @@ def delete_snapshot(
 ) -> None:
     manager.delete_snapshot(guestname, snapshotname, logger)
 
-    return None
+    return
 
 
 @router_guests.post('/{guestname}/snapshots/{snapshotname}/restore', status_code=status.HTTP_201_CREATED)

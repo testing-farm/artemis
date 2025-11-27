@@ -98,7 +98,7 @@ def handle_task_sequence_request(
         if r_task_requests.is_error:
             Failure.from_failure('failed to fetch task requests', r_task_requests.unwrap_error()).handle(logger)
 
-            return
+            return None
 
         def _log_failure(failure: Failure, message: str) -> None:
             failure.handle(logger, message)

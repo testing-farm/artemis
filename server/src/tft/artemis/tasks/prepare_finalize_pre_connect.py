@@ -47,7 +47,7 @@ class Workspace(_Workspace):
             self.load_gr_pool()
 
             if self.result:
-                return
+                return None
 
             assert self.gr
 
