@@ -167,8 +167,11 @@ lint.select = [
     "RSE",    # flake8-raise
     "RUF",    # Ruff-specific rules
     "S",      # flake8-bandit
+    "SLOT",   # flake8-slots
     "SIM",    # flake8-simplify
     "T10",    # flake8-debugger
+    "TC",     # flake8-type-checking
+    "TID",    # flake8-tidy-imports
     "TRY",    # tryceratops
     "UP",     # pyupgrade
     "W",      # pycodestyle warning
@@ -189,6 +192,10 @@ lint.ignore = [
     "RET503",   # Missing explicit `return` at the end of function able to return non-`None` value
     # Conflicts with our use of other linters that ruff does not recognize.
     "RUF100",   # unused-noqa	Unused noqa directive
+    # Allow using non-string type expressions in cast
+    "TC006",    # Add quotes to type expression in `typing.cast()`
+    # We use relative imports everywhere
+    "TID252",   # Prefer absolute imports over relative imports from parent modules
     # Creating our own exceptions does not seem tempting for now.
     "TRY002",   # raise-vanilla-class
     "TRY003",   # raise-vanilla-args
