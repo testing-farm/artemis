@@ -595,14 +595,16 @@ class SingletonTask(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
             if task_call.actor.options['singleton_no_retry_on_lock_fail']:
                 logger.info('failed to acquire singleton lock, no retry requested')
 
-                raise dramatiq.middleware.SkipMessage('failed to acquire singleton lock')
+                msg = 'failed to acquire singleton lock'
+                raise dramatiq.middleware.SkipMessage(msg)
 
             if resolve_retry_message(logger, broker, task_call):
                 return
 
             logger.info('failed to acquire singleton lock, out of retries')
 
-            raise dramatiq.middleware.SkipMessage('failed to acquire singleton lock')
+            msg = 'failed to acquire singleton lock'
+            raise dramatiq.middleware.SkipMessage(msg)
 
         self._tokens[message.message_id] = token
 
@@ -718,4 +720,5 @@ class AgeLimit(dramatiq.middleware.age_limit.AgeLimit):  # type: ignore[misc]  #
 
         _fail_message(logger, message, f'message exceeded its age limit {delta / 1000.0}')
 
-        raise dramatiq.middleware.SkipMessage('message exceeded its age limit')
+        msg = 'message exceeded its age limit'
+        raise dramatiq.middleware.SkipMessage(msg)

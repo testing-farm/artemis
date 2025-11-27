@@ -1460,7 +1460,8 @@ def test_beaker_preset(
     if r_host_filter.is_error:
         r_host_filter.unwrap_error().handle(logger)
 
-        raise AssertionError('host filter failed')
+        msg = 'host filter failed'
+        raise AssertionError(msg)
 
     assert r_host_filter.is_ok
 

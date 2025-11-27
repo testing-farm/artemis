@@ -52,7 +52,8 @@ def test_run_doer_exception(logger: gluetool.log.ContextAdapter, db: tft.artemis
     def foo(
         _logger: gluetool.log.ContextAdapter, _db: tft.artemis.db.DB, _session: sqlalchemy.orm.session.Session
     ) -> tft.artemis.tasks.DoerReturnType:
-        raise Exception('foo')
+        msg = 'foo'
+        raise Exception(msg)
 
     with db.get_session(logger) as session, pytest.raises(Exception, match=r'foo'):
         tft.artemis.tasks.run_doer_multithread(

@@ -355,7 +355,8 @@ def upsert(
     assert session.bind is not None  # narrow type
 
     if session.bind.dialect.name != 'postgresql':
-        raise gluetool.glue.GlueError(f'UPSERT is not support for dialect "{session.bind.dialect.name}"')
+        msg = f'UPSERT is not support for dialect "{session.bind.dialect.name}"'
+        raise gluetool.glue.GlueError(msg)
 
     from sqlalchemy.dialects.postgresql import insert
 

@@ -1167,7 +1167,8 @@ class Failure:
         if self.exception:
             raise self.exception
 
-        raise Exception('Cannot reraise undefined exception')
+        msg = 'Cannot reraise undefined exception'
+        raise Exception(msg)
 
     def handle(
         self,

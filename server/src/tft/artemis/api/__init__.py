@@ -295,7 +295,8 @@ def _main_uvicorn() -> NoReturn:
     uvicorn_path = shutil.which('uvicorn')
 
     if not uvicorn_path:
-        raise Exception('No "uvicorn" executable found')
+        msg = 'No "uvicorn" executable found'
+        raise Exception(msg)
 
     sys.stdout.flush()
     sys.stderr.flush()
@@ -333,7 +334,8 @@ def _main_gunicorn() -> NoReturn:
     gunicorn_path = shutil.which('gunicorn')
 
     if not gunicorn_path:
-        raise Exception('No "gunicorn" executable found')
+        msg = 'No "gunicorn" executable found'
+        raise Exception(msg)
 
     gunicorn_options: list[str] = []
 
@@ -401,7 +403,8 @@ def main() -> NoReturn:
     if KNOB_API_ENGINE.value == 'uvicorn':
         _main_uvicorn()
 
-    raise Exception(f'Unknown API engine "{KNOB_API_ENGINE.value}"')
+    msg = f'Unknown API engine "{KNOB_API_ENGINE.value}"'
+    raise Exception(msg)
 
 
 if __name__ == '__main__':

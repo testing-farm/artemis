@@ -988,7 +988,8 @@ def _patch_flavors(
 
         else:
             # guarded by schema validation, we should always have `name` or `name-regex`
-            raise AssertionError('unreachable')
+            msg = 'unreachable'
+            raise AssertionError(msg)
 
         if not target_flavors:
             return Error(Failure('unknown patched flavor', flavorname=flavorname))
@@ -2381,7 +2382,8 @@ class PoolDriver(gluetool.log.LoggerMixin):
                 target_images = [image for image in images.values() if image_name_pattern.match(image.name) is not None]
 
             else:
-                raise AssertionError('unreachable')
+                msg = 'unreachable'
+                raise AssertionError(msg)
 
             if not target_images:
                 return Error(Failure('unknown patched image', imagename=imagename))

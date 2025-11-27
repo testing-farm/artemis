@@ -1005,7 +1005,8 @@ def run_doer_multithread(
             logger.error('worker shutdown requested')
 
         else:
-            raise TypeError('Unhandled interrupt exception') from None
+            msg = 'Unhandled interrupt exception'
+            raise TypeError(msg) from None
 
         logger.debug('waiting for doer to finish')
 

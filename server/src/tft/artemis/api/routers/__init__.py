@@ -1475,7 +1475,8 @@ class UserManager:
                 )
 
             else:
-                raise AssertionError('Unreachable')
+                msg = 'Unreachable'
+                raise AssertionError(msg)
 
             execute_dml(logger, session, query, failure_details={'username': username, 'tokentype': tokentype.value})
 

@@ -44,7 +44,8 @@ class ScriptEngine:
         variables = gluetool.utils.load_yaml(filepath)
 
         if not isinstance(variables, dict):
-            raise TypeError(f'Cannot add variables from {filepath}, not a key: value format')
+            msg = f'Cannot add variables from {filepath}, not a key: value format'
+            raise TypeError(msg)
 
         self.variables.update(variables)
 
