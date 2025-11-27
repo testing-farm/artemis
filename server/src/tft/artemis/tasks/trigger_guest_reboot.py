@@ -36,12 +36,12 @@ class Workspace(_Workspace):
             self.test_pool_enabled()
 
             if self.result:
-                return
+                return None
 
             if not self.is_pool_enabled:
                 self._guest_request_event('pool-disabled')
 
-                return
+                return None
 
             assert self.gr
             assert self.pool

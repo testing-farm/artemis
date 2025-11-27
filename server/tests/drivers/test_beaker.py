@@ -60,7 +60,7 @@ def fixture_dummy_guest_request(name: str = 'dummy_guest_request') -> MagicMock:
 
 @pytest.fixture(name='dummy_image_info')
 def fixture_dummy_image_info(name: str = 'dummy-compose', variant: str = 'dummy-variant') -> MagicMock:
-    mock = MagicMock(
+    return MagicMock(
         name=name,
         id=name,
         arch=None,
@@ -78,8 +78,6 @@ def fixture_dummy_image_info(name: str = 'dummy-compose', variant: str = 'dummy-
             'bootc_image': None,
         },
     )
-
-    return mock
 
 
 @pytest.fixture(name='pool')

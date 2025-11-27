@@ -1183,8 +1183,7 @@ class Constraint(ConstraintBase):
                     flavor_property = None
                     break
 
-                else:
-                    flavor_property = flavor_property[flavor_property_index]
+                flavor_property = flavor_property[flavor_property_index]
 
         # Hard to compare `None` with a constraint. Flavor can't provide - or doesn't feel like providing - more
         # specific value. Unless told otherwise, we should mark the evaluation as failed, and keep looking for
@@ -1935,11 +1934,10 @@ def _parse_block(spec: Spec) -> ConstraintBase:
     if 'and' in spec:
         return _parse_and(spec['and'])
 
-    elif 'or' in spec:
+    if 'or' in spec:
         return _parse_or(spec['or'])
 
-    else:
-        return _parse_generic_spec(spec)
+    return _parse_generic_spec(spec)
 
 
 def constraints_from_environment_requirements(spec: Spec) -> Result[ConstraintBase, 'Failure']:

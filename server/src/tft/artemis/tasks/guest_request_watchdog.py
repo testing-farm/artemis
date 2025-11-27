@@ -71,25 +71,25 @@ class Workspace(_Workspace):
             self.load_guest_request(self.guestname, state=GuestState.READY)
 
             if self.result:
-                return
+                return None
 
             assert self.gr
 
             if self.gr.poolname is None:
-                return
+                return None
 
             self.load_gr_pool()
             self.test_pool_enabled()
 
             if self.result:
-                return
+                return None
 
             assert self.pool
 
             pool_data = self.gr.pool_data.mine(self.pool, self.pool.pool_data_class)
 
             if pool_data.is_empty:
-                return
+                return None
 
             if self.is_pool_enabled:
                 r = self.pool.guest_watchdog(self.logger, self.session, self.gr)
@@ -100,7 +100,7 @@ class Workspace(_Workspace):
                 watchdog_state: WatchdogState = r.unwrap()
 
                 if watchdog_state == WatchdogState.COMPLETE:
-                    return
+                    return None
 
             else:
                 self._guest_request_event('pool-disabled')

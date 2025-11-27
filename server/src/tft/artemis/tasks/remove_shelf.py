@@ -48,7 +48,7 @@ class Workspace(_Workspace):
             self.load_shelf(self.shelfname, state=GuestState.CONDEMNED)
 
             if self.result:
-                return
+                return None
 
             r_guests = (
                 SafeQuery.from_session(self.session, GuestRequest)

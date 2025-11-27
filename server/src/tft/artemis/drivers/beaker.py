@@ -669,8 +669,7 @@ def constraint_to_beaker_filter(
 
             return Ok(group)
 
-        else:
-            return Ok(disk)
+        return Ok(disk)
 
     if constraint_name.property == 'arch':
         op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))

@@ -161,6 +161,7 @@ lint.select = [
     "PLC",    # pylint-convention
     "PLE",    # pylint-error
     "PYI",    # flake8-pyi
+    "RET",    # flake8-return
     "N",      # pep8-naming
     "Q",      # flake8-quotes
     "RSE",    # flake8-raise
@@ -184,6 +185,8 @@ lint.ignore = [
     "S606",     # Starting a process without a shell
     # We do not serve content HTML/XML content that might be affected by XSS
     "S701",     # Using jinja2 templates with autoescape=False is dangerous and can lead to XSS
+    # Used all over the place
+    "RET503",   # Missing explicit `return` at the end of function able to return non-`None` value
     # Conflicts with our use of other linters that ruff does not recognize.
     "RUF100",   # unused-noqa	Unused noqa directive
     # Creating our own exceptions does not seem tempting for now.

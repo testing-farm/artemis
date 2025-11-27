@@ -59,7 +59,7 @@ class Workspace(_Workspace):
         if r_enabled.unwrap() is not True:
             self._progress('pool-disabled')
 
-            return
+            return None
 
         r_refresh = pool.refresh_avoid_groups_hostnames(self.logger)
 
