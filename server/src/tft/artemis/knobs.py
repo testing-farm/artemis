@@ -16,7 +16,7 @@ from gluetool.result import Error, Ok, Result
 from sqlalchemy.orm.session import Session
 
 if TYPE_CHECKING:
-    from . import Failure
+    from . import Failure  # noqa: TC004  # Avoid issues with circular imports
 
 
 T = TypeVar('T')

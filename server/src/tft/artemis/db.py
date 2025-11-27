@@ -44,7 +44,6 @@ from gluetool.result import Error, Ok, Result
 from sqlalchemy import JSON, Column, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, column_property, mapped_column, relationship
-from sqlalchemy.orm.query import Query as _Query
 from sqlalchemy.orm.session import sessionmaker
 from sqlalchemy.schema import ForeignKeyConstraint, Index, PrimaryKeyConstraint
 from sqlalchemy_utils import EncryptedType
@@ -54,7 +53,9 @@ from .guest import GuestState
 from .knobs import KNOB_LOGGING_DB_QUERIES, get_vault_password
 
 if TYPE_CHECKING:
-    from . import Failure
+    from sqlalchemy.orm.query import Query as _Query
+
+    from . import Failure  # noqa: TC004  # Avoid issues with circular imports
     from .drivers import PoolData, PoolDriver, SerializedPoolData
     from .environment import Environment
     from .security_group_rules import SecurityGroupRule, SecurityGroupRules

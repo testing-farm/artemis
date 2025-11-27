@@ -1,9 +1,8 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 import gluetool.log
-import redis
 from fastapi import Depends, Request
 from prometheus_client import CollectorRegistry
 
@@ -16,6 +15,9 @@ from .. import (
 )
 from ..db import DB
 from .models import AuthContext
+
+if TYPE_CHECKING:
+    import redis
 
 
 def get_logger() -> gluetool.log.ContextAdapter:

@@ -3,10 +3,9 @@
 
 # flake8: noqa: FS003 f-string missing prefix
 
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 import gluetool.log
-import redis
 from fastapi import APIRouter, Depends, Request, Response, status
 
 from ... import db as artemis_db
@@ -28,6 +27,9 @@ from . import (
     get_metrics,
     with_tracing,
 )
+
+if TYPE_CHECKING:
+    import redis
 
 router_knobs = APIRouter(
     prefix='/knobs', tags=['knobs'], responses={status.HTTP_404_NOT_FOUND: {'description': 'Not found'}}
