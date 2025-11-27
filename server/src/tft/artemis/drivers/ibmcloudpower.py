@@ -303,9 +303,7 @@ class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flav
             return Ok(['--memory', str(max(float(cast(SizeType, constraint.value).to('GB').magnitude), 2))])
         # Nothing else is supported yet
         return Error(
-            Failure(
-                'constraint not supported by driver', constraint=repr(constraint), constraint_name=constraint.name
-            )
+            Failure('constraint not supported by driver', constraint=repr(constraint), constraint_name=constraint.name)
         )
 
         return Ok(res)
