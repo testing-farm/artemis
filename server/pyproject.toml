@@ -151,6 +151,7 @@ lint.select = [
     "FURB",   # refurb
     "I",      # isort
     "ICN",    # flake8-import-conventions
+    "INP",    # flake8-no-pep420
     "INT",    # flake8-gettext
     "ISC",    # flake8-implicit-str-concat
     "PGH",    # pygrep-hooks
@@ -159,6 +160,7 @@ lint.select = [
     "PLE",    # pylint-error
     "PYI",    # flake8-pyi
     "N",      # pep8-naming
+    "Q",      # flake8-quotes
     "RSE",    # flake8-raise
     "RUF",    # Ruff-specific rules
     "S",      # flake8-bandit
@@ -188,9 +190,12 @@ lint.ignore = [
     ]
 
 [tool.ruff.lint.per-file-ignores]
+"alembic/**" = ["INP"]
+"configuration/**" = ["INP"]
 "extract-knobs" = ["ANN401"]
 # A lot of parametrized tests accepting boolean parameters
-"tests/**" = ["FBT", "S105", "S603"]
+# Lax typing for tests
+"tests/**" = ["ANN401", "FBT", "S105", "S603"]
 
 [tool.ruff.lint.flake8-annotations]
 allow-star-arg-any = true
@@ -202,6 +207,9 @@ extend-allowed-calls = [
     "gluetool.result.Error",
     "gluetool.result.Ok",
 ]
+
+[tool.ruff.lint.flake8-quotes]
+inline-quotes = "single"
 
 [tool.ruff.lint.isort]
 combine-as-imports = true
