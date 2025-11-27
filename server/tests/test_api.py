@@ -612,9 +612,7 @@ def fixture_mock_middleware(
     app = fastapi.FastAPI()
     app.add_middleware(AuthorizationMiddleware)
 
-    client = fastapi.testclient.TestClient(app)
-
-    return client
+    return fastapi.testclient.TestClient(app)
 
 
 def test_auth_middleware_disabled_authentication(

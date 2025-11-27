@@ -48,7 +48,7 @@ class Workspace(_Workspace):
             self.load_gr_pool()
 
             if self.result:
-                return
+                return None
 
             assert self.gr
             # assert self.gr.poolname
@@ -77,7 +77,7 @@ class Workspace(_Workspace):
             )
 
             if self.result:
-                return
+                return None
 
             self._progress('successfully provisioned')
 
@@ -92,7 +92,7 @@ class Workspace(_Workspace):
             self.load_guest_events(eventname='error')
 
             if self.result:
-                return
+                return None
 
             assert self.guest_events is not None
 
@@ -128,7 +128,7 @@ class Workspace(_Workspace):
             # Dispatch a followup task if specified.
             for taskname, arguments in self.gr.on_ready:
                 if self.result:
-                    return
+                    return None
 
                 r_actor = resolve_actor(taskname)
 

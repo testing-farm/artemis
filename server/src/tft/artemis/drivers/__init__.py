@@ -1151,17 +1151,16 @@ class GuestLogBlob:
         if guest_log.blobs and overwrite:
             return guest_log.blobs[0].update(logger, session, content=self.content, content_hash=self.content_hash)
 
-        else:
-            return GuestLogBlobDB.create(
-                logger,
-                session,
-                guestname=guest_log.guestname,
-                logname=guest_log.logname,
-                contenttype=guest_log.contenttype,
-                ctime=self.ctime,
-                content=self.content,
-                content_hash=self.content_hash,
-            )
+        return GuestLogBlobDB.create(
+            logger,
+            session,
+            guestname=guest_log.guestname,
+            logname=guest_log.logname,
+            contenttype=guest_log.contenttype,
+            ctime=self.ctime,
+            content=self.content,
+            content_hash=self.content_hash,
+        )
 
     @classmethod
     def from_content(cls, content: str) -> 'GuestLogBlob':

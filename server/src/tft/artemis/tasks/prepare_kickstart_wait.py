@@ -98,7 +98,7 @@ class Workspace(_Workspace):
             self.load_master_ssh_key()
 
             if self.result:
-                return
+                return None
 
             assert self.gr
             assert self.master_key
@@ -262,7 +262,7 @@ class Workspace(_Workspace):
 
                 self.request_task(prepare_kickstart_wait, self.guestname, delay=r_delay.unwrap())
 
-                return
+                return None
 
             # A sanity check to verify the kickstart installation did happen.
             r_install = run_remote(

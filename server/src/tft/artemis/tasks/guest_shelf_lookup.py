@@ -48,7 +48,7 @@ class Workspace(_Workspace):
             self.load_guest_request(self.guestname, state=GuestState.SHELF_LOOKUP)
 
             if self.result:
-                return
+                return None
 
             assert self.gr
 
@@ -57,7 +57,7 @@ class Workspace(_Workspace):
                     GuestState.ROUTING, route_guest_request, self.guestname, current_state=GuestState.SHELF_LOOKUP
                 )
 
-                return
+                return None
 
             selected_guest: Optional[GuestRequest] = None
 

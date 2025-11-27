@@ -47,7 +47,7 @@ class Workspace(_Workspace):
             self.load_guest_request(self.guestname, state=self.current_state)
 
             if self.result:
-                return
+                return None
 
             assert self.gr
 
@@ -77,7 +77,7 @@ class Workspace(_Workspace):
 
             if shelf is None:
                 _release()
-                return
+                return None
 
             r_shelved_count = (
                 SafeQuery.from_session(self.session, GuestRequest)

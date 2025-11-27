@@ -328,11 +328,10 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
         r_nova = self._get_nova()
         if r_nova.is_error:
             return Error(r_nova.unwrap_error())
-        instance = safe_call(
+
+        return safe_call(
             r_nova.unwrap().servers.get, guest_request.pool_data.mine(self, OpenStackPoolData).instance_id
         )
-
-        return instance
 
     def _show_snapshot(
         self,
