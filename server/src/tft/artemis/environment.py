@@ -1724,9 +1724,12 @@ def _parse_beaker(spec: Spec) -> ConstraintBase:
 
     group.constraints += [
         Constraint.from_specification(
-            f'beaker.{constraint_name.replace("-", "_")}', str(spec[constraint_name]), as_quantity=False
+            f'beaker.{constraint_name.replace("-", "_")}',
+            str(spec[constraint_name]),
+            as_cast=as_cast,
+            as_quantity=False,
         )
-        for constraint_name in ('pool',)
+        for constraint_name, as_cast in (('pool', str), ('panic-watchdog', bool))
         if constraint_name in spec
     ]
 

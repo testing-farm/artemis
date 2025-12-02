@@ -8,10 +8,12 @@ from unittest.mock import MagicMock
 import bs4
 import gluetool.utils
 import pytest
+import sqlalchemy.orm.session
 from gluetool.log import ContextAdapter
 from gluetool.result import Ok
 
 import tft.artemis
+import tft.artemis.drivers
 import tft.artemis.drivers.beaker
 import tft.artemis.environment
 
@@ -40,12 +42,29 @@ def parse_hw(text: str) -> tft.artemis.environment.ConstraintBase:
 def fixture_dummy_guest_request(name: str = 'dummy_guest_request') -> MagicMock:
     return MagicMock(
         name=name,
+        guestname='dummy_guest',
         environment=tft.artemis.environment.Environment(
             hw=tft.artemis.environment.HWRequirements(arch='x86_64'),
             os=tft.artemis.environment.OsRequirements(compose='dummy-compose'),
             kickstart=tft.artemis.environment.Kickstart(),
         ),
     )
+
+
+@pytest.fixture(name='dummy_image_info')
+def fixture_dummy_image_info(name: str = 'dummy-compose', variant: str = 'dummy-variant') -> MagicMock:
+    mock = MagicMock(
+        name=name,
+        id=name,
+        arch=None,
+        boot=tft.artemis.environment.FlavorBoot(),
+        ssh=tft.artemis.drivers.PoolImageSSHInfo(),
+        supports_kickstart=True,
+        variant=variant,
+        bootc_image=None,
+    )
+
+    return mock
 
 
 @pytest.fixture(name='pool')
@@ -422,6 +441,7 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
                     version: "2.0"
                 beaker:
                     pool: "kernel-hw"
+                    panic-watchdog: true
                 virtualization:
                     is-supported: true
                     is-virtualized: false
@@ -873,7 +893,7 @@ def test_avoid_hostnames(
                 '--ks-append',
                 '%post --nochroot\numount --recursive /mnt/sysimage\n%end\n',
             ],
-        )
+        ),
     ],
     ids=[
         'full-ks',
@@ -885,3 +905,102 @@ def test_bkr_ks_options(pool: tft.artemis.drivers.beaker.BeakerDriver, env: str,
     r_wow_options = tft.artemis.drivers.beaker.BeakerDriver._create_bkr_kickstart_options(pool, environment.kickstart)
 
     assert r_wow_options == expected
+
+
+@pytest.mark.parametrize(
+    ('env', 'expected'),
+    [
+        (
+            """
+        ---
+
+        hw:
+          arch: x86_64
+
+          constraints: {}
+
+        os:
+          compose: dummy-compose
+
+        kickstart: {}
+        """,
+            [
+                'workflow-simple',
+                '--dry-run',
+                '--prettyxml',
+                '--distro',
+                'dummy-compose',
+                '--arch',
+                'x86_64',
+                '--task',
+                '/distribution/reservesys',
+                '--taskparam',
+                'RESERVETIME=86400',
+                '--whiteboard',
+                '[artemis] [undefined-deployment] dummy_guest',
+                '--variant',
+                'dummy-variant',
+                '--ignore-panic',
+            ],
+        ),
+        (
+            """
+        ---
+
+        hw:
+          arch: x86_64
+
+          constraints:
+            beaker:
+              panic-watchdog: true
+
+        os:
+          compose: dummy-compose
+
+        kickstart: {}
+        """,
+            [
+                'workflow-simple',
+                '--dry-run',
+                '--prettyxml',
+                '--distro',
+                'dummy-compose',
+                '--arch',
+                'x86_64',
+                '--task',
+                '/distribution/reservesys',
+                '--taskparam',
+                'RESERVETIME=86400',
+                '--whiteboard',
+                '[artemis] [undefined-deployment] dummy_guest',
+                '--variant',
+                'dummy-variant',
+            ],
+        ),
+    ],
+    ids=[
+        'default',
+        'enable-panic-watchdog',
+    ],
+)
+def test_bkr_wow_options(
+    logger: ContextAdapter,
+    mockpatch: MockPatcher,
+    session: sqlalchemy.orm.session.Session,
+    dummy_guest_request: MagicMock,
+    dummy_image_info: MagicMock,
+    pool: tft.artemis.drivers.beaker.BeakerDriver,
+    env: str,
+    expected: list[str],
+) -> None:
+    environment = parse_env(env)
+    dummy_guest_request.environment = environment
+    mockpatch(tft.artemis.drivers.beaker.BeakerDriver, 'get_guest_tags').return_value = Ok({})
+
+    r_wow_options = tft.artemis.drivers.beaker.BeakerDriver._create_wow_options(
+        pool, logger, session, dummy_guest_request, dummy_image_info
+    )
+
+    assert not r_wow_options.is_error
+
+    assert r_wow_options.unwrap() == expected
