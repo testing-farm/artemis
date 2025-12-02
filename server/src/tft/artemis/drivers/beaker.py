@@ -34,6 +34,7 @@ from ..context import CACHE
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
 from ..environment import (
     And,
+    CompoundConstraint,
     Constraint,
     ConstraintBase,
     Environment,
@@ -408,7 +409,7 @@ def constraint_to_beaker_filter(
     pool: 'BeakerDriver',
     constraint_parents: Optional[list[ConstraintBase]] = None,
     constraint_siblings: Optional[list[ConstraintBase]] = None,
-) -> Result[bs4.BeautifulSoup, Failure]:
+) -> Result[Optional[bs4.BeautifulSoup], Failure]:
     """
     Convert a given constraint to XML tree representing Beaker filter compatible with Beaker's ``hostRequires``
     element.
@@ -432,7 +433,10 @@ def constraint_to_beaker_filter(
             if r_child_element.is_error:
                 return Error(r_child_element.unwrap_error())
 
-            grouping_and.append(r_child_element.unwrap())
+            child_element = r_child_element.unwrap()
+
+            if child_element is not None:
+                grouping_and.append(child_element)
 
         return Ok(grouping_and)
 
@@ -451,7 +455,10 @@ def constraint_to_beaker_filter(
             if r_child_element.is_error:
                 return Error(r_child_element.unwrap_error())
 
-            grouping_or.append(r_child_element.unwrap())
+            child_element = r_child_element.unwrap()
+
+            if child_element is not None:
+                grouping_or.append(child_element)
 
         return Ok(grouping_or)
 
@@ -754,6 +761,10 @@ def constraint_to_beaker_filter(
                 return Ok(group)
             return Ok(pool_container)
 
+        if constraint_name.child_property == 'panic_watchdog':
+            # Not a beaker HW contstraint. Affects attribute of the <watchdog/> tag.
+            return Ok(None)
+
     return Error(
         Failure('constraint not supported by driver', constraint=repr(constraint), constraint_name=constraint.name)
     )
@@ -861,7 +872,18 @@ def environment_to_beaker_filter(
     if r_beaker_filter.is_error:
         return r_beaker_filter
 
-    return _prune_beaker_filter(r_beaker_filter.unwrap())
+    beaker_filter = r_beaker_filter.unwrap()
+
+    if beaker_filter is None:
+        return Error(
+            Failure(
+                'Failed to parse constraints into a beaker filter.',
+                constraints=constraints,
+                beaker_filter=beaker_filter,
+            )
+        )
+
+    return _prune_beaker_filter(beaker_filter)
 
 
 def groups_to_beaker_filter(avoid_groups: list[str]) -> Result[bs4.BeautifulSoup, Failure]:
@@ -1450,6 +1472,29 @@ class BeakerDriver(PoolDriver):
 
             command += ['--method', method]
             break
+
+        def _requires_panic_watchdog(constraint: ConstraintBase) -> bool:
+            if isinstance(constraint, Constraint):
+                return constraint.name == 'beaker.panic_watchdog' and constraint.value is True
+
+            if isinstance(constraint, CompoundConstraint):
+                return any(_requires_panic_watchdog(child) for child in constraint.constraints)
+
+            return False
+
+        r_constraints = guest_request.environment.get_hw_constraints()
+
+        if r_constraints.is_error:
+            return Error(r_constraints.unwrap_error())
+
+        constraints = r_constraints.unwrap()
+        panic_watchdog = False
+
+        if constraints is not None:
+            panic_watchdog = _requires_panic_watchdog(constraints)
+
+        if not panic_watchdog:
+            command += ['--ignore-panic']
 
         return Ok(command)
 
