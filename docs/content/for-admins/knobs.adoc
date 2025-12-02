@@ -740,7 +740,7 @@ until cancelled and reprovisioned.
 |`beaker.mapping.environment-to-image.pattern`
 |`str`
 |`ARTEMIS_BEAKER_ENVIRONMENT_TO_IMAGE_MAPPING_PATTERN`
-|`^(?P<distro>[^;]+)(?:;variant=(?P<variant>[a-zA-Z]+);?)?(?:;bootc_image=(?P<bootc_image>[a-zA-Z0-9._\-:/]+);?)?$`
+|`^(?P<distro>[^;]+)(?:;variant=(?P<variant>[a-zA-Z]*);?)?(?:;bootc_image=(?P<bootc_image>[a-zA-Z0-9._\-:/]*);?)?$`
 |no
 
 

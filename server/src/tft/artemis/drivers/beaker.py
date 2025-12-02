@@ -130,8 +130,8 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_PATTERN: Knob[str] = Knob(
     cast_from_str=str,
     default=(
         r'^(?P<distro>[^;]+)'
-        r'(?:;variant=(?P<variant>[a-zA-Z]+);?)?'
-        r'(?:;bootc_image=(?P<bootc_image>[a-zA-Z0-9._\-:/]+);?)?$'
+        r'(?:;variant=(?P<variant>[a-zA-Z]*);?)?'
+        r'(?:;bootc_image=(?P<bootc_image>[a-zA-Z0-9._\-:/]*);?)?$'
     ),
 )
 
