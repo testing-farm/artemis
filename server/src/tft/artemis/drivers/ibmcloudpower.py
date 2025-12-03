@@ -285,8 +285,6 @@ class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flav
 
         # IBM cloud cli expects only list of strings - thus the str conversion of args
         if constraint_name.property == 'cpu':
-            if constraint_name.child_property == 'cores':
-                return Ok(['--virtual-cores', str(int(constraint.value))])
             if constraint_name.child_property == 'processors':
                 return Ok(['--processors', str(float(constraint.value))])
             else:
@@ -441,7 +439,14 @@ class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flav
         def _create(user_data_file: Optional[str] = None) -> Result[JSONType, Failure]:
             # Here will be setting defaults for memory/processors, just in case.
             memory = flavor.memory.to('GiB').magnitude if flavor.memory else 4
-            processors = flavor.cpu.processors if flavor.cpu.processors else 2
+            # NOTE(ivasilev) ibm-defined processors do not match to our processors definitions 1-1, so will need to
+            # do some empiric magic based on other fields like threads_per_core definition
+            if flavor.cpu.processors and flavor.cpu.threads_per_core:
+                processors = max(flavor.cpu.processors / flavor.cpu.threads_per_core, 1)
+            else:
+                # this means a minimal 8 cpu flavor
+                logger.warning('Could not use settings from the flavor to calculate processors, defaulting to 1')
+                processors = 1
 
             with IBMCloudPowerSession(logger, self) as session:
                 create_cmd_args = [
