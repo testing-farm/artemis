@@ -64,6 +64,9 @@ definitions:
     type: object
 
     properties:
+      threads_per_core:
+        type: integer
+
       processors:
         type: integer
 
