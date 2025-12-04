@@ -15,9 +15,9 @@ from tmt.hardware import UNITS
 from tft.artemis.drivers import PoolDriver, PoolImageInfo
 from tft.artemis.drivers.ibmcloudvpc import IBMCloudPoolData, IBMCloudPoolResourcesIDs, IBMCloudSession
 
-from .. import Failure, JSONType, log_dict_yaml, process_output_to_str
+from .. import Failure, JSONType, log_dict_yaml, logging_filter, process_output_to_str
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
-from ..environment import And, Constraint, ConstraintBase, Flavor, FlavorBoot, SizeType
+from ..environment import Flavor, FlavorBoot
 from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from . import (
@@ -256,59 +256,55 @@ class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flav
 
         return Ok(images)
 
-    def _translate_constraints_to_cli_args(
+    def _filter_flavors_required_fields_defined(
         self,
-        constraint: Optional[ConstraintBase],
-    ) -> Result[list[str], Failure]:
-        """
-        Convert a given constraint to a set of filters that IBM Cloud supports (there are not many, mostly cpu / disk).
-        """
-
-        if not constraint:
-            return Ok([])
-
-        if isinstance(constraint, And):
-            res: list[str] = []
-
-            for child_constraint in constraint.constraints:
-                r_child_element = self._translate_constraints_to_cli_args(child_constraint)
-
-                if r_child_element.is_error:
-                    return Error(r_child_element.unwrap_error())
-
-                res += r_child_element.unwrap()
-
-            return Ok(res)
-
-        constraint = cast(Constraint, constraint)
-        constraint_name = constraint.expand_name()
-
-        # IBM cloud cli expects only list of strings - thus the str conversion of args
-        if constraint_name.property == 'cpu':
-            if constraint_name.child_property == 'processors':
-                return Ok(['--processors', str(float(constraint.value))])
-            else:
-                # other cpu properties, like ex. stepping, are not supported, so let's raise a clear error
-                return Error(
-                    Failure(
-                        'constraint not supported by driver',
-                        constraint=repr(constraint),
-                        constraint_name=constraint.name,
-                    )
-                )
-        elif constraint_name.property == 'memory':
-            # Although not mentioned in the docs, there are minimal constraints here, the amount of memory cannot be
-            # less than 2 GB. So need to take that into consideration.
-            return Ok(['--memory', str(max(float(cast(SizeType, constraint.value).to('GB').magnitude), 2))])
-        else:
-            # Nothing else is supported yet
-            return Error(
-                Failure(
-                    'constraint not supported by driver', constraint=repr(constraint), constraint_name=constraint.name
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        image: PoolImageInfo,
+        suitable_flavors: list[Flavor],
+    ) -> Result[list[Flavor], Failure]:
+        return Ok(
+            list(
+                logging_filter(
+                    logger,
+                    suitable_flavors,
+                    'processors and threads_per_core are defined',
+                    lambda logger, flavor: (
+                        flavor.cpu.processors is not None and flavor.cpu.threads_per_core is not None
+                    ),
                 )
             )
+        )
 
-        return Ok(res)
+    def _guest_request_to_flavor_or_none(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        image: IBMCloudPowerPoolImageInfo,
+    ) -> Result[Optional[Flavor], Failure]:
+        """
+        Map a guest request and image to the most fitting flavor.
+
+        :param logger: logger to use for logging.
+        :param session: DB session to use for DB access.
+        :param guest_request: guest request to map to a flavor.
+        :param image: image selected for the provisioning.
+        :returns: flavor most suitable for the given combination of the guest request and image, or ``None`` if no
+            suitable flavor was found.
+        """
+
+        return self._do_guest_request_to_flavor_or_none(
+            logger,
+            session,
+            guest_request,
+            image,
+            self._filter_flavors_image_arch,
+            self._filter_flavors_required_fields_defined,
+            self._filter_flavors_prefer_default_flavor,
+            self._filter_flavors_default_fallback,
+        )
 
     def fetch_pool_resources_metrics(
         self, logger: gluetool.log.ContextAdapter
@@ -437,16 +433,13 @@ class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flav
         instance_name = f'{tags["ArtemisGuestLabel"]}-{tags["ArtemisGuestName"].split("-")[0]}'
 
         def _create(user_data_file: Optional[str] = None) -> Result[JSONType, Failure]:
-            # Here will be setting defaults for memory/processors, just in case.
+            # Here will be setting defaults for memory, just in case.
             memory = flavor.memory.to('GiB').magnitude if flavor.memory else 4
-            # NOTE(ivasilev) ibm-defined processors do not match to our processors definitions 1-1, so will need to
-            # do some empiric magic based on other fields like threads_per_core definition
-            if flavor.cpu.processors and flavor.cpu.threads_per_core:
-                processors = max(flavor.cpu.processors / flavor.cpu.threads_per_core, 1)
-            else:
-                # this means a minimal 8 cpu flavor
-                logger.warning('Could not use settings from the flavor to calculate processors, defaulting to 1')
-                processors = 1
+            # Unusable flavors missing processors/threads_per_core should be already filtered out
+            assert flavor.cpu.processors
+            assert flavor.cpu.threads_per_core
+
+            processors = max(flavor.cpu.processors / flavor.cpu.threads_per_core, 1)
 
             with IBMCloudPowerSession(logger, self) as session:
                 create_cmd_args = [
