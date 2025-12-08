@@ -100,7 +100,7 @@ ConfigFlavorCPUSpecType = TypedDict(
         'stepping': Optional[int],
         'flag': Optional[list[str]],
         'processors': Optional[int],
-        'threads_per_core': Optional[int],
+        'threads-per-core': Optional[int],
     },
 )
 
@@ -840,8 +840,8 @@ def _apply_flavor_specification(flavor: Flavor, flavor_spec: ConfigFlavorSpecTyp
         if 'processors' in cpu_patch:
             flavor.cpu.processors = cpu_patch['processors']
 
-        if 'threads_per_core' in cpu_patch:
-            flavor.cpu.threads_per_core = cpu_patch['threads_per_core']
+        if 'threads-per-core' in cpu_patch:
+            flavor.cpu.threads_per_core = cpu_patch['threads-per-core']
 
         if 'family' in cpu_patch:
             flavor.cpu.family = cpu_patch['family']
