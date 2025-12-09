@@ -107,7 +107,16 @@ class FlasherDriver(PoolDriver):
             return Error(Failure.from_exc('acquire_guest request failed', exc))
 
         if response.status_code != 202:
-            return Error(Failure(message=response.text, recoverable=self._is_recoverable(response.status_code)))
+            if self._is_recoverable(response.status_code):
+                return Ok(ProvisioningProgress(state=ProvisioningState.CANCEL, pool_data=FlasherPoolData()))
+
+            return Error(
+                Failure(
+                    message=response.text,
+                    sentry=response.status_code == 500,
+                    recoverable=False,
+                )
+            )
 
         flasher_id = response.text
         try:
@@ -307,7 +316,16 @@ class FlasherDriver(PoolDriver):
             return Error(Failure.from_exc('_update_guest_log_blob request failed', exc, url=url))
 
         if response.status_code != 200:
-            return Error(Failure('unexpected response', url=url, status_code=response.status_code, body=response.text))
+            return Error(
+                Failure(
+                    'unexpected response',
+                    sentry=response.status_code != 404,
+                    url=url,
+                    status_code=response.status_code,
+                    body=response.text,
+                    recoverable=self._is_recoverable(response.status_code),
+                )
+            )
 
         return Ok(GuestLogUpdateProgress.from_unabridged(logger, guest_log, response.text))
 
