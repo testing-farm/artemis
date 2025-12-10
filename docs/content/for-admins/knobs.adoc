@@ -680,6 +680,8 @@ until cancelled and reprovisioned.
             {{ option | shell_quote }}             {% endfor %}
             {% if INSTALLATION_METHOD %}
             --method {{ INSTALLATION_METHOD | shell_quote }}             {% endif %}
+            {% if not PANIC_WATCHDOG_ENABLED %}
+            --ignore-panic             {% endif %}
             --whiteboard {{ WHITEBOARD | shell_quote }}
         `
 |no
