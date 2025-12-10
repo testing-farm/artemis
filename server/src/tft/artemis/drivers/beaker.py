@@ -1531,7 +1531,10 @@ class BeakerDriver(PoolDriver):
             return Error(r_constraints.unwrap_error())
 
         constraints = r_constraints.unwrap()
-        panic_watchdog_enabled = _requires_panic_watchdog(constraints) if constraints else False
+        panic_watchdog_enabled = False
+
+        if constraints:
+            panic_watchdog_enabled = _requires_panic_watchdog(constraints)
 
         # Putting it all together
         r_command_template = KNOB_BKR_CREATE_COMMAND_TEMPLATE.get_value(entityname=self.poolname)
