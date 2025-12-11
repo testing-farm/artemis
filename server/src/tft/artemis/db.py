@@ -1688,9 +1688,6 @@ class DB:
 
         logger.info(f'connecting to db {url}')
 
-        # if KNOB_LOGGING_DB_QUERIES.value:
-        #    gluetool.log.Logging.configure_logger(logging.getLogger('sqlalchemy.engine'))
-
         self._echo_pool: Union[str, bool] = False
 
         if KNOB_LOGGING_DB_POOL.value == 'debug':
@@ -1812,7 +1809,6 @@ class DB:
         with Sentry.start_span(TracingOp.DB_SESSION):
             session = session_factory(
                 autoflush=True,
-                # autobegin=False,  # noqa: ERA001
                 expire_on_commit=True,
                 twophase=False,
             )

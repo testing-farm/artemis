@@ -175,16 +175,16 @@ lint.ignore = [
     "TRY400",   # error-instead-of-exception
     ]
 
+lint.task-tags = ["TODO", "FIXME", "NEW"]
+
 [tool.ruff.lint.per-file-ignores]
 # This file was generated, ignore it
 "autodocs/source/conf.py" = ["ERA"]
 # These files have valid commented out code blocks which should be ignored, there is no better way to ignore them
-"src/tft/artemis/__init__.py" = ["ERA"]
-"src/tft/artemis/api/middleware.py" = ["ERA"]
-"src/tft/artemis/drivers/__init__.py" = ["ERA"]
 "src/tft/artemis/drivers/azure.py" = ["ERA"]
 "src/tft/artemis/drivers/openstack.py" = ["ERA"]
 "src/tft/artemis/environment.py" = ["ERA"]
+"tests/test_db.py" = ["ERA"]
 
 [tool.ruff.lint.isort]
 combine-as-imports = true

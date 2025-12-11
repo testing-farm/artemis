@@ -4,7 +4,7 @@
 # flake8: noqa: FS003 f-string missing prefix
 # NEW: added User watchdog delay
 # NEW: guest shelf management
-# NEW: preprovisioning  # noqa: ERA001
+# NEW: preprovisioning
 
 from typing import Annotated, Optional
 

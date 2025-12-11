@@ -1522,12 +1522,6 @@ def _parse_disk(spec: Spec, disk_index: int) -> ConstraintBase:
 
         group.constraints += [Or([direct_group, expansion_group])]
 
-    # group.constraints += [
-    #     Constraint.from_specification(f'disk[{disk_index}].{constraint_name}', str(spec[constraint_name]))
-    #     for constraint_name in ()
-    #     if constraint_name in spec
-    # ]
-
     if 'size' in spec or 'space' in spec:
         _parse_size_spec(spec)
 

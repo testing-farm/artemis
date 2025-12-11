@@ -397,11 +397,6 @@ def test_update_guest_state_and_request_task_no_such_guest(
     assert failure.caused_by.details['statement'].startswith('UPDATE')
 
     assert_log(caplog, message=SEARCH(r'state switch: routing => provisioning'), levelno=logging.WARN)
-    # assert_log(
-    #    caplog,
-    #    message=SEARCH(r'requested task #1 acquire_guest_request\(dummy-guest, dummy-pool, delay=79\)'),
-    #    levelno=logging.INFO
-    # )
 
     with db.get_session(logger) as new_session:
         r_tasks = tft.artemis.db.SafeQuery.from_session(new_session, tft.artemis.db.TaskRequest).all()

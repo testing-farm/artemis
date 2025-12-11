@@ -343,10 +343,6 @@ def config_to_db(logger: gluetool.log.ContextAdapter, db: DB, server_config: dic
 
             assert r.is_ok and r.unwrap() is True, 'Failed to initialize user record'
 
-        #    if r.unwrap() is True:
-        #        logger.info('Default admin token for user "{}" is "{}"'.format(username, admin_token))
-        #        logger.info('Default provisioning token for user "{}" is "{}"'.format(username, provisioning_token))
-
         # In one of the future patches, this will get few changes:
         #
         # * create just the admin user - artemis-cli should be used to create other users
