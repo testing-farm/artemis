@@ -126,7 +126,7 @@ class AuthorizationMiddleware(BaseHTTPMiddleware):
 
         # Enable this once all pieces are merged and authentication/authorization becomes mandatory.
         # if not ctx.is_authenticated:
-        #     raise errors.UnauthorizedError()
+        #     raise errors.UnauthorizedError()  # noqa: ERA001
 
         if not ctx.is_authorization_enabled:
             return await call_next(request)

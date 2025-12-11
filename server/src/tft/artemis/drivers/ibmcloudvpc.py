@@ -756,6 +756,7 @@ class IBMCloudVPCDriver(FlavorBasedPoolDriver[IBMCloudVPCPoolImageInfo, IBMCloud
         if not pool_data:
             return Ok(None)
 
+        # NOTE: For now there is no additional resources to cleanup, add here in the future if needed
         # For now there is no additional resources to cleanup, keeping this here just for consistency with other drivers
         # with IBMCloudSession(logger, self) as session:
         #     r_tagged_resources = session.run(

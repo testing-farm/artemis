@@ -188,16 +188,6 @@ def get_release() -> str:
     return f'artemis@{__VERSION__}'
 
 
-#    r_release = render_template(_KNOB_RELEASE.value, __VERSION__=__VERSION__)
-#
-#    if r_release.is_error:
-#        r_release.unwrap_error().handle(get_logger())
-#
-#        return __VERSION__
-#
-#    return r_release.unwrap()
-
-
 class TracingOp(enum.Enum):
     """
     Recognized tracing *operation* values.
@@ -1354,28 +1344,6 @@ def safe_call(fn: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> Result[T
 
     except Exception as exc:
         return Error(Failure.from_exc('exception raised inside a safe block', exc))
-
-
-# Once mypy implements support for PEP 612, something like this would be the way to go.
-# https://github.com/python/mypy/issues/8645
-#
-# P = ParamSpec('P')
-#
-# def handle_failure(default: Union[T, None] = None) -> Callable[Concatenate[gluetool.log.ContextAdapter, P], T]:
-#    def decorator(fn: Callable[P, T]) -> Callable[Concatenate[gluetool.log.ContextAdapter, P], T]:
-#        @functools.wraps(fn)
-#        def wrapper(logger: gluetool.log.ContextAdapter, *args: Any, **kwargs: Any) -> T:
-#            try:
-#                return fn(*args, **kwargs)
-#
-#            except Exception as exc:
-#                Failure.from_exc('exception raised inside a safe block', exc).handle(logger)
-#
-#                return default
-#
-#        return wrapper
-#
-#    return decorator
 
 
 def safe_call_and_handle(

@@ -188,7 +188,7 @@ def _handle_tails(
     #
     # In the spirit of "let's try again...", falling through to rescheduling the original task.
     #
-    # message.fail()
+    # message.fail()  # noqa: ERA001
 
     return False
 

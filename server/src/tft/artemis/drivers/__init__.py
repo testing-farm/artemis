@@ -1351,26 +1351,6 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         return Ok(r_pool.unwrap())
 
-        # And when .map()/.map_error() become available, the code above would become much less spaghetti-ish...
-        #
-        # TODO: switch to when map/map_error become available
-        #
-        # def instantiate(pool_record: Optional[Pool]) -> Result[Optional['PoolDriver'], Failure]:
-        #     if pool_record is None:
-        #         return Ok(None)
-        #
-        #     # `_instantiate()`` return either a pool or failure, never `None`. That is nice, but it isn't matching
-        #     # the expected return value of `load_or_none()`, therefore we need a cast.
-        #     return cast(
-        #         Result[Optional['PoolDriver'], Failure],
-        #         PoolDriver._instantiate(pool_record.driver, logger, poolname, pool_record.parameters)
-        #     )
-        #
-        # return SafeQuery.from_session(session, Pool) \
-        #     .filter(Pool.poolname == poolname) \
-        #     .one_or_none() \
-        #     .map(instantiate)
-
     # ... and sometimes, we are pretty sure the pool does exist, and it's a hard error if we can't find it.
     @staticmethod
     def load(
@@ -1387,11 +1367,6 @@ class PoolDriver(gluetool.log.LoggerMixin):
             return Error(Failure('no such pool', poolname=poolname))
 
         return Ok(pool)
-
-        # TODO: switch to when map/map_error become available
-        #
-        # return PoolDriver.load_or_none(logger, session, poolname) \
-        #     .map(lambda pool: Error(Failure('no such pool', poolname=poolname)) if pool is None else Ok(pool))
 
     @staticmethod
     def load_all(

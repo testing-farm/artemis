@@ -249,6 +249,7 @@ class _FlavorSequenceContainer(_FlavorSubsystemContainer, Sequence[U]):
 #  network:
 #      - type: eth
 #      - type: eth
+#
 
 
 FlavorBootMethodType = Literal['bios', 'uefi', 'uefi-preferred']
@@ -1520,12 +1521,6 @@ def _parse_disk(spec: Spec, disk_index: int) -> ConstraintBase:
             raise ParseError(message='operator not supported', constraint_name=constraint_name, raw_value=str(size))
 
         group.constraints += [Or([direct_group, expansion_group])]
-
-    # group.constraints += [
-    #     Constraint.from_specification(f'disk[{disk_index}].{constraint_name}', str(spec[constraint_name]))
-    #     for constraint_name in ()
-    #     if constraint_name in spec
-    # ]
 
     if 'size' in spec or 'space' in spec:
         _parse_size_spec(spec)
