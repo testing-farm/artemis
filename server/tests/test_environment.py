@@ -1309,6 +1309,9 @@ def test_parse_maximal_constraint() -> None:
                  vendor: 2
                  vendor-name: "AMD"
                  driver: amd
+            iommu:
+                 is-supported: true
+                 device-name: amd
             memory: 8 GiB
             network:
                 - type: eth

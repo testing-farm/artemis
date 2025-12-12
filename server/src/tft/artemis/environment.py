@@ -485,6 +485,21 @@ class FlavorGpu(_FlavorSubsystemContainer):
 
 
 @dataclasses.dataclass(repr=False)
+class FlavorIommu(_FlavorSubsystemContainer):
+    """
+    Represents a HW properties related to IOMMU support by the instance.
+    """
+
+    CONTAINER_PREFIX = 'iommu'
+
+    #: If set, the flavor does have an IOMMU
+    is_supported: Optional[bool] = None
+
+    #: Model of the IOMMU if present
+    model_name: Optional[str] = None
+
+
+@dataclasses.dataclass(repr=False)
 class FlavorNetwork(_FlavorSubsystemContainer):
     """
     Represents a HW properties related to a network interface of a flavor, one interface in particular.
@@ -635,6 +650,9 @@ class Flavor(_FlavorSubsystemContainer):
 
     #: GPU properties.
     gpu: FlavorGpu = dataclasses.field(default_factory=FlavorGpu)
+
+    #: IOMMU
+    iommu: FlavorIommu = dataclasses.field(default_factory=FlavorIommu)
 
     #: RAM size, in bytes.
     memory: Optional[SizeType] = None
@@ -1588,6 +1606,37 @@ def _parse_gpu(spec: Spec) -> ConstraintBase:
     return group
 
 
+def _parse_iommu(spec: Spec) -> ConstraintBase:
+    """
+    Parse IOMMU-related constraints.
+
+    :param spec: raw constraint block specification.
+    :returns: block representation as :py:class:`ConstraintBase` or one of its subclasses.
+    """
+
+    group = And()
+
+    group.constraints += [
+        Constraint.from_specification(
+            f'iommu.{constraint_name.replace("-", "_")}', str(spec[constraint_name]), as_quantity=False
+        )
+        for constraint_name in ('model-name',)
+        if constraint_name in spec
+    ]
+
+    if 'is-supported' in spec:
+        group.constraints += [
+            Constraint.from_specification(
+                'iommu.is_supported',
+                str(spec['is-supported']),
+                as_quantity=False,
+                as_cast=gluetool.utils.normalize_bool_option,
+            )
+        ]
+
+    return group
+
+
 def _parse_network(spec: Spec, network_index: int) -> ConstraintBase:
     """
     Parse a network-related constraints.
@@ -1761,6 +1810,9 @@ def _parse_generic_spec(spec: Spec) -> ConstraintBase:
 
     if 'gpu' in spec:
         group.constraints += [_parse_gpu(spec['gpu'])]
+
+    if 'iommu' in spec:
+        group.constraints += [_parse_iommu(spec['iommu'])]
 
     if 'network' in spec:
         group.constraints += [_parse_networks(spec['network'])]

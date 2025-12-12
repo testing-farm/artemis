@@ -185,6 +185,24 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
               - operator: '!='
                 value: vmware
                 element: '<system><hypervisor op="!=" value="VMWare" /></system>'
+      iommu:
+        model_name:
+          translations:
+            - operator: '=='
+              value: intel
+              element: |
+                <and>
+                 <system><hypervisor op="==" value="" /></system>
+                 <cpu><vendor op="==" value="GenuineIntel" /></cpu>
+                </and>
+
+            - operator: '=='
+              value: amd
+              element: |
+                <and>
+                 <system><hypervisor op="==" value="" /></system>
+                 <cpu><vendor op="==" value="AuthenticAMD" /></cpu>
+                </and>
     """
 
     return tft.artemis.drivers.beaker.BeakerDriver(logger, 'beaker', parse_spec(pool_config))
@@ -446,6 +464,9 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
                     is-supported: true
                     is-virtualized: false
                     hypervisor: xen
+                iommu:
+                    is-supported: true
+                    model-name: intel
         os:
           compose: dummy-compose
 
@@ -510,6 +531,17 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
             </disk>
             <key_value key="NR_DISKS" op="&gt;=" value="2"/>
            </and>
+          </and>
+          <and>
+           <and>
+            <system>
+             <hypervisor op="==" value=""/>
+            </system>
+            <cpu>
+             <vendor op="==" value="GenuineIntel"/>
+            </cpu>
+           </and>
+           <key_value key="VIRT_IOMMU" op="==" value="1"/>
           </and>
           <key_value key="NR_ETH" op="&gt;=" value="2"/>
           <key_value key="TPM" op="==" value="2.0"/>
