@@ -13,11 +13,17 @@ from gluetool.result import Error, Ok, Result
 from tmt.hardware import UNITS
 
 from tft.artemis.drivers import PoolDriver, PoolImageInfo, PoolImageInfoT
-from tft.artemis.drivers.ibmcloud import IBMCloudDriver, IBMCloudPoolData, IBMCloudPoolResourcesIDs, IBMCloudSession
+from tft.artemis.drivers.ibmcloud import (
+    IBMCloudDriver,
+    IBMCloudFlavor,
+    IBMCloudPoolData,
+    IBMCloudPoolResourcesIDs,
+    IBMCloudSession,
+)
 
 from ... import Failure, JSONType, log_dict_yaml, logging_filter, process_output_to_str
 from ...db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
-from ...environment import Flavor, FlavorBoot
+from ...environment import FlavorBoot
 from ...knobs import Knob
 from ...metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from .. import (
@@ -261,8 +267,8 @@ class IBMCloudPowerDriver(IBMCloudDriver):
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         image: PoolImageInfo,
-        suitable_flavors: list[Flavor],
-    ) -> Result[list[Flavor], Failure]:
+        suitable_flavors: list[IBMCloudFlavor],
+    ) -> Result[list[IBMCloudFlavor], Failure]:
         return Ok(
             list(
                 logging_filter(
@@ -282,7 +288,7 @@ class IBMCloudPowerDriver(IBMCloudDriver):
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         image: PoolImageInfoT,
-    ) -> Result[Optional[Flavor], Failure]:
+    ) -> Result[Optional[IBMCloudFlavor], Failure]:
         """
         Map a guest request and image to the most fitting flavor.
 
@@ -358,7 +364,7 @@ class IBMCloudPowerDriver(IBMCloudDriver):
                 logger: gluetool.log.ContextAdapter,
                 usage: PoolResourcesUsage,
                 raw_instance: dict[str, Any],
-                flavor: Optional[Flavor],
+                flavor: Optional[IBMCloudFlavor],
             ) -> Result[None, Failure]:
                 assert usage.instances is not None  # narrow type
                 assert usage.cores is not None  # narrow type
