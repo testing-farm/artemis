@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 
-import tft.artemis.drivers.ibmcloudvpc
+import tft.artemis.drivers.ibmcloud.vpc
 
 IBM_TAGS_EXAMPLES: dict[str, str] = {
     'tag1': 'value1',
