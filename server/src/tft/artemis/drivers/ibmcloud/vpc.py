@@ -22,9 +22,9 @@ from tft.artemis.drivers.ibmcloud import (
     IBMCloudSession,
 )
 
-from .. import Failure, JSONType, log_dict_yaml
-from ..db import GuestRequest
-from ..environment import (
+from ... import Failure, JSONType, log_dict_yaml
+from ...db import GuestRequest
+from ...environment import (
     Flavor,
     FlavorBoot,
     FlavorCpu,
@@ -35,9 +35,9 @@ from ..environment import (
     FlavorVirtualization,
     SizeType,
 )
-from ..knobs import Knob
-from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
-from . import (
+from ...knobs import Knob
+from ...metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
+from .. import (
     PoolErrorCauses,
     PoolImageSSHInfo,
     ProvisioningProgress,
@@ -620,26 +620,6 @@ class IBMCloudVPCDriver(IBMCloudDriver):
 
         if not pool_data:
             return Ok(None)
-
-        # NOTE: For now there is no additional resources to cleanup, add here in the future if needed
-        # For now there is no additional resources to cleanup, keeping this here just for consistency with other drivers
-        # with IBMCloudSession(logger, self) as session:
-        #     r_tagged_resources = session.run(
-        #         logger,
-        #         [
-        #             'resource', 'search', f'tags:"uid:{pool_data.instance_name}"',
-        #             '--output', 'json'
-        #         ],
-        #         commandname='az.resource-list'
-        #     )
-        #     if r_tagged_resources.is_error:
-        #         return Error(r_tagged_resources.unwrap_error())
-        #
-        # tagged_resources = r_tagged_resources.unwrap()
-        #
-        # assorted_resource_ids = [
-        #     res for res in cast(Dict[str, Any], tagged_resources)['items'] if res['resource_type'] != 'instance'
-        # ]
 
         return self.dispatch_resource_cleanup(
             logger, session, IBMCloudPoolResourcesIDs(instance_id=pool_data.instance_id), guest_request=guest_request

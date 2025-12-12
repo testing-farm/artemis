@@ -20,8 +20,8 @@ from tft.artemis.drivers import (
     Tags,
 )
 
-from .. import Failure
-from ..environment import Flavor
+from ... import Failure
+from ...environment import Flavor
 
 # Limits imposed on tags in IBM cloud.
 # https://cloud.ibm.com/docs/account?topic=account-tag&interface=ui#limits
