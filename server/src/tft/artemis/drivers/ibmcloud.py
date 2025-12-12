@@ -151,6 +151,9 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor]):
     def tag_instance(
         self, instance_name: str, tags: Tags, logger: gluetool.log.ContextAdapter
     ) -> Result[None, Failure]:
+        instance_tags = ','.join(_serialize_tags(tags))
+        logger.debug(f'Adding the following tags to instance {instance_name}: {instance_tags}')
+
         with IBMCloudSession(logger, self) as ibm_session:
             r_tag_instance = ibm_session.run(
                 logger,
@@ -158,7 +161,7 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor]):
                     'resource',
                     'tag-attach',
                     '--tag-names',
-                    ','.join(_serialize_tags(tags)),
+                    instance_tags,
                     '--resource-name',
                     instance_name,
                 ],
