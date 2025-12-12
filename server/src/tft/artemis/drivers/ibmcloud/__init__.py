@@ -6,7 +6,7 @@ import os
 import re
 import shutil
 from collections.abc import Generator
-from typing import Optional
+from typing import Optional, TypedDict, cast
 
 import gluetool.log
 from gluetool.result import Error, Ok, Result
@@ -49,6 +49,11 @@ class IBMCloudPoolResourcesIDs(PoolResourcesIDs):
 @dataclasses.dataclass
 class IBMCloudFlavor(Flavor):
     numa_count: Optional[int] = None
+
+
+class IBMResourceInfoType(TypedDict):
+    name: str
+    tags: list[str]
 
 
 def _sanitize_tags(tags: Tags) -> Generator[tuple[str, str], None, None]:
@@ -149,7 +154,10 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor]):
     pool_data_class = IBMCloudPoolData
 
     def tag_instance(
-        self, instance_name: str, tags: Tags, logger: gluetool.log.ContextAdapter
+        self,
+        logger: gluetool.log.ContextAdapter,
+        instance_name: str,
+        tags: Tags,
     ) -> Result[None, Failure]:
         instance_tags = ','.join(_serialize_tags(tags))
         logger.debug(f'Adding the following tags to instance {instance_name}: {instance_tags}')
@@ -174,3 +182,23 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor]):
                 Failure.from_failure(f'Tagging instance {instance_name} failed', r_tag_instance.unwrap_error())
             )
         return Ok(None)
+
+    def get_instance_tags(self, logger: gluetool.log.ContextAdapter, instance_name: str) -> Result[list[str], Failure]:
+        with IBMCloudSession(logger, self) as ibm_session:
+            r_instance_tags = ibm_session.run(
+                logger,
+                ['resource', 'search', f'name:{instance_name}', '--json'],
+                json_format=True,
+                commandname='ibmcloud.resource-get',
+            )
+
+        if r_instance_tags.is_error:
+            return Error(
+                Failure.from_failure(f'Tagging instance {instance_name} failed', r_instance_tags.unwrap_error())
+            )
+
+        tags = cast(dict[str, list[IBMResourceInfoType]], r_instance_tags.unwrap())
+        if not tags.get('items'):
+            # No such resource found
+            return Error(Failure(f'No resource with name {instance_name} found'))
+        return Ok(tags['items'][0].get('tags', []))

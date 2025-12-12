@@ -569,19 +569,24 @@ class IBMCloudVPCDriver(IBMCloudDriver):
             return Error(Failure('Server show commmand output is empty'))
 
         pool_data = guest_request.pool_data.mine(self, IBMCloudPoolData)
+        instance_name = output['name']
 
-        if not output['tags']:
+        # NOTE(ivasilev) Unlike other clouds, ibmcloud doesn't have tags among instance details. To check for tags
+        # we need to use a separate command to list resources with the expected name, and then check tags assigned
+        # to those resources.
+        r_assigned_tags = self.get_instance_tags(logger, instance_name)
+
+        if r_assigned_tags.is_error:
+            return Error(r_assigned_tags.unwrap_error())
+
+        if not r_assigned_tags.unwrap():
             # No tags have been assigned yet, time to do that.
-            # Tag the created instance. Unfortunately ibmcloud doesn't allow passing tags directly to the image
-            # create command, and updating the instance via resource api during guest acquisition seems prone to
-            # 'The resource is not found' errors. So will be tagging the instance that has no tags yet
-
             r_tags = self.get_guest_tags(logger, session, guest_request)
 
             if r_tags.is_error:
                 return Error(r_tags.unwrap_error())
-
-            r_tag_instance = self.tag_instance(instance_name=output['name'], tags=r_tags.unwrap(), logger=logger)
+            # Here comes the actual tagging attempt
+            r_tag_instance = self.tag_instance(logger=logger, instance_name=instance_name, tags=r_tags.unwrap())
 
             if r_tag_instance.is_error:
                 return Error(Failure.from_failure('Tagging instance failed', r_tag_instance.unwrap_error()))
