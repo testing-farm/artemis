@@ -13,7 +13,7 @@ from gluetool.result import Error, Ok, Result
 from tmt.hardware import UNITS
 
 from tft.artemis.drivers import PoolDriver, PoolImageInfo
-from tft.artemis.drivers.ibmcloudvpc import IBMCloudPoolData, IBMCloudPoolResourcesIDs, IBMCloudSession
+from tft.artemis.drivers.ibmcloud import IBMCloudPoolData, IBMCloudPoolResourcesIDs, IBMCloudSession
 
 from .. import Failure, JSONType, log_dict_yaml, logging_filter, process_output_to_str
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
