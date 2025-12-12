@@ -581,12 +581,7 @@ class IBMCloudVPCDriver(IBMCloudDriver):
             if r_tags.is_error:
                 return Error(r_tags.unwrap_error())
 
-            tags = r_tags.unwrap()
-
-            # This tag links our VM and its resources, which comes handy when we want to remove everything
-            # leaving no leaks.
-            tags['uid'] = tags['ArtemisGuestLabel']
-            r_tag_instance = self.tag_instance(instance_name=output['name'], tags=tags, logger=logger)
+            r_tag_instance = self.tag_instance(instance_name=output['name'], tags=r_tags.unwrap(), logger=logger)
 
             if r_tag_instance.is_error:
                 return Error(Failure.from_failure('Tagging instance failed', r_tag_instance.unwrap_error()))
