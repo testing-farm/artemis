@@ -152,6 +152,23 @@ definitions:
   hw_hostname:
     type: string
 
+  hw_iommu:
+    type: object
+
+    properties:
+      is-supported:
+        type: boolean
+
+      model-name:
+        type: string
+
+    additionalProperties: false
+
+    # enforce at least one property - we don't care which one, but we don't want
+    # empty `iommu`.
+    minProperties: 1
+
+
   hw_memory:
     anyOf:
       - type: string
@@ -292,6 +309,9 @@ definitions:
 
       hostname:
         "$ref": "#/definitions/hw_hostname"
+
+      iommu:
+        "$ref": "#/definitions/hw_iommu"
 
       memory:
         "$ref": "#/definitions/hw_memory"

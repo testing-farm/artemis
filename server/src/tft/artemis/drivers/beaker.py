@@ -735,6 +735,22 @@ def constraint_to_beaker_filter(
 
             return Ok(system)
 
+    if constraint_name.property == 'iommu':
+        if constraint_name.child_property == 'is_supported':
+            op, value = operator_to_beaker_op(constraint.operator, '')
+
+            return Ok(_new_tag('key_value', key='VIRT_IOMMU', op=op, value='1' if constraint.value else '0'))
+
+        if constraint_name.child_property == 'model_name':
+            return _translate_constraint_by_config(
+                constraint,
+                guest_request,
+                pool.pool_config.get('hw-constraints', {})
+                .get('iommu', {})
+                .get('model_name', {})
+                .get('translations', []),
+            )
+
     if constraint_name.property == 'zcrypt':  # noqa: SIM102
         if constraint_name.child_property == 'adapter':
             return _translate_constraint_by_config(
@@ -2270,6 +2286,8 @@ class BeakerDriver(PoolDriver):
             'arch',
             'memory',
             'hostname',
+            'iommu.is_supported',
+            'iommu.model_name',
             'tpm.version',
             'virtualization.is_supported',
             'virtualization.is_virtualized',

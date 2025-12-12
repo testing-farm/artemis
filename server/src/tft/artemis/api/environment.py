@@ -24,6 +24,7 @@ ENVIRONMENT_SCHEMAS: dict[str, JSONSchemaType] = {}
 #: redirects if specified.
 API_MILESTONES: list[tuple[str, list[str]]] = [
     # NEW: beaker.panic-watchdog HW requirement
+    # NEW: iommu HW requirements
     (
         'v0.0.83',
         [
