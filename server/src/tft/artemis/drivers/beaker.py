@@ -637,6 +637,16 @@ def constraint_to_beaker_filter(
 
         return Ok(system)
 
+    if constraint_name.property == 'system' and constraint_name.child_property == 'model_name':
+        op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
+
+        system = _new_tag('system')
+        model = _new_tag('model', op=op, value=value)
+
+        system.append(model)
+
+        return Ok(system)
+
     if constraint_name.property == 'hostname':
         op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
 
@@ -2269,6 +2279,7 @@ class BeakerDriver(PoolDriver):
             'disk.expanded_length',
             'arch',
             'memory',
+            'system.model_name',
             'hostname',
             'tpm.version',
             'virtualization.is_supported',
