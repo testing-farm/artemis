@@ -424,6 +424,29 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
         ),
         (
             """
+        ---
+        hw:
+          arch: x86_64
+          constraints:
+            system:
+              model-name: "Power9"
+        os:
+          compose: dummy-compose
+        kickstart: {}
+        """,
+            """
+        <and>
+         <system>
+          <arch op="==" value="x86_64"/>
+         </system>
+         <system>
+          <model op="==" value="Power9"/>
+         </system>
+        </and>
+        """,
+        ),
+        (
+            """
         hw:
             arch: "x86_64"
             constraints:
@@ -573,6 +596,7 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
         'compatible-single',
         'compatible-multiple',
         'multiple-nics-and-bios',
+        'system.model-name',
         'maximal-constraint',
     ],
 )
