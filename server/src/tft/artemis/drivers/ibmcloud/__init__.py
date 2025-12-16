@@ -194,11 +194,13 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor]):
 
         if r_instance_tags.is_error:
             return Error(
-                Failure.from_failure(f'Tagging instance {instance_name} failed', r_instance_tags.unwrap_error())
+                Failure.from_failure(
+                    f'Locating ibmcloud resource associated with {instance_name} failed', r_instance_tags.unwrap_error()
+                )
             )
 
         tags = cast(dict[str, list[IBMResourceInfoType]], r_instance_tags.unwrap())
         if not tags.get('items'):
             # No such resource found
-            return Error(Failure(f'No resource with name {instance_name} found'))
+            return Error(Failure(f'Unexpected output of ibmcloud resource show command for {instance_name}: {tags}'))
         return Ok(tags['items'][0].get('tags', []))

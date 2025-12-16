@@ -23,7 +23,7 @@ from tft.artemis.drivers.ibmcloud import (
 
 from ... import Failure, JSONType, log_dict_yaml, logging_filter, process_output_to_str
 from ...db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
-from ...environment import FlavorBoot
+from ...environment import Flavor, FlavorBoot
 from ...knobs import Knob
 from ...metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from .. import (
@@ -364,7 +364,7 @@ class IBMCloudPowerDriver(IBMCloudDriver):
                 logger: gluetool.log.ContextAdapter,
                 usage: PoolResourcesUsage,
                 raw_instance: dict[str, Any],
-                flavor: Optional[IBMCloudFlavor],
+                flavor: Optional[Flavor],
             ) -> Result[None, Failure]:
                 assert usage.instances is not None  # narrow type
                 assert usage.cores is not None  # narrow type
