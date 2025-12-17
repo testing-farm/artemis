@@ -657,45 +657,6 @@ until cancelled and reprovisioned.
 5+|Timeout for all `bkr` commands executed by the driver. After this many seconds, `bkr` command will be sent
 `SIGTERM`.
 
-|`beaker.command.create.template`
-|`str`
-|`ARTEMIS_BEAKER_BKR_CREATE_COMMAND_TEMPLATE`
-|`
-        workflow-simple             --dry-run             --prettyxml             --distro {{ IMAGE.id | shell_quote }}             --arch {{ GUEST_REQUEST.environment.hw.arch | shell_quote }}             {#
-              # Using reservesys task instead of --reserve, because reservesys adds extendtesttime.sh
-              # script we can use to extend existing reservation.
-            #}
-            --task /distribution/reservesys             --taskparam RESERVETIME={{ RESERVATION_DURATION }}             {% if IMAGE.variant %}
-            --variant {{ IMAGE.variant | shell_quote }}             {% endif %}
-            {% for name, value in TAGS | items %}
-            --taskparam ARTEMIS_TAG_{{ name | shell_quote }}={{ value | shell_quote }}             {% endfor %}
-            {#
-              Override kickstart template for bootc installation.
-            #}
-            {% if KICKSTART_FILEPATH %}
-            --kickstart {{ KICKSTART_FILEPATH | shell_quote }}             {% endif %}
-            {% if KICKSTART_META %}
-            --ks-meta {{ KICKSTART_META | shell_quote }}             {% endif %}
-            {% for option in KICKSTART_OPTIONS %}
-            {{ option | shell_quote }}             {% endfor %}
-            {% if INSTALLATION_METHOD %}
-            --method {{ INSTALLATION_METHOD | shell_quote }}             {% endif %}
-            {% if not PANIC_WATCHDOG_ENABLED %}
-            --ignore-panic             {% endif %}
-            --whiteboard {{ WHITEBOARD | shell_quote }}
-        `
-|no
-
-
-|`beaker.command.create.template:$entityname`
-|
-|`ARTEMIS_BEAKER_BKR_CREATE_COMMAND_TEMPLATE_$entityname`
-|
-|
-
-
-5+|A template for the ``bkr`` subcommand that, when executed, would create a Beaker job XML.
-
 |`beaker.guest-watchdog.ssh.connect-timeout`
 |`int`
 |`ARTEMIS_BEAKER_GUEST_WATCHDOG_SSH_CONNECT_TIMEOUT`

@@ -26,7 +26,6 @@ from typing import (
 import gluetool.glue
 import gluetool.log
 import psycopg2.errors
-import ruamel.yaml.representer
 import sqlalchemy
 import sqlalchemy.engine
 import sqlalchemy.event
@@ -1016,35 +1015,6 @@ class GuestRequest(Base):
 
     __table_args__ = (Index('ix_guestname_poolname', guestname, poolname),)
 
-    def serialize(self) -> dict[str, Any]:
-        return {
-            'guestname': self.guestname,
-            'environment': self.environment.serialize(),
-            'ownername': self.ownername,
-            'shelfname': self.shelfname,
-            'priorityname': self.priorityname,
-            'poolname': self.poolname,
-            'last_poolname': self.last_poolname,
-            'security_group_rules_ingress': [sg.serialize() for sg in self.security_group_rules.ingress],
-            'security_group_rules_egress': [sg.serialize() for sg in self.security_group_rules.egress],
-            'ctime': str(self.ctime),
-            'state': self.state.value,
-            'state_mtime': str(self.state_mtime),
-            'address': self.address,
-            'ssh_keyname': self.ssh_keyname,
-            'ssh_port': self.ssh_port,
-            'ssh_username': self.ssh_username,
-            'pool_data': self._pool_data,
-            'user_data': self._user_data,
-            'bypass_shelf_lookup': self.bypass_shelf_lookup,
-            'skip_prepare_verify_ssh': self.skip_prepare_verify_ssh,
-            'post_install_script': self.post_install_script,
-            'watchdog_dispatch_delay': self.watchdog_dispatch_delay,
-            'watchdog_period_delay': self.watchdog_period_delay,
-            'log_types': self._log_types,
-            'on_ready': self._on_ready,
-        }
-
     @classmethod
     def create_query(
         cls,
@@ -1294,10 +1264,6 @@ class GuestRequest(Base):
         on_ready = cast(list[list[Any]], self._on_ready)
 
         return [(cast(str, actorname), cast(list['ActorArgumentType'], args)) for actorname, args in on_ready]
-
-    @classmethod
-    def to_yaml(cls, representer: ruamel.yaml.representer.Representer, guest_request: 'GuestRequest') -> Any:
-        return representer.represent_dict(guest_request.serialize())
 
 
 class GuestLogBlob(Base):
@@ -1812,10 +1778,6 @@ class DB:
     def __new__(cls, logger: gluetool.log.ContextAdapter, url: str, application_name: Optional[str] = None) -> 'DB':
         with cls._lock:
             if cls.instance is None:
-                from . import _YAML_DUMPABLE_CLASSES
-
-                _YAML_DUMPABLE_CLASSES.add(GuestRequest)
-
                 cls.instance = super().__new__(cls)
                 cls.instance._setup_instance(logger, url, application_name=application_name)
 
