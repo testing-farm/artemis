@@ -5,6 +5,7 @@ import dataclasses
 import datetime
 import os
 import re
+import shlex
 import stat
 from re import Pattern
 from typing import Any, Callable, Optional, cast
@@ -15,7 +16,7 @@ import gluetool.utils
 import requests
 import requests.exceptions
 import sqlalchemy.orm.session
-from gluetool.log import ContextAdapter, log_table, log_xml
+from gluetool.log import ContextAdapter, log_blob, log_table, log_xml
 from gluetool.result import Error, Ok, Result
 from gluetool.utils import ProcessOutput
 from tmt.hardware import Operator
@@ -165,6 +166,53 @@ KNOB_INSTALLATION_TIMEOUT: Knob[int] = Knob(
     envvar='ARTEMIS_BEAKER_INSTALLATION_TIMEOUT',
     cast_from_str=int,
     default=1800,
+)
+
+KNOB_BKR_CREATE_COMMAND_TEMPLATE: Knob[str] = Knob(
+    'beaker.command.create.template',
+    'A template for the ``bkr`` subcommand that, when executed, would create a Beaker job XML.',
+    has_db=False,
+    per_entity=True,
+    envvar='ARTEMIS_BEAKER_BKR_CREATE_COMMAND_TEMPLATE',
+    cast_from_str=str,
+    default="""
+        workflow-simple \
+            --dry-run \
+            --prettyxml \
+            --distro {{ IMAGE.id | shell_quote }} \
+            --arch {{ GUEST_REQUEST.environment.hw.arch | shell_quote }} \
+            {#
+              # Using reservesys task instead of --reserve, because reservesys adds extendtesttime.sh
+              # script we can use to extend existing reservation.
+            #}
+            --task /distribution/reservesys \
+            --taskparam RESERVETIME={{ RESERVATION_DURATION }} \
+            {% if IMAGE.variant %}
+            --variant {{ IMAGE.variant | shell_quote }} \
+            {% endif %}
+            {% for name, value in TAGS | items %}
+            --taskparam ARTEMIS_TAG_{{ name | shell_quote }}={{ value | shell_quote }} \
+            {% endfor %}
+            {#
+              Override kickstart template for bootc installation.
+            #}
+            {% if KICKSTART_FILEPATH %}
+            --kickstart {{ KICKSTART_FILEPATH | shell_quote }} \
+            {% endif %}
+            {% if KICKSTART_META %}
+            --ks-meta {{ KICKSTART_META | shell_quote }} \
+            {% endif %}
+            {% for option in KICKSTART_OPTIONS %}
+            {{ option | shell_quote }} \
+            {% endfor %}
+            {% if INSTALLATION_METHOD %}
+            --method {{ INSTALLATION_METHOD | shell_quote }} \
+            {% endif %}
+            {% if not PANIC_WATCHDOG_ENABLED %}
+            --ignore-panic \
+            {% endif %}
+            --whiteboard {{ WHITEBOARD | shell_quote }}
+        """,
 )
 
 KNOB_BKR_COMMAND_TERMINATION_TIMEOUT: Knob[int] = Knob(
@@ -1399,6 +1447,7 @@ class BeakerDriver(PoolDriver):
         guest_request: GuestRequest,
         distro: BeakerPoolImageInfo,
     ) -> Result[list[str], Failure]:
+        # Job whiteboard
         r_whiteboard_template = KNOB_JOB_WHITEBOARD_TEMPLATE.get_value(entityname=self.poolname)
 
         if r_whiteboard_template.is_error:
@@ -1411,44 +1460,29 @@ class BeakerDriver(PoolDriver):
         if r_whiteboard.is_error:
             return Error(r_whiteboard.unwrap_error())
 
+        # Tags to expose in the job
         r_tags = self.get_guest_tags(logger, session, guest_request)
 
         if r_tags.is_error:
             return Error(r_tags.unwrap_error())
 
-        tags = r_tags.unwrap()
-
+        # Custom installation method
         r_installation_method_map = self.installation_method_map
 
         if r_installation_method_map.is_error:
             return Error(r_installation_method_map.unwrap_error())
 
-        installation_method_map = r_installation_method_map.unwrap()
+        installation_method_needle = ':'.join(
+            [guest_request.environment.os.compose, guest_request.environment.hw.arch, distro.id, distro.variant or '']
+        )
 
-        command = [
-            'workflow-simple',
-            '--dry-run',
-            '--prettyxml',
-            '--distro',
-            distro.id,
-            '--arch',
-            guest_request.environment.hw.arch,
-            # Using reservesys task instead of --reserve, because reservesys adds extendtesttime.sh
-            # script we can use to extend existing reservation.
-            '--task',
-            '/distribution/reservesys',
-            '--taskparam',
-            f'RESERVETIME={KNOB_RESERVATION_DURATION.value!s}',
-            '--whiteboard',
-            r_whiteboard.unwrap(),
+        installation_methods = [
+            installation_method
+            for pattern, installation_method in r_installation_method_map.unwrap()
+            if pattern.match(installation_method_needle)
         ]
 
-        if distro.variant is not None:
-            command += ['--variant', distro.variant]
-
-        for name, value in tags.items():
-            command += ['--taskparam', f'ARTEMIS_TAG_{name}={value}']
-
+        # Custom kickstart filepath
         if distro.bootc_image:
             # Override kickstart template for bootc installation
             r_kickstart_filepath = KNOB_KICKSTART_TEMPLATE_BOOTC_FILEPATH.get_value(entityname=self.poolname)
@@ -1456,8 +1490,12 @@ class BeakerDriver(PoolDriver):
             if r_kickstart_filepath.is_error:
                 return Error(r_kickstart_filepath.unwrap_error())
 
-            command += ['--kickstart', os.path.abspath(r_kickstart_filepath.unwrap())]
+            kickstart_filepath: Optional[str] = os.path.abspath(r_kickstart_filepath.unwrap())
 
+        else:
+            kickstart_filepath = None
+
+        # Custom kickstart meta
         r_ks_meta_template = KNOB_KICKSTART_METADATA_TEMPLATE.get_value(entityname=self.poolname)
 
         if r_ks_meta_template.is_error:
@@ -1470,25 +1508,14 @@ class BeakerDriver(PoolDriver):
         if r_ks_meta.is_error:
             return Error(r_ks_meta.unwrap_error())
 
-        ks_meta = r_ks_meta.unwrap()
-
-        if ks_meta:
-            command += ['--ks-meta', ks_meta]
-
+        # Custom kickstart options
         if guest_request.environment.has_ks_specification:
-            command += self._create_bkr_kickstart_options(guest_request.environment.kickstart)
+            kickstart_options = self._create_bkr_kickstart_options(guest_request.environment.kickstart)
 
-        space = ':'.join(
-            [guest_request.environment.os.compose, guest_request.environment.hw.arch, distro.id, distro.variant or '']
-        )
+        else:
+            kickstart_options = []
 
-        for pattern, method in installation_method_map:
-            if not pattern.match(space):
-                continue
-
-            command += ['--method', method]
-            break
-
+        # Beaker watchdog
         def _requires_panic_watchdog(constraint: ConstraintBase) -> bool:
             if isinstance(constraint, Constraint):
                 return constraint.name == 'beaker.panic_watchdog' and constraint.value is True
@@ -1504,15 +1531,43 @@ class BeakerDriver(PoolDriver):
             return Error(r_constraints.unwrap_error())
 
         constraints = r_constraints.unwrap()
-        panic_watchdog = False
+        panic_watchdog_enabled = False
 
-        if constraints is not None:
-            panic_watchdog = _requires_panic_watchdog(constraints)
+        if constraints:
+            panic_watchdog_enabled = _requires_panic_watchdog(constraints)
 
-        if not panic_watchdog:
-            command += ['--ignore-panic']
+        # Putting it all together
+        r_command_template = KNOB_BKR_CREATE_COMMAND_TEMPLATE.get_value(entityname=self.poolname)
 
-        return Ok(command)
+        if r_command_template.is_error:
+            return Error(r_command_template.unwrap_error())
+
+        r_command_rendered = render_template(
+            r_command_template.unwrap(),
+            IMAGE=distro.serialize(),
+            RESERVATION_DURATION=KNOB_RESERVATION_DURATION.value,
+            KICKSTART_FILEPATH=kickstart_filepath,
+            KICKSTART_META=r_ks_meta.unwrap(),
+            KICKSTART_OPTIONS=kickstart_options,
+            INSTALLATION_METHOD=installation_methods[0] if installation_methods else None,
+            PANIC_WATCHDOG_ENABLED=panic_watchdog_enabled,
+            TAGS=r_tags.unwrap(),
+            WHITEBOARD=r_whiteboard.unwrap(),
+            **template_environment(guest_request),
+        )
+
+        if r_command_rendered.is_error:
+            return Error(r_command_rendered.unwrap_error())
+
+        log_blob(logger.debug, 'wow options', r_command_rendered.unwrap())
+
+        try:
+            return Ok(shlex.split(r_command_rendered.unwrap()))
+
+        except Exception as exc:
+            return Error(
+                Failure.from_exc('failed to parse Beaker command', exc, rendered_command=r_command_rendered.unwrap())
+            )
 
     def _create_job_xml(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
