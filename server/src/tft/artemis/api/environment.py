@@ -23,12 +23,9 @@ ENVIRONMENT_SCHEMAS: dict[str, JSONSchemaType] = {}
 #: API versions. Based on this list, routers for proper endpoints will be added to the application with appropriate
 #: redirects if specified.
 API_MILESTONES: list[tuple[str, list[str]]] = [
-    # NEW: beaker.panic-watchdog HW requirement
-    # NEW: iommu HW requirements
-    # NEW: system.model-name HW requirement
-    # NEW: device HW requirements
+    # NEW: cpu.vendor and cpu.vendor-name HW requirements
     (
-        'v0.0.83',
+        'v0.0.84',
         [
             # For lazy clients who don't care about the version, our most current API version should add
             # `/current` redirected to itself.
@@ -38,6 +35,11 @@ API_MILESTONES: list[tuple[str, list[str]]] = [
             'toplevel',
         ],
     ),
+    # NEW: beaker.panic-watchdog HW requirement
+    # NEW: iommu HW requirements
+    # NEW: system.model-name HW requirement
+    # NEW: device HW requirements
+    ('v0.0.83', []),
     # NEW: guest reboot
     # NEW: cpu.stepping HW requirement
     ('v0.0.74', []),

@@ -330,6 +330,12 @@ class FlavorCpu(_FlavorSubsystemContainer):
     #: CPU flags.
     flag: list[str] = dataclasses.field(default_factory=list)
 
+    #: CPU vendor ID
+    vendor: Optional[int] = None
+
+    #: CPU vendor name
+    vendor_name: Optional[str] = None
+
 
 @dataclasses.dataclass(repr=False)
 class FlavorDevice(_FlavorSubsystemContainer):
@@ -1456,6 +1462,7 @@ def _parse_cpu(spec: Spec) -> ConstraintBase:
             'model',
             'stepping',
             'family',
+            'vendor',
         )
         if constraint_name in spec
     ]
@@ -1464,7 +1471,7 @@ def _parse_cpu(spec: Spec) -> ConstraintBase:
         Constraint.from_specification(
             f'cpu.{constraint_name.replace("-", "_")}', str(spec[constraint_name]), as_quantity=False
         )
-        for constraint_name in ('family-name', 'model-name')
+        for constraint_name in ('family-name', 'model-name', 'vendor-name')
         if constraint_name in spec
     ]
 
