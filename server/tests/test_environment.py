@@ -1299,6 +1299,8 @@ def test_parse_maximal_constraint() -> None:
                   - avx
                   - avx2
                   - "!= smep"
+                vendor: 0x756e654749656e696c65746e
+                vendor-name: GenuineIntel
             device:
                 driver: ahci
             disk:

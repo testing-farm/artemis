@@ -486,6 +486,7 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
                       - avx
                       - avx2
                       - "!= smep"
+                    vendor-name: GenuineIntel
                 disk:
                     - size: 40 GiB
                     - size: 120 GiB
@@ -540,6 +541,9 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
            </cpu>
            <cpu>
             <model_name op="==" value="Haswell"/>
+           </cpu>
+           <cpu>
+            <vendor op="==" value="GenuineIntel"/>
            </cpu>
            <and>
             <cpu>
