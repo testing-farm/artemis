@@ -127,6 +127,13 @@ The table below describe the built-in support for various features. However, to 
 |[red]#no#
 |[red]#no#
 
+|`device.driver`
+|[red]#no#
+|[red]#no#
+|[green]#yes#
+|[red]#no#
+|[red]#no#
+
 |`disk[].space`
 |[yellow]#partial# See <<hw-notes-only-one-disk, #1>>. *
 |[red]#no#

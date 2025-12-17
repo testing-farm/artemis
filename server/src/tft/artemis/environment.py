@@ -332,6 +332,18 @@ class FlavorCpu(_FlavorSubsystemContainer):
 
 
 @dataclasses.dataclass(repr=False)
+class FlavorDevice(_FlavorSubsystemContainer):
+    """
+    Represents a HW properties related to device support by the instance.
+    """
+
+    CONTAINER_PREFIX = 'device'
+
+    #: Device driver.
+    driver: Optional[str] = None
+
+
+@dataclasses.dataclass(repr=False)
 class FlavorDisk(_FlavorSubsystemContainer):
     """
     Represents a HW properties related to persistent storage a flavor, one disk in particular.
@@ -644,6 +656,9 @@ class Flavor(_FlavorSubsystemContainer):
 
     #: CPU properties.
     cpu: FlavorCpu = dataclasses.field(default_factory=FlavorCpu)
+
+    #: Device properties.
+    device: FlavorDevice = dataclasses.field(default_factory=FlavorDevice)
 
     #: Disk/storage properties.
     disk: FlavorDisks = dataclasses.field(default_factory=FlavorDisks)
@@ -1475,6 +1490,27 @@ def _parse_cpu(spec: Spec) -> ConstraintBase:
     return group
 
 
+def _parse_device(spec: Spec) -> ConstraintBase:
+    """
+    Parse device-related constraints.
+
+    :param spec: raw constraint block specification.
+    :returns: block representation as :py:class:`ConstraintBase` or one of its subclasses.
+    """
+
+    group = And()
+
+    group.constraints += [
+        Constraint.from_specification(
+            f'device.{constraint_name.replace("-", "_")}', str(spec[constraint_name]), as_quantity=False
+        )
+        for constraint_name in ('driver',)
+        if constraint_name in spec
+    ]
+
+    return group
+
+
 def _parse_disk(spec: Spec, disk_index: int) -> ConstraintBase:
     """
     Parse a disk-related constraints.
@@ -1804,6 +1840,9 @@ def _parse_generic_spec(spec: Spec) -> ConstraintBase:
 
     if 'memory' in spec:
         group.constraints += [Constraint.from_specification('memory', str(spec['memory']))]
+
+    if 'device' in spec:
+        group.constraints += [_parse_device(spec['device'])]
 
     if 'disk' in spec:
         group.constraints += [_parse_disks(spec['disk'])]

@@ -1299,6 +1299,8 @@ def test_parse_maximal_constraint() -> None:
                   - avx
                   - avx2
                   - "!= smep"
+            device:
+                driver: ahci
             disk:
                 - size: 40 GiB
                 - size: 120 GiB
@@ -1573,8 +1575,24 @@ def test_beaker_preset(
                 ['disk[0].size >= 13 GiB', 'cpu.processors >= 3'],
             ],
         ),
+        (
+            """
+        ---
+
+        or:
+            - device:
+                driver: uhci
+
+            - device:
+                driver: ahci
+        """,
+            tft.artemis.environment.Flavor(
+                name='dummy-flavor', id='dummy-flavor', device=tft.artemis.environment.FlavorDevice(driver='uhci')
+            ),
+            [['device.driver == uhci']],
+        ),
     ],
-    ids=['SPANS1', 'SPANS2'],
+    ids=['SPANS1', 'SPANS2', 'SPANS3'],
 )
 def test_spans(
     logger: ContextAdapter, hw: str, flavor: tft.artemis.environment.Flavor, expected_spans: list[list[str]]

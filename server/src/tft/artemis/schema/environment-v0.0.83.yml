@@ -95,6 +95,21 @@ definitions:
     # empty `cpu`.
     minProperties: 1
 
+  # HW requirements: `device` block
+  hw_device:
+    type: object
+
+    properties:
+      driver:
+        anyOf:
+          - type: string
+
+    additionalProperties: false
+
+    # enforce at least one property - we don't care which one, but we don't want
+    # empty `device`.
+    minProperties: 1
+
   # HW requirements: single `disk` item
   hw_disk:
     type: object
@@ -300,6 +315,9 @@ definitions:
 
       cpu:
         "$ref": "#/definitions/hw_cpu"
+
+      device:
+        "$ref": "#/definitions/hw_device"
 
       disk:
         "$ref": "#/definitions/hw_disks"

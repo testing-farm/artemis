@@ -26,6 +26,7 @@ API_MILESTONES: list[tuple[str, list[str]]] = [
     # NEW: beaker.panic-watchdog HW requirement
     # NEW: iommu HW requirements
     # NEW: system.model-name HW requirement
+    # NEW: device HW requirements
     (
         'v0.0.83',
         [

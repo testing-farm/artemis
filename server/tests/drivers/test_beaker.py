@@ -585,6 +585,28 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
         </and>
         """,
         ),
+        (
+            """
+        ---
+        hw:
+          arch: x86_64
+          constraints:
+            device:
+              driver: ahci
+        os:
+          compose: dummy-compose
+
+        kickstart: {}
+        """,
+            """
+        <and>
+         <system>
+          <arch op="==" value="x86_64"/>
+         </system>
+         <key_value key="MODULE" op="==" value="ahci"/>
+        </and>
+        """,
+        ),
     ],
     ids=[
         'simple-arch',
@@ -598,6 +620,7 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
         'multiple-nics-and-bios',
         'system.model-name',
         'maximal-constraint',
+        'device-driver',
     ],
 )
 def test_environment_to_beaker_filter(

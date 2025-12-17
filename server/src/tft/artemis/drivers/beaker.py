@@ -791,6 +791,11 @@ def constraint_to_beaker_filter(
             # Not a beaker HW contstraint. Affects attribute of the <watchdog/> tag.
             return Ok(None)
 
+    if constraint_name.property == 'device' and constraint_name.child_property == 'driver':
+        op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
+
+        return Ok(_new_tag('key_value', key='MODULE', op=op, value=value))
+
     return Error(
         Failure('constraint not supported by driver', constraint=repr(constraint), constraint_name=constraint.name)
     )
@@ -2285,6 +2290,7 @@ class BeakerDriver(PoolDriver):
             'cpu.model_name',
             'cpu.stepping',
             'cpu.flag',
+            'device.driver',
             'disk[].size',
             'disk[].model_name',
             # Special internal constraints
