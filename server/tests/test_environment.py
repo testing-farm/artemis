@@ -1299,6 +1299,7 @@ def test_parse_maximal_constraint() -> None:
                   - avx
                   - avx2
                   - "!= smep"
+                vendor-name: GenuineIntel
             disk:
                 - size: 40 GiB
                 - size: 120 GiB

@@ -548,6 +548,13 @@ def constraint_to_beaker_filter(
 
             cpu.append(flag)
 
+        elif constraint_name.child_property == 'vendor_name':
+            op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
+
+            vendor_name = _new_tag('vendor', op=op, value=value)
+
+            cpu.append(vendor_name)
+
         else:
             return Error(Failure('constraint not supported by driver', constraint=repr(constraint)))
 
@@ -2259,6 +2266,7 @@ class BeakerDriver(PoolDriver):
             'cpu.model_name',
             'cpu.stepping',
             'cpu.flag',
+            'cpu.vendor_name',
             'disk[].size',
             'disk[].model_name',
             # Special internal constraints
