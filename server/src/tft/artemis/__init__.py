@@ -12,7 +12,6 @@ import logging
 import os
 import platform
 import resource
-import shlex
 import sys
 import threading
 import traceback as _traceback
@@ -1496,31 +1495,17 @@ except Exception as exc:
     sys.exit(1)
 
 
-def _template_filter_shell_quote(s: str) -> str:
-    """
-    Return a shell-escaped version of the string.
-
-    .. code-block:: jinja
-
-        # "foo bar" -> "'foo bar'"
-        {{ "foo bar" | shell_quote }}
-    """
-
-    return shlex.quote(s)
-
-
 def render_template(template: str, **kwargs: Any) -> Result[str, Failure]:
     try:
-        environment = jinja2.Environment(
+        _template = jinja2.Template(
+            template,
             variable_start_string=TEMPLATE_VARIABLE_DELIMITERS[0],
             variable_end_string=TEMPLATE_VARIABLE_DELIMITERS[1],
             block_start_string=TEMPLATE_BLOCK_DELIMITERS[0],
             block_end_string=TEMPLATE_BLOCK_DELIMITERS[1],
         )
 
-        environment.filters.update({'shell_quote': _template_filter_shell_quote})
-
-        return Ok(environment.from_string(template).render(**kwargs).strip())
+        return Ok(_template.render(**kwargs).strip())
 
     except Exception as exc:
         return Error(Failure.from_exc('failed to render template', exc, template=template, variables=kwargs))
@@ -1537,9 +1522,9 @@ def template_environment(guest_request: Optional[artemis_db.GuestRequest]) -> di
     if guest_request is not None:
         env.update(
             {
-                'GUEST_REQUEST': guest_request.serialize(),
+                'GUEST_REQUEST': guest_request,
                 'GUESTNAME': guest_request.guestname,
-                'ENVIRONMENT': guest_request.environment.serialize(),
+                'ENVIRONMENT': guest_request.environment,
             }
         )
 
