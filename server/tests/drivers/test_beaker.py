@@ -40,14 +40,21 @@ def parse_hw(text: str) -> tft.artemis.environment.ConstraintBase:
 
 @pytest.fixture(name='dummy_guest_request')
 def fixture_dummy_guest_request(name: str = 'dummy_guest_request') -> MagicMock:
+    environment = tft.artemis.environment.Environment(
+        hw=tft.artemis.environment.HWRequirements(arch='x86_64'),
+        os=tft.artemis.environment.OsRequirements(compose='dummy-compose'),
+        kickstart=tft.artemis.environment.Kickstart(),
+    )
+
     return MagicMock(
         name=name,
         guestname='dummy_guest',
-        environment=tft.artemis.environment.Environment(
-            hw=tft.artemis.environment.HWRequirements(arch='x86_64'),
-            os=tft.artemis.environment.OsRequirements(compose='dummy-compose'),
-            kickstart=tft.artemis.environment.Kickstart(),
-        ),
+        environment=environment,
+        serialize=lambda: {
+            'name': name,
+            'guestname': 'dummy_guest',
+            'environment': environment.serialize(),
+        },
     )
 
 
@@ -62,6 +69,14 @@ def fixture_dummy_image_info(name: str = 'dummy-compose', variant: str = 'dummy-
         supports_kickstart=True,
         variant=variant,
         bootc_image=None,
+        serialize=lambda: {
+            'name': name,
+            'id': name,
+            'arch': None,
+            'supports_kickstart': True,
+            'variant': variant,
+            'bootc_image': None,
+        },
     )
 
     return mock
@@ -1015,11 +1030,11 @@ def test_bkr_ks_options(pool: tft.artemis.drivers.beaker.BeakerDriver, env: str,
                 '/distribution/reservesys',
                 '--taskparam',
                 'RESERVETIME=86400',
-                '--whiteboard',
-                '[artemis] [undefined-deployment] dummy_guest',
                 '--variant',
                 'dummy-variant',
                 '--ignore-panic',
+                '--whiteboard',
+                '[artemis] [undefined-deployment] dummy_guest',
             ],
         ),
         (
@@ -1050,10 +1065,10 @@ def test_bkr_ks_options(pool: tft.artemis.drivers.beaker.BeakerDriver, env: str,
                 '/distribution/reservesys',
                 '--taskparam',
                 'RESERVETIME=86400',
-                '--whiteboard',
-                '[artemis] [undefined-deployment] dummy_guest',
                 '--variant',
                 'dummy-variant',
+                '--whiteboard',
+                '[artemis] [undefined-deployment] dummy_guest',
             ],
         ),
     ],
