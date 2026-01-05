@@ -3,10 +3,8 @@
 
 import dataclasses
 import json
-import os
 import re
-import shutil
-from collections.abc import Generator, Iterator
+from collections.abc import Iterator
 from re import Pattern
 from typing import Any, Optional, TypedDict, cast
 
@@ -15,11 +13,18 @@ import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 from tmt.hardware import UNITS
 
-from tft.artemis.drivers import CLISessionPermanentDir, PoolData, PoolDriver, PoolImageInfo, PoolResourcesIDs
+from tft.artemis.drivers import PoolDriver, PoolImageInfo
+from tft.artemis.drivers.ibmcloud import (
+    IBMCloudDriver,
+    IBMCloudFlavor,
+    IBMCloudPoolData,
+    IBMCloudPoolResourcesIDs,
+    IBMCloudSession,
+)
 
-from .. import Failure, JSONType, log_dict_yaml
-from ..db import GuestRequest
-from ..environment import (
+from ... import Failure, JSONType, log_dict_yaml
+from ...db import GuestRequest
+from ...environment import (
     Flavor,
     FlavorBoot,
     FlavorCpu,
@@ -30,17 +35,15 @@ from ..environment import (
     FlavorVirtualization,
     SizeType,
 )
-from ..knobs import Knob
-from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
-from . import (
-    FlavorBasedPoolDriver,
+from ...knobs import Knob
+from ...metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
+from .. import (
     PoolErrorCauses,
     PoolImageSSHInfo,
     ProvisioningProgress,
     ProvisioningState,
     ReleasePoolResourcesState,
     SerializedPoolResourcesIDs,
-    Tags,
     create_tempfile,
 )
 
@@ -79,57 +82,6 @@ class IBMCloudVPCErrorCauses(PoolErrorCauses):
     UNEXPECTED_INSTANCE_STATE = 'unexpected-instance-state'
 
 
-# Limits imposed on tags in IBM VPC cloud.
-# https://cloud.ibm.com/docs/account?topic=account-tag&interface=ui#limits
-#
-# The length limit includes the name and colon!
-TAG_MAX_LENGTH = 128
-# NOTE(ivasilev) IBMCloud is petty about allowed characters in tags - only [A-Z][0-9] _-.: are allowed.
-# COLDSTORE_URL is the one of our typical tags that it doesn't play nice with, so will be replacing all
-# forbidden characters with prefixes.
-TAG_FORBIDDEN_CHARACTERS_PATTERN = re.compile(r'[^.a-zA-Z0-9 _\-]')
-
-
-def _sanitize_tags(tags: Tags) -> Generator[tuple[str, str], None, None]:
-    """
-    Sanitize tags to make their values acceptable for IBM API and CLI.
-
-    Namely replace forbidden characters with more acceptable ones.
-    """
-
-    def _sanitize_string(s: str) -> str:
-        return TAG_FORBIDDEN_CHARACTERS_PATTERN.sub('_', s)
-
-    for name, value in tags.items():
-        name = _sanitize_string(name)
-        value = _sanitize_string(value or '')
-
-        if len(name) >= TAG_MAX_LENGTH:
-            yield name[:TAG_MAX_LENGTH], ''
-
-        elif value:
-            yield name, value[: TAG_MAX_LENGTH - len(name) - 1]
-
-        else:
-            yield name, ''
-
-
-def _serialize_tags(tags: Tags) -> list[str]:
-    """
-    Serialize tags to make them acceptable for IBM CLI.
-
-    IBM accepts tags in form of ``key:value`` items, separated by comma:
-
-    .. code-block:: python
-
-       foo:bar,baz,...
-
-    See https://cloud.ibm.com/docs/account?topic=account-tag&interface=ui for more details.
-    """
-
-    return [f'{name}:{value}' if value else name for name, value in _sanitize_tags(tags)]
-
-
 class APIImageType(TypedDict):
     name: str
     crn: str
@@ -154,74 +106,6 @@ ConfigImageFilter = TypedDict(
 )
 
 
-class IBMCloudSession(CLISessionPermanentDir):
-    CLI_PREFIX = 'ibmcloud'
-    CLI_CMD = 'ibmcloud'
-    CLI_CONFIG_DIR_ENV_VAR = 'IBMCLOUD_HOME'
-
-    PLUGINS_DIR = '.bluemix/plugins'
-
-    def _login(self, logger: gluetool.log.ContextAdapter) -> Result[None, Failure]:
-        assert self.pool.pool_config['api-key']
-        r_login = self._run_cmd(
-            logger,
-            [
-                'login',
-                '--apikey',
-                self.pool.pool_config['api-key'],
-                '-r',
-                self.pool.pool_config['default-region'],
-                # Do not ask if existing plugins need update, trust the process
-                '-q',
-            ],
-            json_format=False,
-            commandname='ibmcloud.login',
-        )
-        if r_login.is_error:
-            return Error(Failure.from_failure('failed to log into tenant', r_login.unwrap_error()))
-
-        return Ok(None)
-
-    def _prepare_session_dir(self, logger: gluetool.log.ContextAdapter) -> Result[None, Failure]:
-        plugins_abspath = os.path.join(self.session_dir_path, self.PLUGINS_DIR)
-        # If there is no plugins in the session dir -> need to install some for driver to work. Plugins directory will
-        # be created after a call to login, but it will be holding just a configuration file. To make sure there
-        # are plugins there we'll need to check for subdirectories in the plugins dir.
-        try:
-            if next(os.walk(plugins_abspath))[1]:
-                return Ok(None)
-        except StopIteration:
-            # Well, the plugins directory is not there at all - definitely need to install something
-            pass
-
-        # Make sure pool configuration has installed-plugins-dir defined, then copy its contents under plugins_dir
-        # as is
-        assert self.pool.pool_config['installed-plugins-dir']
-        try:
-            shutil.copytree(self.pool.pool_config['installed-plugins-dir'], plugins_abspath)
-        except (shutil.Error, OSError) as exc:
-            return Error(Failure.from_exc('failed to copy plugins from pool config dir', exc))
-
-        return Ok(None)
-
-
-@dataclasses.dataclass
-class IBMCloudPoolData(PoolData):
-    instance_id: Optional[str] = None
-    instance_name: Optional[str] = None
-
-
-@dataclasses.dataclass
-class IBMCloudPoolResourcesIDs(PoolResourcesIDs):
-    instance_id: Optional[str] = None
-    assorted_resource_ids: Optional[list[dict[str, str]]] = None
-
-
-@dataclasses.dataclass
-class IBMCloudFlavor(Flavor):
-    numa_count: Optional[int] = None
-
-
 @dataclasses.dataclass(repr=False)
 class IBMCloudVPCPoolImageInfo(PoolImageInfo):
     # A super long identifier like
@@ -236,7 +120,7 @@ class IBMCloudVPCPoolImageInfo(PoolImageInfo):
     user_data_format: str
 
 
-class IBMCloudVPCDriver(FlavorBasedPoolDriver[IBMCloudVPCPoolImageInfo, IBMCloudFlavor]):
+class IBMCloudVPCDriver(IBMCloudDriver):
     drivername = 'ibmcloud-vpc'
 
     image_info_class = IBMCloudVPCPoolImageInfo
@@ -685,41 +569,27 @@ class IBMCloudVPCDriver(FlavorBasedPoolDriver[IBMCloudVPCPoolImageInfo, IBMCloud
             return Error(Failure('Server show commmand output is empty'))
 
         pool_data = guest_request.pool_data.mine(self, IBMCloudPoolData)
+        instance_name = output['name']
 
-        if not output['tags']:
+        # NOTE(ivasilev) Unlike other clouds, ibmcloud doesn't have tags among instance details. To check for tags
+        # we need to use a separate command to list resources with the expected name, and then check tags assigned
+        # to those resources.
+        r_assigned_tags = self.get_instance_tags(logger, instance_name)
+
+        if r_assigned_tags.is_error:
+            return Error(r_assigned_tags.unwrap_error())
+
+        if not r_assigned_tags.unwrap():
             # No tags have been assigned yet, time to do that.
-            # Tag the created instance. Unfortunately ibmcloud doesn't allow passing tags directly to the image
-            # create command, and updating the instance via resource api during guest acquisition seems prone to
-            # 'The resource is not found' errors. So will be tagging the instance that has no tags yet
-
             r_tags = self.get_guest_tags(logger, session, guest_request)
 
             if r_tags.is_error:
                 return Error(r_tags.unwrap_error())
+            # Here comes the actual tagging attempt
+            r_tag_instance = self.tag_instance(logger=logger, instance_name=instance_name, tags=r_tags.unwrap())
 
-            tags = r_tags.unwrap()
-
-            # This tag links our VM and its resources, which comes handy when we want to remove everything
-            # leaving no leaks.
-            tags['uid'] = tags['ArtemisGuestLabel']
-
-            with IBMCloudSession(logger, self) as ibm_session:
-                r_tag_instance = ibm_session.run(
-                    logger,
-                    [
-                        'resource',
-                        'tag-attach',
-                        '--tag-names',
-                        ','.join(_serialize_tags(tags)),
-                        '--resource-name',
-                        output['name'],
-                    ],
-                    json_format=False,
-                    commandname='ibmcloud.tag-attach',
-                )
-
-                if r_tag_instance.is_error:
-                    return Error(Failure.from_failure('Tagging instance failed', r_tag_instance.unwrap_error()))
+            if r_tag_instance.is_error:
+                return Error(Failure.from_failure('Tagging instance failed', r_tag_instance.unwrap_error()))
 
         status = output['status'].lower()
         logger.info(f'current instance status {pool_data.instance_id}:{status}')
@@ -755,26 +625,6 @@ class IBMCloudVPCDriver(FlavorBasedPoolDriver[IBMCloudVPCPoolImageInfo, IBMCloud
 
         if not pool_data:
             return Ok(None)
-
-        # NOTE: For now there is no additional resources to cleanup, add here in the future if needed
-        # For now there is no additional resources to cleanup, keeping this here just for consistency with other drivers
-        # with IBMCloudSession(logger, self) as session:
-        #     r_tagged_resources = session.run(
-        #         logger,
-        #         [
-        #             'resource', 'search', f'tags:"uid:{pool_data.instance_name}"',
-        #             '--output', 'json'
-        #         ],
-        #         commandname='az.resource-list'
-        #     )
-        #     if r_tagged_resources.is_error:
-        #         return Error(r_tagged_resources.unwrap_error())
-        #
-        # tagged_resources = r_tagged_resources.unwrap()
-        #
-        # assorted_resource_ids = [
-        #     res for res in cast(Dict[str, Any], tagged_resources)['items'] if res['resource_type'] != 'instance'
-        # ]
 
         return self.dispatch_resource_cleanup(
             logger, session, IBMCloudPoolResourcesIDs(instance_id=pool_data.instance_id), guest_request=guest_request

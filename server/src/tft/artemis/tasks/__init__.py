@@ -72,11 +72,13 @@ from ..drivers import (
     beaker as beaker_driver,
     flasher as flasher_driver,
     gcp as gcp_driver,
-    ibmcloudpower as ibmcloud_power_driver,
-    ibmcloudvpc as ibmcloud_vpc_driver,
     localhost as localhost_driver,
     openstack as openstack_driver,
     rest as rest_driver,
+)
+from ..drivers.ibmcloud import (
+    power as ibmcloud_power_driver,
+    vpc as ibmcloud_vpc_driver,
 )
 from ..guest import GuestLogger, GuestState, ShelfLogger, SnapshotLogger
 from ..knobs import Knob

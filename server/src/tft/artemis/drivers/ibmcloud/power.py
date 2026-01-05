@@ -12,16 +12,21 @@ import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 from tmt.hardware import UNITS
 
-from tft.artemis.drivers import PoolDriver, PoolImageInfo
-from tft.artemis.drivers.ibmcloudvpc import IBMCloudPoolData, IBMCloudPoolResourcesIDs, IBMCloudSession
+from tft.artemis.drivers import PoolDriver, PoolImageInfo, PoolImageInfoT
+from tft.artemis.drivers.ibmcloud import (
+    IBMCloudDriver,
+    IBMCloudFlavor,
+    IBMCloudPoolData,
+    IBMCloudPoolResourcesIDs,
+    IBMCloudSession,
+)
 
-from .. import Failure, JSONType, log_dict_yaml, logging_filter, process_output_to_str
-from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
-from ..environment import Flavor, FlavorBoot
-from ..knobs import Knob
-from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
-from . import (
-    FlavorBasedPoolDriver,
+from ... import Failure, JSONType, log_dict_yaml, logging_filter, process_output_to_str
+from ...db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
+from ...environment import Flavor, FlavorBoot
+from ...knobs import Knob
+from ...metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
+from .. import (
     GuestLogUpdateProgress,
     PoolCapabilities,
     PoolErrorCauses,
@@ -143,7 +148,7 @@ class IBMCloudPowerPoolImageInfo(PoolImageInfo):
     href: str
 
 
-class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flavor]):
+class IBMCloudPowerDriver(IBMCloudDriver):
     drivername = 'ibmcloud-power'
 
     image_info_class = IBMCloudPowerPoolImageInfo
@@ -262,8 +267,8 @@ class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flav
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         image: PoolImageInfo,
-        suitable_flavors: list[Flavor],
-    ) -> Result[list[Flavor], Failure]:
+        suitable_flavors: list[IBMCloudFlavor],
+    ) -> Result[list[IBMCloudFlavor], Failure]:
         return Ok(
             list(
                 logging_filter(
@@ -282,8 +287,8 @@ class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flav
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
-        image: IBMCloudPowerPoolImageInfo,
-    ) -> Result[Optional[Flavor], Failure]:
+        image: PoolImageInfoT,
+    ) -> Result[Optional[IBMCloudFlavor], Failure]:
         """
         Map a guest request and image to the most fitting flavor.
 
@@ -523,7 +528,26 @@ class IBMCloudPowerDriver(FlavorBasedPoolDriver[IBMCloudPowerPoolImageInfo, Flav
         pool_data = guest_request.pool_data.mine(self, IBMCloudPoolData)
 
         status = output['status'].lower()
+        instance_name = output['serverName']
         logger.info(f'current instance status {pool_data.instance_id}:{status}')
+
+        # Let's try to tag the instance
+        r_assigned_tags = self.get_instance_tags(logger, instance_name)
+
+        if r_assigned_tags.is_error:
+            return Error(r_assigned_tags.unwrap_error())
+
+        if not r_assigned_tags.unwrap():
+            # No tags have been assigned yet, time to do that.
+            r_tags = self.get_guest_tags(logger, session, guest_request)
+
+            if r_tags.is_error:
+                return Error(r_tags.unwrap_error())
+            # Here comes the actual tagging attempt
+            r_tag_instance = self.tag_instance(logger=logger, instance_name=instance_name, tags=r_tags.unwrap())
+
+            if r_tag_instance.is_error:
+                return Error(Failure.from_failure('Tagging instance failed', r_tag_instance.unwrap_error()))
 
         if status == 'build':
             return Ok(ProvisioningProgress(state=ProvisioningState.PENDING, pool_data=pool_data))
