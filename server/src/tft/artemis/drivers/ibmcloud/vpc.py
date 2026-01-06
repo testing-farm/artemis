@@ -411,17 +411,29 @@ class IBMCloudVPCDriver(IBMCloudDriver):
 
         self.log_acquisition_attempt(logger, session, guest_request, flavor=flavor, image=image)
 
-        r_tags = self.get_guest_tags(logger, session, guest_request)
+        instance_name = self.get_guest_name(guest_request)
 
-        if r_tags.is_error:
-            return Error(r_tags.unwrap_error())
+        # Let's first check that there is no guest tied to this guest_request already. If there is one, then let's
+        # use already allocated resources to continue with the provisioning instead of requesting new ones and leaving
+        # old instance untracked.
+        r_existing_guest = self._show_guest(logger, instance_name)
 
-        tags = r_tags.unwrap()
+        if r_existing_guest.is_error:
+            # XXX Properly check return code/message to make sure it's a guest not found one
+            logger.info(f'No guest {instance_name} discovered, will provision a new one')
+        else:
+            # Reusing already allocated instance
+            existing_guest = r_existing_guest.unwrap()
 
-        # A combination of ArtemisGuestLabel-ArtemisGuestName doesn't pass the ibmcloud max name length, so let's cut
-        # ArtemisGuestName to the first section and use this fragment together with ArtemisGuestLabel. This way the
-        # result is definitely unique even on multiple simultaneous create requests for the same pool
-        instance_name = f'{tags["ArtemisGuestLabel"]}-{tags["ArtemisGuestName"].split("-")[0]}'
+            return Ok(
+                ProvisioningProgress(
+                    state=ProvisioningState.PENDING,
+                    pool_data=IBMCloudPoolData(
+                        instance_id=existing_guest['pvmInstanceID'], instance_name=existing_guest['serverName']
+                    ),
+                    ssh_info=image.ssh,
+                )
+            )
 
         def _create(user_data_file: Optional[str] = None) -> Result[JSONType, Failure]:
             # get VPC id
@@ -518,8 +530,7 @@ class IBMCloudVPCDriver(IBMCloudDriver):
             )
         )
 
-    def _show_guest(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[Any, Failure]:
-        instance_id = guest_request.pool_data.mine(self, IBMCloudPoolData).instance_id
+    def _show_guest(self, logger: gluetool.log.ContextAdapter, instance_id: Optional[str]) -> Result[Any, Failure]:
         res: dict[str, Any] = {}
 
         if not instance_id:
@@ -538,14 +549,14 @@ class IBMCloudVPCDriver(IBMCloudDriver):
             res = cast(dict[str, Any], r_instance_info.unwrap())
 
             # Now send another request to resource api to retrieve tags information
-            r_resource_info = session.run(logger, ['resource', 'search', f'name:{res["name"]}', '--output', 'json'])
+            r_resource_tags = self.get_instance_tags(logger, instance_id)
 
-            if r_resource_info.is_error:
+            if r_resource_tags.is_error:
                 return Error(
-                    Failure.from_failure('failed to fetch resource information', r_resource_info.unwrap_error())
+                    Failure.from_failure('failed to fetch resource tags information', r_resource_tags.unwrap_error())
                 )
 
-            res['tags'] = cast(dict[str, Any], r_resource_info.unwrap()).get('tags')
+            res['tags'] = r_resource_tags.unwrap()
 
         return Ok(res)
 
@@ -558,7 +569,8 @@ class IBMCloudVPCDriver(IBMCloudDriver):
         address would schedule yet another call to this method in the future.
         """
 
-        r_output = self._show_guest(logger, guest_request)
+        instance_id = guest_request.pool_data.mine(self, IBMCloudPoolData).instance_id
+        r_output = self._show_guest(logger, instance_id)
 
         if r_output.is_error:
             return Error(Failure('no such guest'))
