@@ -21,6 +21,7 @@ from tft.artemis.drivers import (
 )
 
 from ... import Failure
+from ...db import GuestRequest
 from ...environment import Flavor
 
 # Limits imposed on tags in IBM cloud.
@@ -209,3 +210,9 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor]):
             return Error(Failure(f'Unexpected output of ibmcloud resource show command for {instance_name}: {tags}'))
 
         return Ok(tags['items'][0].get('tags', []))
+
+    @classmethod
+    def get_guest_name(cls, guest_request: GuestRequest) -> str:
+        # TODO: drivers could accept a template for the name, to allow custom naming schemes
+        # NOTE(ivasilev) IBMCloud has a limit of 47 characters per guest, so will have to live with artemis-ID
+        return f'artemis-{guest_request.guestname}'

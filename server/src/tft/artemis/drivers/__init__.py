@@ -2110,8 +2110,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
             )
 
         tags['ArtemisGuestName'] = guest_request.guestname
-        # TODO: drivers could accept a template for the name, to allow custom naming schemes
-        tags['ArtemisGuestLabel'] = f'artemis-guest-{datetime.datetime.utcnow().strftime("%Y-%m-%d-%H-%M-%S")}'
+        tags['ArtemisGuestLabel'] = self.get_guest_name(guest_request)
 
         r_rendered_tags = render_tags(
             logger, tags, {'GUESTNAME': guest_request.guestname, 'ENVIRONMENT': guest_request.environment}
