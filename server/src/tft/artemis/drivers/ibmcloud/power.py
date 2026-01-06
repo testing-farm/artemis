@@ -425,17 +425,29 @@ class IBMCloudPowerDriver(IBMCloudDriver):
 
         self.log_acquisition_attempt(logger, session, guest_request, flavor=flavor, image=image)
 
-        # A combination of ArtemisGuestLabel-ArtemisGuestName doesn't pass the ibmcloud max name length, so let's cut
-        # to just ArtemisGuestName that is definitely unique even on multiple simultaneous create requests for the same
-        # pool
-        r_base_tags = self.get_guest_tags(logger, session, guest_request)
-        if r_base_tags.is_error:
-            return Error(Failure('Could not determine instance name from tags'))
+        instance_name = self.get_guest_name(guest_request)
 
-        tags = {
-            **r_base_tags.unwrap(),
-        }
-        instance_name = f'{tags["ArtemisGuestLabel"]}-{tags["ArtemisGuestName"].split("-")[0]}'
+        # Let's first check that there is no guest tied to this guest_request already. If there is one, then let's
+        # use already allocated resources to continue with the provisioning instead of requesting new ones and leaving
+        # old instance untracked.
+        r_existing_guest = self._show_guest(logger, instance_name)
+
+        if r_existing_guest.is_error:
+            # XXX Properly check return code/message to make sure it's a guest not found one
+            logger.info(f'No guest {instance_name} discovered, will provision a new one')
+        else:
+            # Reusing already allocated instance
+            existing_guest = r_existing_guest.unwrap()
+
+            return Ok(
+                ProvisioningProgress(
+                    state=ProvisioningState.PENDING,
+                    pool_data=IBMCloudPoolData(
+                        instance_id=existing_guest['pvmInstanceID'], instance_name=existing_guest['serverName']
+                    ),
+                    ssh_info=image.ssh,
+                )
+            )
 
         def _create(user_data_file: Optional[str] = None) -> Result[JSONType, Failure]:
             # Here will be setting defaults for memory, just in case.
@@ -590,10 +602,6 @@ class IBMCloudPowerDriver(IBMCloudDriver):
                 )
 
             res = cast(dict[str, Any], r_instance_info.unwrap())
-
-            # XXX FIXME God knows who has woken upon to a brilliant idea to NOT allow tagging instances upon creation,
-            # but the VPC hack of tagging resources won't work here as pi instances are not shown in ibm resource list.
-            # So leaving for now without any tags
 
             return Ok(res)
 
