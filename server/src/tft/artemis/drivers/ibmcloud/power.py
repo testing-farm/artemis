@@ -454,7 +454,7 @@ class IBMCloudPowerDriver(IBMCloudDriver):
             # Instances are sorted by provisioning time, let's take the first provisioned one.
             if len(pending) > 1:
                 logger.warning(
-                    f'There are more than 1 instances in build state for {guest_request}.guestname'
+                    f'There are more than 1 instances in reusable state for {guest_request}.guestname'
                     f'Will be using {pending[-1]["name"]} and cleaning up the rest.'
                 )
 
@@ -645,7 +645,10 @@ class IBMCloudPowerDriver(IBMCloudDriver):
     def _list_guests(
         self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
     ) -> Result[list[dict[str, Any]], Failure]:
-        """This method will list all allocated instances that correspond to the given guest request."""
+        """
+        This method will list all allocated instances that correspond to the given guest request.
+        Order is newest -> oldest by time of creation.
+        """
         with IBMCloudPowerSession(logger, self) as session:
             r_instances_list = session.run(
                 logger, ['pi', 'instance', 'list', '--json'], commandname='ibmcloud.pi.vm-list'
@@ -660,6 +663,13 @@ class IBMCloudPowerDriver(IBMCloudDriver):
             for instance in all_instances.get('pvmInstances', []):
                 if instance['name'].startswith(self.get_guest_name(guest_request)):
                     res.append(instance)
+
+            # Now order result ourselves by creation date in case ibmcloud API changes
+            try:
+                res = sorted(res, key=lambda x: datetime.datetime.strptime(x['creationDate'], '%Y-%m-%dT%H:%M:%S.%fZ'))
+            except ValueError:
+                # Something got broken, will need to rely on what ibmcloud sent us
+                logger.warning('Double check time format, could not convert time data')
 
             return Ok(res)
 
