@@ -13,12 +13,11 @@ import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 from tmt.hardware import UNITS
 
-from tft.artemis.drivers import PoolDriver, PoolImageInfo, PoolImageInfoT
+from tft.artemis.drivers import PoolDriver, PoolImageInfo, PoolImageInfoT, PoolResourcesIDs
 from tft.artemis.drivers.ibmcloud import (
     IBMCloudDriver,
     IBMCloudFlavor,
     IBMCloudPoolData,
-    IBMCloudPoolResourcesIDs,
     IBMCloudSession,
 )
 
@@ -77,6 +76,11 @@ ConfigImageFilter = TypedDict(
     },
     total=False,
 )
+
+
+@dataclasses.dataclass
+class IBMCloudPowerPoolResourcesIDs(PoolResourcesIDs):
+    instance_ids: Optional[list[str]] = None
 
 
 class APIImageType(TypedDict):
@@ -441,9 +445,9 @@ class IBMCloudPowerDriver(IBMCloudDriver):
 
         if existing_guests:
             # Let's check state first - if the guest is already broken it is of no use to us, while instances in build
-            # state can be reused.
+            # or active state can be reused.
 
-            pending = [g for g in existing_guests if g['status'].lower() == 'build']
+            pending = [g for g in existing_guests if g['status'].lower() in ['building', 'active']]
             error = [g for g in existing_guests if g['status'].lower() == 'error']
             leftovers = pending[:-1] + error
 
@@ -455,12 +459,12 @@ class IBMCloudPowerDriver(IBMCloudDriver):
                 )
 
             # Schedule cleanup of resources we won't use
-            for leftover in leftovers:
-                # XXX maybe we could use some dedicated field for leftover resource cleanup in
-                # release_pool_resources , although repeating dispatch for instance id should work just fine iiuc
-                self.dispatch_resource_cleanup(
-                    logger, session, IBMCloudPoolResourcesIDs(instance_id=leftover['id']), guest_request=guest_request
-                )
+            self.dispatch_resource_cleanup(
+                logger,
+                session,
+                IBMCloudPowerPoolResourcesIDs(instance_ids=[leftover['id'] for leftover in leftovers]),
+                guest_request=guest_request,
+            )
 
             if pending:
                 # At least one reusable instance has been found
@@ -671,31 +675,42 @@ class IBMCloudPowerDriver(IBMCloudDriver):
         if not pool_data:
             return Ok(None)
 
-        # there should be a list of assorted vm resources, but given the fact there are no tags yet /
-        # cumulative pi resources overview it will be empty
-        # assorted_resource_ids: List[Dict[str, str]] = []  # noqa: ERA001
+        # Let's list all instances that correspond to guest_request (including possible leftovers)
+        r_instances = self._list_guests(logger, guest_request)
+        if r_instances.is_error:
+            return Error(
+                Failure.from_failure('Could not list instances to schedule cleanup', r_instances.unwrap_error())
+            )
 
         return self.dispatch_resource_cleanup(
-            logger, session, IBMCloudPoolResourcesIDs(instance_id=pool_data.instance_id), guest_request=guest_request
+            logger,
+            session,
+            IBMCloudPowerPoolResourcesIDs(instance_ids=[i['id'] for i in r_instances.unwrap()]),
+            guest_request=guest_request,
         )
 
     def release_pool_resources(
         self, logger: gluetool.log.ContextAdapter, raw_resource_ids: SerializedPoolResourcesIDs
     ) -> Result[ReleasePoolResourcesState, Failure]:
-        resource_ids = IBMCloudPoolResourcesIDs.unserialize_from_json(raw_resource_ids)
+        resource_ids = IBMCloudPowerPoolResourcesIDs.unserialize_from_json(raw_resource_ids)
 
-        if resource_ids.instance_id is not None:
-            self.inc_costs(logger, ResourceType.VIRTUAL_MACHINE, resource_ids.ctime)
+        if resource_ids.instance_ids is not None:
+            for instance_id in resource_ids.instance_ids:
+                self.inc_costs(logger, ResourceType.VIRTUAL_MACHINE, resource_ids.ctime)
 
-            with IBMCloudPowerSession(logger, self) as session:
-                r_delete_instance = session.run(
-                    logger,
-                    ['pi', 'instance', 'delete', resource_ids.instance_id],
-                    json_format=False,
-                    commandname='ibmcloud.pi.instance-delete',
-                )
-                if r_delete_instance.is_error:
-                    return Error(Failure.from_failure('Failed to cleanup instance', r_delete_instance.unwrap_error()))
+                with IBMCloudPowerSession(logger, self) as session:
+                    r_delete_instance = session.run(
+                        logger,
+                        ['pi', 'instance', 'delete', instance_id],
+                        json_format=False,
+                        commandname='ibmcloud.pi.instance-delete',
+                    )
+                    if r_delete_instance.is_error:
+                        return Error(
+                            Failure.from_failure(
+                                f'Failed to cleanup instance {instance_id}', r_delete_instance.unwrap_error()
+                            )
+                        )
 
         return Ok(ReleasePoolResourcesState.RELEASED)
 
