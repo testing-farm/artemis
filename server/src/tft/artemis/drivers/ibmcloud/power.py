@@ -695,10 +695,11 @@ class IBMCloudPowerDriver(IBMCloudDriver):
         resource_ids = IBMCloudPowerPoolResourcesIDs.unserialize_from_json(raw_resource_ids)
 
         if resource_ids.instance_ids is not None:
-            for instance_id in resource_ids.instance_ids:
-                self.inc_costs(logger, ResourceType.VIRTUAL_MACHINE, resource_ids.ctime)
+            # Let's first secure a session and then run (possibly several) delete operations
+            with IBMCloudPowerSession(logger, self) as session:
+                for instance_id in resource_ids.instance_ids:
+                    self.inc_costs(logger, ResourceType.VIRTUAL_MACHINE, resource_ids.ctime)
 
-                with IBMCloudPowerSession(logger, self) as session:
                     r_delete_instance = session.run(
                         logger,
                         ['pi', 'instance', 'delete', instance_id],
