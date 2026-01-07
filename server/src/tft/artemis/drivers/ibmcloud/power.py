@@ -3,6 +3,7 @@
 
 import dataclasses
 import datetime
+import random
 import re
 from re import Pattern
 from typing import Any, Optional, TypedDict, cast
@@ -430,24 +431,56 @@ class IBMCloudPowerDriver(IBMCloudDriver):
         # Let's first check that there is no guest tied to this guest_request already. If there is one, then let's
         # use already allocated resources to continue with the provisioning instead of requesting new ones and leaving
         # old instance untracked.
-        r_existing_guest = self._show_guest(logger, instance_name)
+        r_existing_guests = self._list_guests(logger, guest_request)
 
-        if r_existing_guest.is_error:
-            # XXX Properly check return code/message to make sure it's a guest not found one
-            logger.info(f'No guest {instance_name} discovered, will provision a new one')
-        else:
-            # Reusing already allocated instance
-            existing_guest = r_existing_guest.unwrap()
+        if r_existing_guests.is_error:
+            return Error(Failure.from_failure('Listing guests failed', r_existing_guests.unwrap_error()))
 
-            return Ok(
-                ProvisioningProgress(
-                    state=ProvisioningState.PENDING,
-                    pool_data=IBMCloudPoolData(
-                        instance_id=existing_guest['pvmInstanceID'], instance_name=existing_guest['serverName']
-                    ),
-                    ssh_info=image.ssh,
+        # Try to reuse already allocated instances
+        existing_guests = r_existing_guests.unwrap()
+
+        if existing_guests:
+            # Let's check state first - if the guest is already broken it is of no use to us, while instances in build
+            # state can be reused.
+
+            pending = [g for g in existing_guests if g['status'].lower() == 'build']
+            error = [g for g in existing_guests if g['status'].lower() == 'error']
+            leftovers = pending[:-1] + error
+
+            # Instances are sorted by provisioning time, let's take the first provisioned one.
+            if len(pending) > 1:
+                logger.warning(
+                    f'There are more than 1 instances in build state for {guest_request}.guestname'
+                    f'Will be using {pending[-1]["name"]} and cleaning up the rest.'
                 )
-            )
+
+            # Schedule cleanup of resources we won't use
+            for leftover in leftovers:
+                # XXX maybe we could use some dedicated field for leftover resource cleanup in
+                # release_pool_resources , although repeating dispatch for instance id should work just fine iiuc
+                self.dispatch_resource_cleanup(
+                    logger, session, IBMCloudPoolResourcesIDs(instance_id=leftover['id']), guest_request=guest_request
+                )
+
+            if pending:
+                # At least one reusable instance has been found
+                existing_guest = pending[-1]
+
+                return Ok(
+                    ProvisioningProgress(
+                        state=ProvisioningState.PENDING,
+                        pool_data=IBMCloudPoolData(
+                            instance_id=existing_guest['id'], instance_name=existing_guest['name']
+                        ),
+                        ssh_info=image.ssh,
+                    )
+                )
+            # If we ended up here this means all preallocated resources are in unusable state. At the same time we may
+            # not be able to use the expected artemis-GUESTNAME naming as ibmcloud won't allow two instances with the
+            # same name. So let's generate a postfix, append it to the expected name, this way the instance will be
+            # tracked in a _list_guests call among related to this guest request.
+            while instance_name in [leftover['name'] for leftover in leftovers]:
+                instance_name = f'{self.get_guest_name(guest_request)}-{random.randint(0, 99)}'
 
         def _create(user_data_file: Optional[str] = None) -> Result[JSONType, Failure]:
             # Here will be setting defaults for memory, just in case.
@@ -602,6 +635,27 @@ class IBMCloudPowerDriver(IBMCloudDriver):
                 )
 
             res = cast(dict[str, Any], r_instance_info.unwrap())
+
+            return Ok(res)
+
+    def _list_guests(
+        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
+    ) -> Result[list[dict[str, Any]], Failure]:
+        """This method will list all allocated instances that correspond to the given guest request."""
+        with IBMCloudPowerSession(logger, self) as session:
+            r_instances_list = session.run(
+                logger, ['pi', 'instance', 'list', '--json'], commandname='ibmcloud.pi.vm-list'
+            )
+
+            if r_instances_list.is_error:
+                return Error(Failure.from_failure('failed to list instances', r_instances_list.unwrap_error()))
+
+            all_instances = cast(dict[str, Any], r_instances_list.unwrap())
+            res = []
+
+            for instance in all_instances.get('pvmInstances', []):
+                if instance['name'].startswith(self.get_guest_name(guest_request)):
+                    res.append(instance)
 
             return Ok(res)
 
