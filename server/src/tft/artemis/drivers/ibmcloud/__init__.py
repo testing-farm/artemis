@@ -43,7 +43,7 @@ class IBMCloudPoolData(PoolData):
 
 @dataclasses.dataclass
 class IBMCloudPoolResourcesIDs(PoolResourcesIDs):
-    instance_id: Optional[str] = None
+    instance_ids: Optional[list[str]] = None
     assorted_resource_ids: Optional[list[dict[str, str]]] = None
 
 
