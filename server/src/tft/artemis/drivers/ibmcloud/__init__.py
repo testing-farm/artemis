@@ -2,11 +2,12 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import dataclasses
+import datetime
 import os
 import re
 import shutil
 from collections.abc import Generator
-from typing import Optional, TypedDict, cast
+from typing import Any, Optional, TypedDict, cast
 
 import gluetool.log
 from gluetool.result import Error, Ok, Result
@@ -20,9 +21,10 @@ from tft.artemis.drivers import (
     Tags,
 )
 
-from ... import Failure
+from ... import Failure, render_template
 from ...db import GuestRequest
 from ...environment import Flavor
+from ...knobs import Knob
 
 # Limits imposed on tags in IBM cloud.
 # https://cloud.ibm.com/docs/account?topic=account-tag&interface=ui#limits
@@ -34,6 +36,16 @@ TAG_MAX_LENGTH = 128
 # forbidden characters with prefixes.
 TAG_FORBIDDEN_CHARACTERS_PATTERN = re.compile(r'[^.a-zA-Z0-9 _\-]')
 
+KNOB_INSTANCE_NAME_TEMPLATE: Knob[str] = Knob(
+    'ibmcloud.mapping.instance-name.template',
+    'A pattern for artemis guest name',
+    has_db=False,
+    per_entity=True,
+    envvar='ARTEMIS_IBMCLOUD_RESOURCE_GROUP_NAME_TEMPLATE',
+    cast_from_str=str,
+    default='artemis-{{ GUESTNAME }}',
+)
+
 
 @dataclasses.dataclass
 class IBMCloudPoolData(PoolData):
@@ -43,7 +55,7 @@ class IBMCloudPoolData(PoolData):
 
 @dataclasses.dataclass
 class IBMCloudPoolResourcesIDs(PoolResourcesIDs):
-    instance_ids: Optional[list[str]] = None
+    instance_id: Optional[str] = None
     assorted_resource_ids: Optional[list[dict[str, str]]] = None
 
 
@@ -154,6 +166,8 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor]):
     flavor_info_class = IBMCloudFlavor
     pool_data_class = IBMCloudPoolData
 
+    instance_name_template = None
+
     def tag_instance(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -211,8 +225,62 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor]):
 
         return Ok(tags['items'][0].get('tags', []))
 
-    @classmethod
-    def get_guest_name(cls, guest_request: GuestRequest) -> str:
-        # TODO: drivers could accept a template for the name, to allow custom naming schemes
-        # NOTE(ivasilev) IBMCloud has a limit of 47 characters per guest, so will have to live with artemis-ID
-        return f'artemis-{guest_request.guestname}'
+    def get_instance_name(self, guest_request: GuestRequest) -> Result[str, Failure]:
+        if not self.instance_name_template:
+            r_instance_name_template = KNOB_INSTANCE_NAME_TEMPLATE.get_value(entityname=self.poolname)
+            if r_instance_name_template.is_error:
+                return Error(Failure('Could not get instance_name template'))
+
+            # Let's set instance name template in the driver class once and for all
+            self.instance_name_template = r_instance_name_template.unwrap()
+
+        r_rendered = render_template(
+            self.instance_name_template,
+            GUESTNAME=guest_request.guestname,
+            ENVIRONMENT=guest_request.environment,
+        )
+        if r_rendered.is_error:
+            return Error(Failure('Could not render instance_name template'))
+
+        return Ok(r_rendered.unwrap())
+
+    def list_instances_by_guest_request(
+        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest, list_instances_command: list[str]
+    ) -> Result[list[dict[str, Any]], Failure]:
+        """
+        This method will list all allocated instances that correspond to the given guest request.
+        Order is newest -> oldest by time of creation.
+        """
+        with IBMCloudSession(logger, self) as session:
+            r_instances_list = session.run(logger, list_instances_command, commandname='ibmcloud.vm-list')
+
+            if r_instances_list.is_error:
+                return Error(Failure.from_failure('failed to list instances', r_instances_list.unwrap_error()))
+
+            # Let's get expected name to match against
+            r_expected_name = self.get_instance_name(guest_request)
+            if r_expected_name.is_error:
+                return Error(
+                    Failure.from_failure('failed to get expected instance name', r_expected_name.unwrap_error())
+                )
+            expected_name = r_expected_name.unwrap()
+
+            res = [
+                instance
+                for instance in cast(dict[str, Any], r_instances_list.unwrap()).get('pvmInstances', [])
+                if instance['name'].startswith(expected_name)
+            ]
+
+            # Now order result ourselves by creation date in case ibmcloud API changes
+            try:
+                res = sorted(res, key=lambda x: datetime.datetime.strptime(x['created_at'], '%Y-%m-%dT%H:%M:%S.%fZ'))
+            except ValueError:
+                # Something got broken, will need to rely on what ibmcloud sent us
+                logger.warning('Double check time format, could not convert time data')
+
+            return Ok(res)
+
+    def show_instance(self, logger: gluetool.log.ContextAdapter, instance_id: str) -> Result[Any, Failure]:
+        """This method will show a single instance details."""
+
+        raise NotImplementedError

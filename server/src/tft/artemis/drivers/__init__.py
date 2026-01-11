@@ -1763,11 +1763,6 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         return Ok(None)
 
-    @classmethod
-    def get_guest_name(cls, guest_request: GuestRequest) -> str:
-        # TODO: drivers could accept a template for the name, to allow custom naming schemes
-        return f'artemis-guest-{guest_request.guestname}'
-
     def acquire_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
@@ -2110,7 +2105,8 @@ class PoolDriver(gluetool.log.LoggerMixin):
             )
 
         tags['ArtemisGuestName'] = guest_request.guestname
-        tags['ArtemisGuestLabel'] = self.get_guest_name(guest_request)
+        # TODO: drivers could accept a template for the name, to allow custom naming schemes
+        tags['ArtemisGuestLabel'] = f'artemis-guest-{guest_request.guestname}'
 
         r_rendered_tags = render_tags(
             logger, tags, {'GUESTNAME': guest_request.guestname, 'ENVIRONMENT': guest_request.environment}

@@ -1151,6 +1151,22 @@ for full list of connection parameters that can be specified via URL.
 
 5+|A pattern for needle to match in environment to image mapping file.
 
+|`ibmcloud.mapping.instance-name.template`
+|`str`
+|`ARTEMIS_IBMCLOUD_RESOURCE_GROUP_NAME_TEMPLATE`
+|`artemis-{{ GUESTNAME }}`
+|no
+
+
+|`ibmcloud.mapping.instance-name.template:$entityname`
+|
+|`ARTEMIS_IBMCLOUD_RESOURCE_GROUP_NAME_TEMPLATE_$entityname`
+|
+|
+
+
+5+|A pattern for artemis guest name
+
 |`logging.cli.command-pattern`
 |`str`
 |`ARTEMIS_LOG_CLI_COMMAND_PATTERN`
