@@ -1359,7 +1359,7 @@ class BeakerDriver(PoolDriver):
                 arch=None,
                 boot=FlavorBoot(),
                 ssh=PoolImageSSHInfo(),
-                supports_kickstart=groups['bootc_image'] is None,
+                supports_kickstart=True,
             )
 
             if groups['variant'] is not None:
@@ -1487,10 +1487,11 @@ class BeakerDriver(PoolDriver):
 
         ks_meta = r_ks_meta.unwrap()
 
-        if ks_meta:
-            command += ['--ks-meta', ks_meta]
+        if guest_request.environment.has_ks_specification or ks_meta:
+            guest_request.environment.kickstart.metadata = ' '.join(
+                meta for meta in [ks_meta, guest_request.environment.kickstart.metadata] if meta
+            )
 
-        if guest_request.environment.has_ks_specification:
             command += self._create_bkr_kickstart_options(guest_request.environment.kickstart)
 
         space = ':'.join(
