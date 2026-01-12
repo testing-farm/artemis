@@ -1534,8 +1534,16 @@ class BeakerDriver(PoolDriver):
         if not is_successful(r_ks_meta):
             return Error(r_ks_meta.failure())
 
-        # Custom kickstart options
-        if guest_request.environment.has_ks_specification:
+        if r_ks_meta.is_error:
+            return Error(r_ks_meta.unwrap_error())
+
+        ks_meta = r_ks_meta.unwrap()
+
+        if guest_request.environment.has_ks_specification or ks_meta:
+            guest_request.environment.kickstart.metadata = ' '.join(
+                meta for meta in [ks_meta, guest_request.environment.kickstart.metadata] if meta
+            )
+
             kickstart_options = self._create_bkr_kickstart_options(guest_request.environment.kickstart)
 
         else:
