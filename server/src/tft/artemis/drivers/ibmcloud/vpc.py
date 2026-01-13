@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import dataclasses
+import enum
 import json
-import random
 import re
 from collections.abc import Iterator
 from re import Pattern
@@ -18,12 +18,13 @@ from tft.artemis.drivers import PoolDriver, PoolImageInfo
 from tft.artemis.drivers.ibmcloud import (
     IBMCloudDriver,
     IBMCloudFlavor,
+    IBMCloudInstance,
     IBMCloudPoolData,
     IBMCloudPoolResourcesIDs,
     IBMCloudSession,
 )
 
-from ... import Failure, JSONType, log_dict_yaml
+from ... import Failure, log_dict_yaml
 from ...db import GuestRequest
 from ...environment import (
     Flavor,
@@ -45,7 +46,6 @@ from .. import (
     ProvisioningState,
     ReleasePoolResourcesState,
     SerializedPoolResourcesIDs,
-    create_tempfile,
 )
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
@@ -75,6 +75,16 @@ IBMCLOUD_RESOURCE_TYPE: dict[str, ResourceType] = {
     'floating-ip': ResourceType.STATIC_IP,
     'security-group': ResourceType.SECURITY_GROUP,
 }
+
+
+class IBMCloudVPCInstanceStates(enum.Enum):
+    """
+    Enum listing possible instance states.
+    """
+
+    BUILD = 'starting'
+    READY = 'running'
+    ERROR = 'failed'
 
 
 class IBMCloudVPCErrorCauses(PoolErrorCauses):
@@ -390,196 +400,119 @@ class IBMCloudVPCDriver(IBMCloudDriver):
 
         return Ok(resources)
 
-    def list_instances(
+    def list_instances_for_request(
         self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
-    ) -> Result[list[dict[str, Any]], Failure]:
+    ) -> Result[list[IBMCloudInstance], Failure]:
         """
         This method will list all allocated instances that correspond to the given guest request.
         Order is newest -> oldest by time of creation.
         """
-        return self.list_instances_by_guest_request(logger, guest_request, ['is', 'instances', '--json'])
+        return self.list_instances_by_guest_request(logger, guest_request)
+
+    def list_instances(self, logger: gluetool.log.ContextAdapter) -> Result[list[IBMCloudInstance], Failure]:
+        with IBMCloudSession(logger, self) as session:
+            r_instances_list = session.run(
+                logger, ['ibmcloud', 'is', 'instances', '--json'], commandname='ibmcloud.is.vm-list'
+            )
+
+            if r_instances_list.is_error:
+                return Error(Failure.from_failure('failed to list instances', r_instances_list.unwrap_error()))
+
+            return Ok(
+                [
+                    IBMCloudInstance(
+                        id=instance['id'],
+                        name=instance['name'],
+                        created_at=instance['created_at'],
+                        status=instance['status'],
+                    )
+                    for instance in cast(list[dict[str, Any]], r_instances_list.unwrap())
+                ]
+            )
 
     def acquire_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
-        # FIXME Again, that is massive code duplication -> same flavor/image pairs choosing algo is happeing in
-        # other drivers.
+        return self.do_acquire_guest(logger, session, guest_request, IBMCloudVPCInstanceStates)  # type: ignore[type-var]
 
-        r_image_flavor_pairs = self._collect_image_flavor_pairs(logger, session, guest_request)
-
-        if r_image_flavor_pairs.is_error:
-            return Error(r_image_flavor_pairs.unwrap_error())
-
-        can_acquire, pairs = r_image_flavor_pairs.unwrap()
-
-        if not can_acquire.can_acquire:
-            assert can_acquire.reason is not None
-
-            return Error(Failure(can_acquire.reason.message))
-
-        image, flavor = pairs[0]
-
-        self.log_acquisition_attempt(logger, session, guest_request, flavor=flavor, image=image)
-
-        # Get expected instance name from template
-        r_instance_name = self.get_instance_name(guest_request)
-        if r_instance_name.is_error:
-            return Error(Failure.from_failure('Could not get instance name', r_instance_name.unwrap_error()))
-        instance_name = r_instance_name.unwrap()
-
-        # Let's first check that there is no instance tied to this guest_request already. If there is one, then let's
-        # use already allocated resources to continue with the provisioning instead of requesting new ones and leaving
-        # old instance untracked.
-        r_existing_instances = self.list_instances(logger, guest_request)
-
-        if r_existing_instances.is_error:
-            return Error(Failure.from_failure('Listing guests failed', r_existing_instances.unwrap_error()))
-
-        # Try to reuse already allocated instances
-        existing_instances = r_existing_instances.unwrap()
-
-        if existing_instances:
-            # Let's check state first - if the guest is already broken it is of no use to us, while instances in build
-            # or active state can be reused.
-
-            pending = [g for g in existing_instances if g['status'].lower() in ['starting', 'running']]
-            error = [g for g in existing_instances if g['status'].lower() == 'failed']
-            leftovers = pending[:-1] + error
-
-            # Instances are sorted by provisioning time, let's take the first provisioned one.
-            if len(pending) > 1:
-                logger.warning(
-                    f'There are more than 1 instances in reusable state for {guest_request}.guestname'
-                    f'Will be using {pending[-1]["name"]} and cleaning up the rest.'
-                )
-
-            # Schedule cleanup of resources we won't use
-            for leftover in leftovers:
-                self.dispatch_resource_cleanup(
-                    logger,
-                    session,
-                    IBMCloudPoolResourcesIDs(instance_id=leftover['id']),
-                    guest_request=guest_request,
-                )
-
-            if pending:
-                # At least one reusable instance has been found
-                existing_guest = pending[-1]
-
-                return Ok(
-                    ProvisioningProgress(
-                        state=ProvisioningState.PENDING,
-                        pool_data=IBMCloudPoolData(
-                            instance_id=existing_guest['id'], instance_name=existing_guest['name']
-                        ),
-                        ssh_info=image.ssh,
-                    )
-                )
-            # If we ended up here this means all preallocated resources are in unusable state. At the same time we may
-            # not be able to use the expected artemis-GUESTNAME naming as ibmcloud won't allow two instances with the
-            # same name. So let's generate a postfix, append it to the expected name, this way the instance will be
-            # tracked in a list_instances call among related to this guest request.
-            while instance_name in [leftover['name'] for leftover in leftovers]:
-                r_instance_name = self.get_instance_name(guest_request)
-                if r_instance_name.is_error:
-                    return Error(Failure.from_failure('Could not get instance name', r_instance_name.unwrap_error()))
-
-                instance_name = f'{r_instance_name.unwrap()}-{random.randint(0, 99)}'
-
-        def _create(user_data_file: Optional[str] = None) -> Result[JSONType, Failure]:
-            # get VPC id
-            with IBMCloudSession(logger, self) as session:
-                r_subnet_show = session.run(
-                    logger,
-                    ['is', 'subnet', self.pool_config['subnet-id'], '--output', 'json'],
-                    commandname='ibmcloud-show-subnet',
-                )
-                if r_subnet_show.is_error:
-                    return Error(
-                        Failure.from_failure(
-                            'Failed to execute show subnet details command', r_subnet_show.unwrap_error()
-                        )
-                    )
-
-                try:
-                    vpc_id = cast(dict[str, Any], r_subnet_show.unwrap())['vpc']['id']
-                except KeyError:
-                    return Error(Failure('Subnet details have no vpc information'))
-
-                root_disk_size: Optional[SizeType] = None
-                # If disk size is defined in flavor -> let's use it, otherwise take defaults from pool config
-                if flavor.disk and flavor.disk[0].size is not None:
-                    root_disk_size = flavor.disk[0].size
-                else:
-                    # let's take boot partition size from the driver config
-                    if 'default-root-disk-size' in self.pool_config:
-                        root_disk_size = UNITS.Quantity(self.pool_config['default-root-disk-size'], UNITS.gibibytes)
-
-                # Now we are all set to create an instance
-                create_cmd_args = [
-                    'is',
-                    'instance-create',
-                    instance_name,
-                    vpc_id,
-                    self.pool_config['zone'],
-                    flavor.id,
-                    self.pool_config['subnet-id'],
-                    '--image',
-                    image.id,
-                    '--allow-ip-spoofing=false',
-                    '--keys',
-                    self.pool_config['master-key-name'],
-                    '--output',
-                    'json',
-                ]
-                # If root_disk_size is specified will be passing specific --volume details
-                if root_disk_size:
-                    boot_volume_specs = {
-                        'name': instance_name,
-                        'volume': {
-                            'capacity': int(root_disk_size.to('GiB').magnitude),
-                            'profile': {'name': 'general-purpose'},
-                        },
-                    }
-                    create_cmd_args += ['--boot-volume', json.dumps(boot_volume_specs)]
-
-                if user_data_file:
-                    create_cmd_args += ['--user-data', f'@{user_data_file}']
-
-                r_instance_create = session.run(logger, create_cmd_args, commandname='ibmcloud.instance-create')
-
-                if r_instance_create.is_error:
-                    return Error(Failure.from_failure('Instance creation failed', r_instance_create.unwrap_error()))
-                return r_instance_create
-
-        r_post_install_script = self.generate_post_install_script(guest_request)
-        if r_post_install_script.is_error:
-            return Error(
-                Failure.from_failure('Could not generate post-install script', r_post_install_script.unwrap_error())
+    def create_instance(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        flavor: Flavor,
+        image: PoolImageInfo,
+        instance_name: str,
+        user_data_file: Optional[str] = None,
+    ) -> Result[IBMCloudInstance, Failure]:
+        with IBMCloudSession(logger, self) as session:
+            r_subnet_show = session.run(
+                logger,
+                ['is', 'subnet', self.pool_config['subnet-id'], '--output', 'json'],
+                commandname='ibmcloud-show-subnet',
             )
+            if r_subnet_show.is_error:
+                return Error(
+                    Failure.from_failure('Failed to execute show subnet details command', r_subnet_show.unwrap_error())
+                )
 
-        post_install_script = r_post_install_script.unwrap()
-        if post_install_script:
-            with create_tempfile(file_contents=post_install_script) as user_data_file:
-                r_output = _create(user_data_file)
-        else:
-            r_output = _create()
+            try:
+                vpc_id = cast(dict[str, Any], r_subnet_show.unwrap())['vpc']['id']
+            except KeyError:
+                return Error(Failure('Subnet details have no vpc information'))
 
-        if r_output.is_error:
-            return Error(r_output.unwrap_error())
+            root_disk_size: Optional[SizeType] = None
+            # If disk size is defined in flavor -> let's use it, otherwise take defaults from pool config
+            if flavor.disk and flavor.disk[0].size is not None:
+                root_disk_size = flavor.disk[0].size
+            else:
+                # let's take boot partition size from the driver config
+                if 'default-root-disk-size' in self.pool_config:
+                    root_disk_size = UNITS.Quantity(self.pool_config['default-root-disk-size'], UNITS.gibibytes)
 
-        created = cast(dict[str, Any], r_output.unwrap())
+            # Now we are all set to create an instance
+            create_cmd_args = [
+                'is',
+                'instance-create',
+                instance_name,
+                vpc_id,
+                self.pool_config['zone'],
+                flavor.id,
+                self.pool_config['subnet-id'],
+                '--image',
+                image.id,
+                '--allow-ip-spoofing=false',
+                '--keys',
+                self.pool_config['master-key-name'],
+                '--output',
+                'json',
+            ]
+            # If root_disk_size is specified will be passing specific --volume details
+            if root_disk_size:
+                boot_volume_specs = {
+                    'name': instance_name,
+                    'volume': {
+                        'capacity': int(root_disk_size.to('GiB').magnitude),
+                        'profile': {'name': 'general-purpose'},
+                    },
+                }
+                create_cmd_args += ['--boot-volume', json.dumps(boot_volume_specs)]
 
-        if not created['id']:
-            return Error(Failure('Instance id not found'))
+            if user_data_file:
+                create_cmd_args += ['--user-data', f'@{user_data_file}']
 
-        return Ok(
-            ProvisioningProgress(
-                state=ProvisioningState.PENDING,
-                pool_data=IBMCloudPoolData(instance_id=created['id'], instance_name=created['name']),
-                ssh_info=image.ssh,
+            r_instance_create = session.run(logger, create_cmd_args, commandname='ibmcloud.instance-create')
+
+            if r_instance_create.is_error:
+                return Error(Failure.from_failure('Instance creation failed', r_instance_create.unwrap_error()))
+
+            instance = cast(dict[str, Any], r_instance_create.unwrap())
+            return Ok(
+                IBMCloudInstance(
+                    id=instance['id'],
+                    name=instance['name'],
+                    status=instance['status'],
+                    created_at=instance['created_at'],
+                )
             )
-        )
 
     def show_instance(self, logger: gluetool.log.ContextAdapter, instance_id: str) -> Result[Any, Failure]:
         """This method will show a single instance details."""
@@ -691,7 +624,7 @@ class IBMCloudVPCDriver(IBMCloudDriver):
             return Ok(None)
 
         # Let's list all instances that correspond to guest_request (including possible leftovers)
-        r_instances = self.list_instances(logger, guest_request)
+        r_instances = self.list_instances_for_request(logger, guest_request)
         if r_instances.is_error:
             return Error(
                 Failure.from_failure('Could not list instances to schedule cleanup', r_instances.unwrap_error())
@@ -701,7 +634,7 @@ class IBMCloudVPCDriver(IBMCloudDriver):
             self.dispatch_resource_cleanup(
                 logger,
                 session,
-                IBMCloudPoolResourcesIDs(instance_id=instance_id['id']),
+                IBMCloudPoolResourcesIDs(instance_id=instance_id.id),
                 guest_request=guest_request,
             )
 

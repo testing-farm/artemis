@@ -4,21 +4,27 @@
 import dataclasses
 import datetime
 import os
+import random
 import re
 import shutil
 from collections.abc import Generator
 from typing import Any, Optional, TypedDict, cast
 
 import gluetool.log
+import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 
 from tft.artemis.drivers import (
     CLISessionPermanentDir,
     FlavorBasedPoolDriver,
+    InstanceStatesT,
     PoolData,
     PoolImageInfo,
     PoolResourcesIDs,
+    ProvisioningProgress,
+    ProvisioningState,
     Tags,
+    create_tempfile,
 )
 
 from ... import Failure, render_template
@@ -45,6 +51,14 @@ KNOB_INSTANCE_NAME_TEMPLATE: Knob[str] = Knob(
     cast_from_str=str,
     default='artemis-{{ GUESTNAME }}',
 )
+
+
+@dataclasses.dataclass
+class IBMCloudInstance:
+    id: str
+    name: str
+    status: str
+    created_at: str
 
 
 @dataclasses.dataclass
@@ -245,41 +259,175 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor]):
         return Ok(r_rendered.unwrap())
 
     def list_instances_by_guest_request(
-        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest, list_instances_command: list[str]
-    ) -> Result[list[dict[str, Any]], Failure]:
+        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
+    ) -> Result[list[IBMCloudInstance], Failure]:
         """
         This method will list all allocated instances that correspond to the given guest request.
         Order is newest -> oldest by time of creation.
         """
-        with IBMCloudSession(logger, self) as session:
-            r_instances_list = session.run(logger, list_instances_command, commandname='ibmcloud.vm-list')
+        r_instances_list = self.list_instances(logger)
+        if r_instances_list.is_error:
+            return Error(Failure.from_failure('failed to list instances', r_instances_list.unwrap_error()))
 
-            if r_instances_list.is_error:
-                return Error(Failure.from_failure('failed to list instances', r_instances_list.unwrap_error()))
+        # Let's get expected name to match against
+        r_expected_name = self.get_instance_name(guest_request)
+        if r_expected_name.is_error:
+            return Error(Failure.from_failure('failed to get expected instance name', r_expected_name.unwrap_error()))
+        expected_name = r_expected_name.unwrap()
 
-            # Let's get expected name to match against
-            r_expected_name = self.get_instance_name(guest_request)
-            if r_expected_name.is_error:
-                return Error(
-                    Failure.from_failure('failed to get expected instance name', r_expected_name.unwrap_error())
-                )
-            expected_name = r_expected_name.unwrap()
+        res = [instance for instance in r_instances_list.unwrap() if instance.name.startswith(expected_name)]
 
-            res = [
-                instance
-                for instance in cast(dict[str, Any], r_instances_list.unwrap()).get('pvmInstances', [])
-                if instance['name'].startswith(expected_name)
+        # Now order result ourselves by creation date in case ibmcloud API changes
+        try:
+            res = sorted(res, key=lambda x: datetime.datetime.strptime(x.created_at, '%Y-%m-%dT%H:%M:%S.%fZ'))
+        except ValueError:
+            return Error(Failure('Double check time format, could not convert time data'))
+
+        return Ok(res)
+
+    def do_acquire_guest(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        instance_status_map: InstanceStatesT,
+    ) -> Result[ProvisioningProgress, Failure]:
+        r_image_flavor_pairs = self._collect_image_flavor_pairs(logger, session, guest_request)
+
+        if r_image_flavor_pairs.is_error:
+            return Error(r_image_flavor_pairs.unwrap_error())
+
+        can_acquire, pairs = r_image_flavor_pairs.unwrap()
+
+        if not can_acquire.can_acquire:
+            assert can_acquire.reason is not None
+
+            return Error(Failure(can_acquire.reason.message))
+
+        image, flavor = pairs[0]
+
+        self.log_acquisition_attempt(logger, session, guest_request, flavor=flavor, image=image)
+
+        # Get expected instance name from template
+        r_instance_name = self.get_instance_name(guest_request)
+        if r_instance_name.is_error:
+            return Error(Failure.from_failure('Could not get instance name', r_instance_name.unwrap_error()))
+        instance_name = r_instance_name.unwrap()
+
+        # Let's first check that there is no instance tied to this guest_request already. If there is one, then let's
+        # use already allocated resources to continue with the provisioning instead of requesting new ones and leaving
+        # old instance untracked.
+        r_existing_instances = self.list_instances_by_guest_request(logger, guest_request)
+
+        if r_existing_instances.is_error:
+            return Error(Failure.from_failure('Listing guests failed', r_existing_instances.unwrap_error()))
+
+        # Try to reuse already allocated instances
+        existing_instances = r_existing_instances.unwrap()
+
+        if existing_instances:
+            # Let's check state first - if the guest is already broken it is of no use to us, while instances in build
+            # or active state can be reused.
+
+            pending = [
+                g
+                for g in existing_instances
+                if g.status.lower() in [instance_status_map.BUILD, instance_status_map.READY]
             ]
+            error = [g for g in existing_instances if g.status.lower() == instance_status_map.ERROR]
+            leftovers = pending[:-1] + error
 
-            # Now order result ourselves by creation date in case ibmcloud API changes
-            try:
-                res = sorted(res, key=lambda x: datetime.datetime.strptime(x['created_at'], '%Y-%m-%dT%H:%M:%S.%fZ'))
-            except ValueError:
-                return Error(Failure('Double check time format, could not convert time data'))
+            # Instances are sorted by provisioning time, let's take the first provisioned one.
+            if len(pending) > 1:
+                logger.warning(
+                    f'There are more than 1 instances in reusable state for {guest_request}.guestname'
+                    f'Will be using {pending[-1].name} and cleaning up the rest.'
+                )
 
-            return Ok(res)
+            # Schedule cleanup of resources we won't use
+            for leftover in leftovers:
+                self.dispatch_resource_cleanup(
+                    logger,
+                    session,
+                    IBMCloudPoolResourcesIDs(instance_id=leftover.id),
+                    guest_request=guest_request,
+                )
+
+            if pending:
+                # At least one reusable instance has been found
+                existing_guest = pending[-1]
+
+                return Ok(
+                    ProvisioningProgress(
+                        state=ProvisioningState.PENDING,
+                        pool_data=IBMCloudPoolData(instance_id=existing_guest.id, instance_name=existing_guest.name),
+                        ssh_info=image.ssh,
+                    )
+                )
+            # If we ended up here this means all preallocated resources are in unusable state. At the same time we may
+            # not be able to use the expected artemis-GUESTNAME naming as ibmcloud won't allow two instances with the
+            # same name. So let's generate a postfix, append it to the expected name, this way the instance will be
+            # tracked in a list_instances call among related to this guest request.
+            while instance_name in [leftover.name for leftover in leftovers]:
+                r_instance_name = self.get_instance_name(guest_request)
+                if r_instance_name.is_error:
+                    return Error(Failure.from_failure('Could not get instance name', r_instance_name.unwrap_error()))
+
+                instance_name = f'{r_instance_name.unwrap()}-{random.randint(0, 99)}'
+
+        r_post_install_script = self.generate_post_install_script(guest_request)
+        if r_post_install_script.is_error:
+            return Error(
+                Failure.from_failure('Could not generate post-install script', r_post_install_script.unwrap_error())
+            )
+
+        post_install_script = r_post_install_script.unwrap()
+        if post_install_script:
+            with create_tempfile(file_contents=post_install_script) as user_data_file:
+                r_output = self.create_instance(
+                    logger=logger,
+                    flavor=flavor,
+                    image=image,
+                    instance_name=instance_name,
+                    user_data_file=user_data_file,
+                )
+        else:
+            r_output = self.create_instance(logger=logger, flavor=flavor, image=image, instance_name=instance_name)
+
+        if r_output.is_error:
+            return Error(r_output.unwrap_error())
+
+        created = r_output.unwrap()
+
+        if not created.id:
+            return Error(Failure('Instance id not found'))
+
+        return Ok(
+            ProvisioningProgress(
+                state=ProvisioningState.PENDING,
+                pool_data=IBMCloudPoolData(instance_id=created.id, instance_name=created.name),
+                ssh_info=image.ssh,
+            )
+        )
 
     def show_instance(self, logger: gluetool.log.ContextAdapter, instance_id: str) -> Result[Any, Failure]:
         """This method will show a single instance details."""
+
+        raise NotImplementedError
+
+    def create_instance(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        flavor: Flavor,
+        image: PoolImageInfo,
+        instance_name: str,
+        user_data_file: Optional[str] = None,
+    ) -> Result[IBMCloudInstance, Failure]:
+        """This method will issue a cloud instance create request"""
+
+        raise NotImplementedError
+
+    def list_instances(self, logger: gluetool.log.ContextAdapter) -> Result[list[IBMCloudInstance], Failure]:
+        """This method will issue a cloud guest list command and return a list of raw instances data"""
 
         raise NotImplementedError

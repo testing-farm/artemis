@@ -462,6 +462,19 @@ class PoolLogger(gluetool.log.ContextAdapter):
         return cast(str, self._contexts['pool_name'][1])
 
 
+class InstanceStates(enum.Enum):
+    """
+    Enum listing possible instance states.
+    """
+
+    BUILD = 'building'
+    READY = 'active'
+    ERROR = 'error'
+
+
+InstanceStatesT = TypeVar('InstanceStatesT', bound='InstanceStates')
+
+
 class PoolErrorCauses(enum.Enum):
     """
     A base class for enums listing various error causes recognized by pools for the purpose of collecting metrics.
