@@ -275,8 +275,7 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor]):
             try:
                 res = sorted(res, key=lambda x: datetime.datetime.strptime(x['created_at'], '%Y-%m-%dT%H:%M:%S.%fZ'))
             except ValueError:
-                # Something got broken, will need to rely on what ibmcloud sent us
-                logger.warning('Double check time format, could not convert time data')
+                return Error(Failure('Double check time format, could not convert time data'))
 
             return Ok(res)
 
