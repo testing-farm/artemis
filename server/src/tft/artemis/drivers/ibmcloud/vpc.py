@@ -413,9 +413,7 @@ class IBMCloudVPCDriver(IBMCloudDriver):
 
     def list_instances(self, logger: gluetool.log.ContextAdapter) -> Result[list[IBMCloudInstance], Failure]:
         with IBMCloudSession(logger, self) as session:
-            r_instances_list = session.run(
-                logger, ['ibmcloud', 'is', 'instances', '--json'], commandname='ibmcloud.is.vm-list'
-            )
+            r_instances_list = session.run(logger, ['is', 'instances', '--json'], commandname='ibmcloud.is.vm-list')
 
             if r_instances_list.is_error:
                 return Error(Failure.from_failure('failed to list instances', r_instances_list.unwrap_error()))
