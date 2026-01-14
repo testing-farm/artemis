@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import dataclasses
+import datetime
 import enum
 import json
 import re
@@ -16,6 +17,7 @@ from tmt.hardware import UNITS
 
 from tft.artemis.drivers import PoolDriver, PoolImageInfo
 from tft.artemis.drivers.ibmcloud import (
+    IBMCLOUD_DATETIME_FORMAT,
     IBMCloudDriver,
     IBMCloudFlavor,
     IBMCloudInstance,
@@ -329,7 +331,7 @@ class IBMCloudVPCDriver(IBMCloudDriver):
             # Resource usage - instances and flavors
             def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[list[dict[str, Any]], Failure]:
                 r_list_instances = session.run(
-                    logger, ['is', 'instances', '--json'], commandname='ibm.is.instances-list'
+                    logger, ['is', 'instances', '--json'], commandname='ibmcloud.is.instances-list'
                 )
 
                 if r_list_instances.is_error:
@@ -418,17 +420,23 @@ class IBMCloudVPCDriver(IBMCloudDriver):
             if r_instances_list.is_error:
                 return Error(Failure.from_failure('failed to list instances', r_instances_list.unwrap_error()))
 
-            return Ok(
-                [
+            res = []
+            for instance in cast(list[dict[str, Any]], r_instances_list.unwrap()):
+                try:
+                    created_at = datetime.datetime.strptime(instance['created_at'], IBMCLOUD_DATETIME_FORMAT)
+                except ValueError:
+                    return Error(Failure('Double check time format, could not convert time data'))
+
+                res.append(
                     IBMCloudInstance(
                         id=instance['id'],
                         name=instance['name'],
-                        created_at=instance['created_at'],
+                        created_at=created_at,
                         status=instance['status'],
                     )
-                    for instance in cast(list[dict[str, Any]], r_instances_list.unwrap())
-                ]
-            )
+                )
+
+            return Ok(res)
 
     def acquire_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest

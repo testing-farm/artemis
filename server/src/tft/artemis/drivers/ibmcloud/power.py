@@ -15,6 +15,7 @@ from tmt.hardware import UNITS
 
 from tft.artemis.drivers import PoolDriver, PoolImageInfo, PoolImageInfoT
 from tft.artemis.drivers.ibmcloud import (
+    IBMCLOUD_DATETIME_FORMAT,
     IBMCloudDriver,
     IBMCloudFlavor,
     IBMCloudInstance,
@@ -455,12 +456,17 @@ class IBMCloudPowerDriver(IBMCloudDriver):
                 return Error(Failure.from_failure('Instance creation failed', r_instance_create.unwrap_error()))
 
             instance = cast(list[dict[str, Any]], r_instance_create.unwrap())[0]
+            try:
+                created_at = datetime.datetime.strptime(instance['creationDate'], IBMCLOUD_DATETIME_FORMAT)
+            except ValueError:
+                return Error(Failure('Double check time format, could not convert time data'))
+
             return Ok(
                 IBMCloudInstance(
                     id=instance['pvmInstanceID'],
                     name=instance['serverName'],
                     status=instance['status'],
-                    created_at=instance['creationDate'],
+                    created_at=created_at,
                 )
             )
 
@@ -564,23 +570,26 @@ class IBMCloudPowerDriver(IBMCloudDriver):
     def list_instances(self, logger: gluetool.log.ContextAdapter) -> Result[list[IBMCloudInstance], Failure]:
         with IBMCloudSession(logger, self) as session:
             r_instances_list = session.run(
-                logger, ['ibmcloud', 'pi', 'instance', 'list', '--json'], commandname='ibmcloud.pi.vm-list'
+                logger, ['pi', 'instance', 'list', '--json'], commandname='ibmcloud.pi.vm-list'
             )
 
             if r_instances_list.is_error:
                 return Error(Failure.from_failure('failed to list instances', r_instances_list.unwrap_error()))
 
-            return Ok(
-                [
+            res = []
+            for instance in cast(dict[str, Any], r_instances_list.unwrap())['pvmInstances']:
+                try:
+                    created_at = datetime.datetime.strptime(instance['creationDate'], IBMCLOUD_DATETIME_FORMAT)
+                except ValueError:
+                    return Error(Failure('Double check time format, could not convert time data'))
+
+                res.append(
                     IBMCloudInstance(
-                        id=instance['id'],
-                        name=instance['name'],
-                        created_at=instance['created_at'],
-                        status=instance['status'],
+                        id=instance['id'], name=instance['name'], created_at=created_at, status=instance['status']
                     )
-                    for instance in cast(dict[str, Any], r_instances_list.unwrap())['pvmInstances']
-                ]
-            )
+                )
+
+            return Ok(res)
 
     def list_instances_for_request(
         self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest

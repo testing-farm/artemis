@@ -27,7 +27,7 @@ from tft.artemis.drivers import (
     create_tempfile,
 )
 
-from ... import Failure, render_template
+from ... import Failure, SerializableContainer, render_template
 from ...db import GuestRequest
 from ...environment import Flavor
 from ...knobs import Knob
@@ -52,13 +52,32 @@ KNOB_INSTANCE_NAME_TEMPLATE: Knob[str] = Knob(
     default='artemis-{{ GUESTNAME }}',
 )
 
+IBMCLOUD_DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S.%fZ'
+
 
 @dataclasses.dataclass
-class IBMCloudInstance:
+class IBMCloudInstance(SerializableContainer):
     id: str
     name: str
     status: str
-    created_at: str
+    created_at: datetime.datetime
+
+    def serialize(self) -> dict[str, Any]:
+        serialized = super().serialize()
+
+        if self.created_at:
+            serialized['created_at'] = self.created_at.strftime(IBMCLOUD_DATETIME_FORMAT)
+
+        return serialized
+
+    @classmethod
+    def unserialize(cls, serialized: dict[str, Any]) -> 'IBMCloudInstance':
+        instance = super().unserialize(serialized)
+
+        if serialized['created_at']:
+            instance.created_at = datetime.datetime.strptime(serialized['created_at'], IBMCLOUD_DATETIME_FORMAT)
+
+        return instance
 
 
 @dataclasses.dataclass
@@ -279,7 +298,7 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor]):
 
         # Now order result ourselves by creation date in case ibmcloud API changes
         try:
-            res = sorted(res, key=lambda x: datetime.datetime.strptime(x.created_at, '%Y-%m-%dT%H:%M:%S.%fZ'))
+            res = sorted(res, key=lambda x: x.created_at)
         except ValueError:
             return Error(Failure('Double check time format, could not convert time data'))
 

@@ -1428,7 +1428,7 @@ of crashed resources.
 |`pool.max-parallel-cli-sessions`
 |`int`
 |`ARTEMIS_MAX_PARALLEL_CLI_SESSIONS`
-|`4`
+|`16`
 |no
 
 

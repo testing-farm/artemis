@@ -371,8 +371,8 @@ KNOB_PARALLEL_CLI_SESSIONS: Knob[int] = Knob(
     per_entity=True,
     envvar='ARTEMIS_MAX_PARALLEL_CLI_SESSIONS',
     cast_from_str=int,
-    # NOTE(ivasilev) The number of parallel sessions is still trial and error, let's keep 4 for now and increase later.
-    default=4,
+    # NOTE(ivasilev) The number of parallel sessions is still trial and error, let's keep 16 for now and increase later.
+    default=16,
 )
 
 
