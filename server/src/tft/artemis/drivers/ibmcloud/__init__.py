@@ -200,7 +200,12 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor]):
             )
 
         tags = cast(dict[str, list[IBMResourceInfoType]], r_instance_tags.unwrap())
+        # Cornercase - no instance tags assigned
+        if tags.get('items') == []:
+            return Ok([])
+
         if not tags.get('items'):
-            # No such resource found
+            # No 'items' key discovered in the data that was sent
             return Error(Failure(f'Unexpected output of ibmcloud resource show command for {instance_name}: {tags}'))
+
         return Ok(tags['items'][0].get('tags', []))
