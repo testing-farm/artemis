@@ -253,7 +253,7 @@ def test_generate_post_install_script_from_template_default(
     user_data: Optional[str],
     logger: gluetool.log.ContextAdapter,
 ) -> None:
-    guest_request = MagicMock(post_install_script=user_data)
+    guest_request = MagicMock(post_install_script=user_data, serialize=lambda: {'post_install_script': user_data})
     pool = tft.artemis.drivers.PoolDriver(logger, 'dummy-driver-with-post-install-script', {})
     r_script = pool.generate_post_install_script(guest_request)
     assert r_script.is_ok
