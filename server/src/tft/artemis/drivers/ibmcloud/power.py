@@ -165,7 +165,7 @@ class IBMCloudPowerPoolImageInfo(PoolImageInfo):
     href: str
 
 
-class IBMCloudPowerDriver(IBMCloudDriver):
+class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
     drivername = 'ibmcloud-power'
 
     image_info_class = IBMCloudPowerPoolImageInfo

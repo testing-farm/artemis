@@ -138,7 +138,7 @@ class IBMCloudVPCPoolImageInfo(PoolImageInfo):
     user_data_format: str
 
 
-class IBMCloudVPCDriver(IBMCloudDriver):
+class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
     drivername = 'ibmcloud-vpc'
 
     image_info_class = IBMCloudVPCPoolImageInfo

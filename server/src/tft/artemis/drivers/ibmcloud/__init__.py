@@ -9,7 +9,7 @@ import random
 import re
 import shutil
 from collections.abc import Generator
-from typing import Any, Optional, TypedDict, TypeVar, cast
+from typing import Any, Generic, Optional, TypedDict, TypeVar, cast
 
 import gluetool.log
 import sqlalchemy.orm.session
@@ -211,7 +211,7 @@ class IBMCloudSession(CLISessionPermanentDir):
         return Ok(None)
 
 
-class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor]):
+class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor], Generic[IBMCloudInstanceT]):
     drivername = 'abstract-ibmcloud-driver'
 
     flavor_info_class = IBMCloudFlavor
@@ -353,7 +353,9 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor]):
         # Let's first check that there is no instance tied to this guest_request already. If there is one, then let's
         # use already allocated resources to continue with the provisioning instead of requesting new ones and leaving
         # old instance untracked.
-        r_existing_instances = self.list_instances_by_guest_request(logger, guest_request)
+        r_existing_instances: Result[list[IBMCloudInstanceT], Failure] = self.list_instances_by_guest_request(
+            logger, guest_request
+        )
 
         if r_existing_instances.is_error:
             return Error(Failure.from_failure('Listing guests failed', r_existing_instances.unwrap_error()))
@@ -416,7 +418,7 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor]):
         post_install_script = r_post_install_script.unwrap()
         if post_install_script:
             with create_tempfile(file_contents=post_install_script) as user_data_file:
-                r_output = self.create_instance(
+                r_output: Result[IBMCloudInstanceT, Failure] = self.create_instance(
                     logger=logger,
                     flavor=flavor,
                     image=image,
