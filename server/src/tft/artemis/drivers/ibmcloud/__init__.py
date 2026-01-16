@@ -3,6 +3,7 @@
 
 import dataclasses
 import datetime
+import functools
 import os
 import random
 import re
@@ -64,12 +65,15 @@ class IBMCloudInstance(SerializableContainer):
     def __post_init__(self) -> None:
         self.status = self.status.lower()
 
+    @functools.cached_property
     def is_pending(self) -> bool:
         raise NotImplementedError
 
+    @functools.cached_property
     def is_ready(self) -> bool:
         raise NotImplementedError
 
+    @functools.cached_property
     def is_error(self) -> bool:
         raise NotImplementedError
 

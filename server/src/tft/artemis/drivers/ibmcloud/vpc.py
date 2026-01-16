@@ -3,6 +3,7 @@
 
 import dataclasses
 import datetime
+import functools
 import json
 import re
 from collections.abc import Iterator
@@ -80,12 +81,15 @@ IBMCLOUD_RESOURCE_TYPE: dict[str, ResourceType] = {
 
 @dataclasses.dataclass
 class IBMCloudVPCInstance(IBMCloudInstance):
+    @functools.cached_property
     def is_pending(self) -> bool:
         return self.status == 'starting'
 
+    @functools.cached_property
     def is_ready(self) -> bool:
         return self.status == 'running'
 
+    @functools.cached_property
     def is_error(self) -> bool:
         return self.status == 'failed'
 

@@ -3,6 +3,7 @@
 
 import dataclasses
 import datetime
+import functools
 import re
 from re import Pattern
 from typing import Any, Optional, TypedDict, cast
@@ -81,12 +82,15 @@ ConfigImageFilter = TypedDict(
 
 @dataclasses.dataclass
 class IBMCloudPowerInstance(IBMCloudInstance):
+    @functools.cached_property
     def is_pending(self) -> bool:
         return self.status == 'building'
 
+    @functools.cached_property
     def is_ready(self) -> bool:
         return self.status == 'active'
 
+    @functools.cached_property
     def is_error(self) -> bool:
         return self.status == 'error'
 
