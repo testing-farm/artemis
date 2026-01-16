@@ -612,20 +612,13 @@ class IBMCloudPowerDriver(IBMCloudDriver):
         if not pool_data:
             return Ok(None)
 
-        # Let's list all instances that correspond to guest_request (including possible leftovers)
-        r_instances = self.list_instances_for_request(logger, guest_request)
-        if r_instances.is_error:
-            return Error(
-                Failure.from_failure('Could not list instances to schedule cleanup', r_instances.unwrap_error())
-            )
-
-        for instance_id in r_instances.unwrap():
-            self.dispatch_resource_cleanup(
-                logger,
-                session,
-                IBMCloudPoolResourcesIDs(instance_id=instance_id.id),
-                guest_request=guest_request,
-            )
+        # Will be focusing only on the instance from pool data, no possible leftovers cleanup is performed.
+        self.dispatch_resource_cleanup(
+            logger,
+            session,
+            IBMCloudPoolResourcesIDs(instance_id=pool_data.instance_id),
+            guest_request=guest_request,
+        )
 
         return Ok(None)
 
