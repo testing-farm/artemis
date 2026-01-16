@@ -8,7 +8,7 @@ import random
 import re
 import shutil
 from collections.abc import Generator
-from typing import Any, Optional, TypedDict, cast
+from typing import Any, Optional, TypedDict, TypeVar, cast
 
 import gluetool.log
 import sqlalchemy.orm.session
@@ -17,7 +17,6 @@ from gluetool.result import Error, Ok, Result
 from tft.artemis.drivers import (
     CLISessionPermanentDir,
     FlavorBasedPoolDriver,
-    InstanceStatesT,
     PoolData,
     PoolImageInfo,
     PoolResourcesIDs,
@@ -62,6 +61,18 @@ class IBMCloudInstance(SerializableContainer):
     status: str
     created_at: datetime.datetime
 
+    def __post_init__(self) -> None:
+        self.status = self.status.lower()
+
+    def is_pending(self) -> bool:
+        raise NotImplementedError
+
+    def is_ready(self) -> bool:
+        raise NotImplementedError
+
+    def is_error(self) -> bool:
+        raise NotImplementedError
+
     def serialize(self) -> dict[str, Any]:
         serialized = super().serialize()
 
@@ -78,6 +89,9 @@ class IBMCloudInstance(SerializableContainer):
             instance.created_at = datetime.datetime.strptime(serialized['created_at'], IBMCLOUD_DATETIME_FORMAT)
 
         return instance
+
+
+IBMCloudInstanceT = TypeVar('IBMCloudInstanceT', bound=IBMCloudInstance)
 
 
 @dataclasses.dataclass
@@ -258,7 +272,7 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor]):
 
         return Ok(tags['items'][0].get('tags', []))
 
-    def get_instance_name(self, guest_request: GuestRequest) -> Result[str, Failure]:
+    def _get_instance_name(self, guest_request: GuestRequest) -> Result[str, Failure]:
         if not self.instance_name_template:
             r_instance_name_template = KNOB_INSTANCE_NAME_TEMPLATE.get_value(entityname=self.poolname)
             if r_instance_name_template.is_error:
@@ -279,7 +293,7 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor]):
 
     def list_instances_by_guest_request(
         self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
-    ) -> Result[list[IBMCloudInstance], Failure]:
+    ) -> Result[list[IBMCloudInstanceT], Failure]:
         """
         This method will list all allocated instances that correspond to the given guest request.
         Order is newest -> oldest by time of creation.
@@ -289,7 +303,7 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor]):
             return Error(Failure.from_failure('failed to list instances', r_instances_list.unwrap_error()))
 
         # Let's get expected name to match against
-        r_expected_name = self.get_instance_name(guest_request)
+        r_expected_name = self._get_instance_name(guest_request)
         if r_expected_name.is_error:
             return Error(Failure.from_failure('failed to get expected instance name', r_expected_name.unwrap_error()))
         expected_name = r_expected_name.unwrap()
@@ -309,7 +323,6 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor]):
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
-        instance_status_map: InstanceStatesT,
     ) -> Result[ProvisioningProgress, Failure]:
         r_image_flavor_pairs = self._collect_image_flavor_pairs(logger, session, guest_request)
 
@@ -328,7 +341,7 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor]):
         self.log_acquisition_attempt(logger, session, guest_request, flavor=flavor, image=image)
 
         # Get expected instance name from template
-        r_instance_name = self.get_instance_name(guest_request)
+        r_instance_name = self._get_instance_name(guest_request)
         if r_instance_name.is_error:
             return Error(Failure.from_failure('Could not get instance name', r_instance_name.unwrap_error()))
         instance_name = r_instance_name.unwrap()
@@ -348,12 +361,8 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor]):
             # Let's check state first - if the guest is already broken it is of no use to us, while instances in build
             # or active state can be reused.
 
-            pending = [
-                g
-                for g in existing_instances
-                if g.status.lower() in [instance_status_map.BUILD, instance_status_map.READY]
-            ]
-            error = [g for g in existing_instances if g.status.lower() == instance_status_map.ERROR]
+            pending = [g for g in existing_instances if g.is_pending or g.is_ready]
+            error = [g for g in existing_instances if g.is_error]
             leftovers = pending[:-1] + error
 
             # Instances are sorted by provisioning time, let's take the first provisioned one.
@@ -388,7 +397,7 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor]):
             # same name. So let's generate a postfix, append it to the expected name, this way the instance will be
             # tracked in a list_instances call among related to this guest request.
             while instance_name in [leftover.name for leftover in leftovers]:
-                r_instance_name = self.get_instance_name(guest_request)
+                r_instance_name = self._get_instance_name(guest_request)
                 if r_instance_name.is_error:
                     return Error(Failure.from_failure('Could not get instance name', r_instance_name.unwrap_error()))
 
@@ -429,7 +438,7 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor]):
             )
         )
 
-    def show_instance(self, logger: gluetool.log.ContextAdapter, instance_id: str) -> Result[Any, Failure]:
+    def _show_instance(self, logger: gluetool.log.ContextAdapter, instance_id: str) -> Result[Any, Failure]:
         """This method will show a single instance details."""
 
         raise NotImplementedError
@@ -441,12 +450,12 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor]):
         image: PoolImageInfo,
         instance_name: str,
         user_data_file: Optional[str] = None,
-    ) -> Result[IBMCloudInstance, Failure]:
+    ) -> Result[IBMCloudInstanceT, Failure]:
         """This method will issue a cloud instance create request"""
 
         raise NotImplementedError
 
-    def list_instances(self, logger: gluetool.log.ContextAdapter) -> Result[list[IBMCloudInstance], Failure]:
+    def list_instances(self, logger: gluetool.log.ContextAdapter) -> Result[list[IBMCloudInstanceT], Failure]:
         """This method will issue a cloud guest list command and return a list of raw instances data"""
 
         raise NotImplementedError

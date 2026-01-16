@@ -3,7 +3,6 @@
 
 import dataclasses
 import datetime
-import enum
 import re
 from re import Pattern
 from typing import Any, Optional, TypedDict, cast
@@ -80,14 +79,16 @@ ConfigImageFilter = TypedDict(
 )
 
 
-class IBMCloudPowerInstanceStates(enum.Enum):
-    """
-    Enum listing possible instance states.
-    """
+@dataclasses.dataclass
+class IBMCloudPowerInstance(IBMCloudInstance):
+    def is_pending(self) -> bool:
+        return self.status == 'building'
 
-    BUILD = 'building'
-    READY = 'active'
-    ERROR = 'error'
+    def is_ready(self) -> bool:
+        return self.status == 'active'
+
+    def is_error(self) -> bool:
+        return self.status == 'error'
 
 
 class APIImageType(TypedDict):
@@ -346,7 +347,7 @@ class IBMCloudPowerDriver(IBMCloudDriver):
 
                 for raw_instance_entry in r_list_instances.unwrap():
                     # To get network details need to additionally get instance details
-                    r_show_instance = self.show_instance(logger, raw_instance_entry.id)
+                    r_show_instance = self._show_instance(logger, raw_instance_entry.id)
 
                     if r_show_instance.is_error:
                         return Error(
@@ -420,7 +421,7 @@ class IBMCloudPowerDriver(IBMCloudDriver):
         image: PoolImageInfo,
         instance_name: str,
         user_data_file: Optional[str] = None,
-    ) -> Result[IBMCloudInstance, Failure]:
+    ) -> Result[IBMCloudPowerInstance, Failure]:
         # Here will be setting defaults for memory, just in case.
         memory = flavor.memory.to('GiB').magnitude if flavor.memory else 4
         # Unusable flavors missing processors/threads_per_core should be already filtered out
@@ -462,7 +463,7 @@ class IBMCloudPowerDriver(IBMCloudDriver):
                 return Error(Failure('Double check time format, could not convert time data'))
 
             return Ok(
-                IBMCloudInstance(
+                IBMCloudPowerInstance(
                     id=instance['pvmInstanceID'],
                     name=instance['serverName'],
                     status=instance['status'],
@@ -473,8 +474,7 @@ class IBMCloudPowerDriver(IBMCloudDriver):
     def acquire_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
-        # Type check ignored here as can't inherit from enums and no idea how to pull that off without inheritance
-        return self.do_acquire_guest(logger, session, guest_request, IBMCloudPowerInstanceStates)  # type: ignore[type-var]
+        return self.do_acquire_guest(logger, session, guest_request)
 
     def update_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
@@ -489,7 +489,7 @@ class IBMCloudPowerDriver(IBMCloudDriver):
         if not instance_id:
             return Error(Failure('Need an instance id to fetch any information about a guest'))
 
-        r_output = self.show_instance(logger, instance_id)
+        r_output = self._show_instance(logger, instance_id)
 
         if r_output.is_error:
             return Error(Failure('no such guest'))
@@ -552,7 +552,7 @@ class IBMCloudPowerDriver(IBMCloudDriver):
             )
         )
 
-    def show_instance(self, logger: gluetool.log.ContextAdapter, instance_id: str) -> Result[dict[str, Any], Failure]:
+    def _show_instance(self, logger: gluetool.log.ContextAdapter, instance_id: str) -> Result[dict[str, Any], Failure]:
         with IBMCloudPowerSession(logger, self) as session:
             r_instance_info = session.run(
                 logger, ['pi', 'instance', 'get', instance_id, '--json'], commandname='ibmcloud.pi.vm-show'
@@ -567,7 +567,7 @@ class IBMCloudPowerDriver(IBMCloudDriver):
 
             return Ok(res)
 
-    def list_instances(self, logger: gluetool.log.ContextAdapter) -> Result[list[IBMCloudInstance], Failure]:
+    def list_instances(self, logger: gluetool.log.ContextAdapter) -> Result[list[IBMCloudPowerInstance], Failure]:
         with IBMCloudSession(logger, self) as session:
             r_instances_list = session.run(
                 logger, ['pi', 'instance', 'list', '--json'], commandname='ibmcloud.pi.vm-list'
@@ -584,21 +584,12 @@ class IBMCloudPowerDriver(IBMCloudDriver):
                     return Error(Failure('Double check time format, could not convert time data'))
 
                 res.append(
-                    IBMCloudInstance(
+                    IBMCloudPowerInstance(
                         id=instance['id'], name=instance['name'], created_at=created_at, status=instance['status']
                     )
                 )
 
             return Ok(res)
-
-    def list_instances_for_request(
-        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
-    ) -> Result[list[IBMCloudInstance], Failure]:
-        """
-        This method will list all allocated instances that correspond to the given guest request.
-        Order is newest -> oldest by time of creation.
-        """
-        return self.list_instances_by_guest_request(logger, guest_request)
 
     def release_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest

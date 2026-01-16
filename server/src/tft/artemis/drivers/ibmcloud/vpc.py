@@ -3,7 +3,6 @@
 
 import dataclasses
 import datetime
-import enum
 import json
 import re
 from collections.abc import Iterator
@@ -79,14 +78,16 @@ IBMCLOUD_RESOURCE_TYPE: dict[str, ResourceType] = {
 }
 
 
-class IBMCloudVPCInstanceStates(enum.Enum):
-    """
-    Enum listing possible instance states.
-    """
+@dataclasses.dataclass
+class IBMCloudVPCInstance(IBMCloudInstance):
+    def is_pending(self) -> bool:
+        return self.status == 'starting'
 
-    BUILD = 'starting'
-    READY = 'running'
-    ERROR = 'failed'
+    def is_ready(self) -> bool:
+        return self.status == 'running'
+
+    def is_error(self) -> bool:
+        return self.status == 'failed'
 
 
 class IBMCloudVPCErrorCauses(PoolErrorCauses):
@@ -402,16 +403,7 @@ class IBMCloudVPCDriver(IBMCloudDriver):
 
         return Ok(resources)
 
-    def list_instances_for_request(
-        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
-    ) -> Result[list[IBMCloudInstance], Failure]:
-        """
-        This method will list all allocated instances that correspond to the given guest request.
-        Order is newest -> oldest by time of creation.
-        """
-        return self.list_instances_by_guest_request(logger, guest_request)
-
-    def list_instances(self, logger: gluetool.log.ContextAdapter) -> Result[list[IBMCloudInstance], Failure]:
+    def list_instances(self, logger: gluetool.log.ContextAdapter) -> Result[list[IBMCloudVPCInstance], Failure]:
         with IBMCloudSession(logger, self) as session:
             r_instances_list = session.run(logger, ['is', 'instances', '--json'], commandname='ibmcloud.is.vm-list')
 
@@ -426,7 +418,7 @@ class IBMCloudVPCDriver(IBMCloudDriver):
                     return Error(Failure('Double check time format, could not convert time data'))
 
                 res.append(
-                    IBMCloudInstance(
+                    IBMCloudVPCInstance(
                         id=instance['id'],
                         name=instance['name'],
                         created_at=created_at,
@@ -439,7 +431,7 @@ class IBMCloudVPCDriver(IBMCloudDriver):
     def acquire_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
-        return self.do_acquire_guest(logger, session, guest_request, IBMCloudVPCInstanceStates)  # type: ignore[type-var]
+        return self.do_acquire_guest(logger, session, guest_request)
 
     def create_instance(
         self,
@@ -448,7 +440,7 @@ class IBMCloudVPCDriver(IBMCloudDriver):
         image: PoolImageInfo,
         instance_name: str,
         user_data_file: Optional[str] = None,
-    ) -> Result[IBMCloudInstance, Failure]:
+    ) -> Result[IBMCloudVPCInstance, Failure]:
         with IBMCloudSession(logger, self) as session:
             r_subnet_show = session.run(
                 logger,
@@ -512,7 +504,7 @@ class IBMCloudVPCDriver(IBMCloudDriver):
 
             instance = cast(dict[str, Any], r_instance_create.unwrap())
             return Ok(
-                IBMCloudInstance(
+                IBMCloudVPCInstance(
                     id=instance['id'],
                     name=instance['name'],
                     status=instance['status'],
@@ -520,7 +512,7 @@ class IBMCloudVPCDriver(IBMCloudDriver):
                 )
             )
 
-    def show_instance(self, logger: gluetool.log.ContextAdapter, instance_id: str) -> Result[Any, Failure]:
+    def _show_instance(self, logger: gluetool.log.ContextAdapter, instance_id: str) -> Result[Any, Failure]:
         """This method will show a single instance details."""
         res: dict[str, Any] = {}
 
@@ -561,7 +553,7 @@ class IBMCloudVPCDriver(IBMCloudDriver):
         if not instance_id:
             return Error(Failure('Need an instance ID to fetch any information about a guest'))
 
-        r_output = self.show_instance(logger, instance_id)
+        r_output = self._show_instance(logger, instance_id)
 
         if r_output.is_error:
             return Error(Failure('no such guest'))
@@ -657,7 +649,9 @@ class IBMCloudVPCDriver(IBMCloudDriver):
                 if r_delete_instance.is_error:
                     return Error(
                         Failure.from_failure(
-                            f'Failed to cleanup instance {resource_ids.instance_id}', r_delete_instance.unwrap_error()
+                            'Failed to cleanup instance',
+                            r_delete_instance.unwrap_error(),
+                            instance_id=resource_ids.instance_id,
                         )
                     )
 
