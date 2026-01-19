@@ -1462,19 +1462,60 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
             assert cfg.tree
             assert cfg.tree.broker
             assert cfg.tree.broker.metrics
+            assert cfg.broker_management_hostname
+            assert cfg.broker_management_port
+            assert cfg.broker_management_username
+            assert cfg.broker_management_password
 
             with status('Updating broker stats...'):
                 response = fetch_artemis(cfg, '', url=str(cfg.tree.broker.metrics))
+
+                raw_queues = json.loads(
+                    subprocess.check_output(
+                        [
+                            'rabbitmqadmin',
+                            '--format',
+                            'pretty_json',
+                            '--host',
+                            cfg.broker_management_hostname,
+                            '--port',
+                            str(cfg.broker_management_port),
+                            '--username',
+                            cfg.broker_management_username,
+                            '--password',
+                            cfg.broker_management_password,
+                            'list',
+                            'queues',
+                        ]
+                    ).decode()
+                )
+
+                queues = {queue['name']: queue for queue in raw_queues}
 
             metrics = _parse_metrics(response.text)
 
             ready = _extract_metric(metrics, 'rabbitmq_queue_messages_ready')
             unacked = _extract_metric(metrics, 'rabbitmq_queue_messages_unacked')
 
+            def _format_queue(name: str) -> str:
+                return (
+                    '/'.join(
+                        [
+                            f'[blue]{queues[name]["messages"]}[/blue]',
+                            f'[blue]{queues[name + ".DQ"]["messages"]}[/blue]',
+                            f'{queues[name + ".XQ"]["messages"]}',
+                        ]
+                    )
+                    + f' [yellow]{name}/DQ/XQ[/yellow]'
+                )
+
             return ' | '.join(
                 [
                     f'[yellow]{ready:.0f} ready[/yellow]',
                     f'[red]{unacked:.0f} unacked[/red]',
+                    _format_queue('default'),
+                    _format_queue('periodic'),
+                    _format_queue('pool-data-refresh'),
                 ]
             )
 
@@ -1654,7 +1695,16 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
 
         layout.split_column(
             Layout(name='header-top', size=3),
-            Layout(GuestsPanel(layout, 'header-bottom'), name='header-bottom', size=3),
+            Layout(
+                BrokerPanel(layout, 'header-bottom.broker'),
+                name='header-bottom.broker',
+                size=3,
+            ),
+            Layout(
+                GuestsPanel(layout, 'header-bottom.guests'),
+                name='header-bottom.guests',
+                size=3,
+            ),
             Layout(TasksPanel(layout, 'content'), name='content'),
             Layout(f'Updating state every {tick} seconds...', name='footer', size=1),
         )
@@ -1667,10 +1717,6 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
         layout['header-top.left'].split_row(
             Layout(
                 WorkerPanel(layout, 'header-top.left.left'), name='header-top.left.left'
-            ),
-            Layout(
-                BrokerPanel(layout, 'header-top.left.middle'),
-                name='header-top.left.middle',
             ),
             Layout(
                 DBPanel(layout, 'header-top.left.right'), name='header-top.left.right'
@@ -1718,13 +1764,13 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
     fast_panels: List[RefreshablePanel] = [
         cast(AboutPanel, layout['header-top.right'].renderable),
         cast(WorkerPanel, layout['header-top.left.left'].renderable),
-        cast(BrokerPanel, layout['header-top.left.middle'].renderable),
         cast(DBPanel, layout['header-top.left.right'].renderable),
+        cast(GuestsPanel, layout['header-bottom.broker'].renderable),
         cast(TasksPanel, layout['content'].renderable),
     ]
 
     slow_panels: List[RefreshablePanel] = [
-        cast(GuestsPanel, layout['header-bottom'].renderable)
+        cast(GuestsPanel, layout['header-bottom.guests'].renderable)
     ]
 
     with Live(layout, screen=True, auto_refresh=True):
