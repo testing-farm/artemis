@@ -164,7 +164,7 @@ class FlasherDriver(PoolDriver):
 
         pool_data = guest_request.pool_data.mine_or_none(self, FlasherPoolData)
 
-        if not pool_data:
+        if not pool_data or not pool_data.flasher_id:
             return Ok(None)
 
         return self.dispatch_resource_cleanup(
@@ -178,6 +178,10 @@ class FlasherDriver(PoolDriver):
         self, logger: gluetool.log.ContextAdapter, raw_resource_ids: SerializedPoolResourcesIDs
     ) -> Result[ReleasePoolResourcesState, Failure]:
         pool_resources = FlasherPoolResourcesIDs.unserialize_from_json(raw_resource_ids)
+
+        if not pool_resources.flasher_id:
+            return Ok(ReleasePoolResourcesState.RELEASED)
+
         url = urljoin(self.url, f'/loan/{pool_resources.flasher_id}')
 
         try:
