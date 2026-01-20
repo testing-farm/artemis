@@ -217,8 +217,6 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor], Gener
     flavor_info_class = IBMCloudFlavor
     pool_data_class = IBMCloudPoolData
 
-    instance_name_template = None
-
     def tag_instance(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -277,16 +275,12 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor], Gener
         return Ok(tags['items'][0].get('tags', []))
 
     def _get_instance_name(self, guest_request: GuestRequest) -> Result[str, Failure]:
-        if not self.instance_name_template:
-            r_instance_name_template = KNOB_INSTANCE_NAME_TEMPLATE.get_value(entityname=self.poolname)
-            if r_instance_name_template.is_error:
-                return Error(Failure('Could not get instance_name template'))
-
-            # Let's set instance name template in the driver class once and for all
-            self.instance_name_template = r_instance_name_template.unwrap()
+        r_instance_name_template = KNOB_INSTANCE_NAME_TEMPLATE.get_value(entityname=self.poolname)
+        if r_instance_name_template.is_error:
+            return Error(Failure('Could not get instance_name template'))
 
         r_rendered = render_template(
-            self.instance_name_template,
+            r_instance_name_template.unwrap(),
             GUESTNAME=guest_request.guestname,
             ENVIRONMENT=guest_request.environment,
         )
