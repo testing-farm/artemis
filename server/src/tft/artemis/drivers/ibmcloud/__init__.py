@@ -367,19 +367,23 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor], Gener
             # Let's check state first - if the guest is already broken it is of no use to us, while instances in build
             # or active state can be reused.
 
-            pending = [g for g in existing_instances if g.is_pending or g.is_ready]
-            error = [g for g in existing_instances if g.is_error]
-            leftovers = pending[:-1] + error
+            pending_instances = [
+                instance for instance in existing_instances if instance.is_pending or instance.is_ready
+            ]
+            error_instances = [instance for instance in existing_instances if instance.is_error]
+            leftover_instances = pending_instances[:-1] + error_instances
+
+            instance_to_use = pending_instances[-1]
 
             # Instances are sorted by provisioning time, let's take the first provisioned one.
-            if len(pending) > 1:
+            if len(pending_instances) > 1:
                 logger.warning(
                     f'There are more than 1 instances in reusable state for {guest_request}.guestname'
-                    f'Will be using {pending[-1].name} and cleaning up the rest.'
+                    f'Will be using {instance_to_use.name} and cleaning up the rest.'
                 )
 
             # Schedule cleanup of resources we won't use
-            for leftover in leftovers:
+            for leftover in leftover_instances:
                 self.dispatch_resource_cleanup(
                     logger,
                     session,
@@ -387,14 +391,13 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor], Gener
                     guest_request=guest_request,
                 )
 
-            if pending:
+            if pending_instances:
                 # At least one reusable instance has been found
-                existing_guest = pending[-1]
 
                 return Ok(
                     ProvisioningProgress(
                         state=ProvisioningState.PENDING,
-                        pool_data=IBMCloudPoolData(instance_id=existing_guest.id, instance_name=existing_guest.name),
+                        pool_data=IBMCloudPoolData(instance_id=instance_to_use.id, instance_name=instance_to_use.name),
                         ssh_info=image.ssh,
                     )
                 )
@@ -402,7 +405,7 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor], Gener
             # not be able to use the expected artemis-GUESTNAME naming as ibmcloud won't allow two instances with the
             # same name. So let's generate a postfix, append it to the expected name, this way the instance will be
             # tracked in a list_instances call among related to this guest request.
-            while instance_name in [leftover.name for leftover in leftovers]:
+            while instance_name in [leftover.name for leftover in leftover_instances]:
                 r_instance_name = self._get_instance_name(guest_request)
                 if r_instance_name.is_error:
                     return Error(Failure.from_failure('Could not get instance name', r_instance_name.unwrap_error()))
