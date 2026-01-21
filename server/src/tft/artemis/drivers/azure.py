@@ -15,6 +15,7 @@ import gluetool.utils
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 from gluetool.utils import normalize_bool_option
+from returns.pipeline import is_successful
 from tmt.hardware import UNITS
 
 from tft.artemis.drivers.aws import awscli_error_cause_extractor
@@ -906,8 +907,10 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
                 ENVIRONMENT=guest_request.environment,
                 TAGS=tags,
             )
-            if r_resource_group_template.is_error:
-                return Error(Failure('Could not render resource_group_name template'))
+            if not is_successful(r_rendered):
+                return Error(
+                    Failure.from_failure('Could not render resource_group_name template', r_rendered.failure())
+                )
 
             resource_group = r_rendered.unwrap()
         else:

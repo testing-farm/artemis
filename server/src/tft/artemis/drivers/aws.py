@@ -27,6 +27,7 @@ from gluetool.log import ContextAdapter, log_dict
 from gluetool.result import Error, Ok, Result
 from gluetool.utils import normalize_bool_option
 from jinja2 import Template
+from returns.pipeline import is_successful
 from tmt.hardware import UNITS, Operator
 from typing_extensions import Literal, TypedDict
 
@@ -2128,8 +2129,10 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
             ENVIRONMENT=guest_request.environment,
             TAGS=tags,
         )
-        if r_security_group_template.is_error:
-            return Error(Failure('Could not render guest security group name template'))
+        if not is_successful(r_rendered):
+            return Error(
+                Failure.from_failure('Could not render guest security group name template', r_rendered.failure())
+            )
 
         security_group_name = r_rendered.unwrap()
 
