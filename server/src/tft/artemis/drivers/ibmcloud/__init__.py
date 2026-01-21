@@ -14,6 +14,7 @@ from typing import Any, Generic, Optional, TypedDict, TypeVar, cast
 import gluetool.log
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
+from returns.pipeline import is_successful
 
 from tft.artemis.drivers import (
     CLISessionPermanentDir,
@@ -284,8 +285,8 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor], Gener
             GUESTNAME=guest_request.guestname,
             ENVIRONMENT=guest_request.environment,
         )
-        if r_rendered.is_error:
-            return Error(Failure('Could not render instance_name template'))
+        if not is_successful(r_rendered):
+            return Error(Failure.from_failure('Could not render instance_name template', r_rendered.failure()))
 
         return Ok(r_rendered.unwrap())
 
