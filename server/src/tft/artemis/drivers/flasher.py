@@ -13,6 +13,7 @@ import requests
 import requests.exceptions
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
+from returns.pipeline import is_successful
 
 from .. import Failure
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
@@ -66,8 +67,8 @@ class FlasherDriver(PoolDriver):
     ) -> Result[CanAcquire, Failure]:
         r_answer = super().can_acquire(logger, session, guest_request)
 
-        if r_answer.is_error:
-            return Error(r_answer.unwrap_error())
+        if not is_successful(r_answer):
+            return Error(r_answer.failure())
 
         if r_answer.unwrap().can_acquire is False:
             return r_answer
@@ -207,8 +208,8 @@ class FlasherDriver(PoolDriver):
     ) -> Result[PoolResourcesMetrics, Failure]:
         r_resources = super().fetch_pool_resources_metrics(logger)
 
-        if r_resources.is_error:
-            return Error(r_resources.unwrap_error())
+        if not is_successful(r_resources):
+            return Error(r_resources.failure())
 
         resources = r_resources.unwrap()
         url = urljoin(self.url, f'{self.poolname}/summary/metrics')
