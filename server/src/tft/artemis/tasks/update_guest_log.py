@@ -15,6 +15,7 @@ from typing import Any, Optional, cast
 import gluetool.log
 import sqlalchemy.orm.session
 from gluetool.result import Ok, Result
+from returns.pipeline import is_successful
 
 from .. import Failure
 from ..db import DB, GuestLog, GuestLogContentType, GuestLogState, SafeQuery
@@ -139,8 +140,8 @@ class Workspace(_Workspace):
 
             r_capabilities = self.pool.capabilities()
 
-            if r_capabilities.is_error:
-                return self._error(r_capabilities, 'failed to fetch pool capabilities')
+            if not is_successful(r_capabilities):
+                return self._error_v2(r_capabilities, 'failed to fetch pool capabilities')
 
             capabilities = r_capabilities.unwrap()
 

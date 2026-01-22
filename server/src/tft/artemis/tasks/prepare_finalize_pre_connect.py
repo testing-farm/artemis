@@ -14,6 +14,7 @@ from typing import cast
 
 import gluetool.log
 import sqlalchemy.orm.session
+from returns.pipeline import is_successful
 
 from ..db import DB
 from ..guest import GuestState
@@ -57,8 +58,8 @@ class Workspace(_Workspace):
 
                 r_capabilities = self.pool.capabilities()
 
-                if r_capabilities.is_error:
-                    return self._error(r_capabilities, 'failed to fetch pool capabilities')
+                if not is_successful(r_capabilities):
+                    return self._error_v2(r_capabilities, 'failed to fetch pool capabilities')
 
                 if r_capabilities.unwrap().supports_native_post_install_script is False:
                     self.dispatch_task(prepare_post_install_script, self.guestname)

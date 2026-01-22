@@ -1624,8 +1624,8 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         r_capabilities = self.capabilities()
 
-        if r_capabilities.is_error:
-            return Error(r_capabilities.unwrap_error())
+        if not is_successful(r_capabilities):
+            return Error(r_capabilities.failure())
 
         capabilities = r_capabilities.unwrap()
 
@@ -2008,7 +2008,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         raise NotImplementedError
 
-    def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
+    def adjust_capabilities(self, capabilities: PoolCapabilities) -> _Result[PoolCapabilities, Failure]:
         """
         Allows pool drivers to modify pool capabilities extracted from configuration.
 
@@ -2016,9 +2016,9 @@ class PoolDriver(gluetool.log.LoggerMixin):
         to match what the driver can actually deliver.
         """
 
-        return Ok(capabilities)
+        return _Ok(capabilities)
 
-    def capabilities(self) -> Result[PoolCapabilities, Failure]:
+    def capabilities(self) -> _Result[PoolCapabilities, Failure]:
         capabilities = PoolCapabilities()
 
         capabilities_config = cast(ConfigCapabilitiesType, self.pool_config.get('capabilities'))
@@ -2039,7 +2039,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
                 ]
 
             else:
-                return Error(
+                return _Error(
                     Failure(
                         'cannot parse supported architectures',
                         # converting to string because at this point, we don't know what's the type, and the failure
@@ -2063,22 +2063,18 @@ class PoolDriver(gluetool.log.LoggerMixin):
                 capabilities_config['supports-hostnames']
             )
 
-        r_adjusted_capabilities = self.adjust_capabilities(capabilities)
+        def _disable_guest_logs(capabilities: PoolCapabilities) -> _Result[PoolCapabilities, Failure]:
+            if 'disable-guest-logs' in capabilities_config:
+                for log_spec in capabilities_config['disable-guest-logs']:
+                    disabled_log = (log_spec['log-name'], GuestLogContentType(log_spec['content-type']))
 
-        if r_adjusted_capabilities.is_error:
-            return r_adjusted_capabilities
+                    capabilities.supported_guest_logs = [
+                        guest_log for guest_log in capabilities.supported_guest_logs if guest_log != disabled_log
+                    ]
 
-        capabilities = r_adjusted_capabilities.unwrap()
+            return _Ok(capabilities)
 
-        if 'disable-guest-logs' in capabilities_config:
-            for log_spec in capabilities_config['disable-guest-logs']:
-                disabled_log = (log_spec['log-name'], GuestLogContentType(log_spec['content-type']))
-
-                capabilities.supported_guest_logs = [
-                    guest_log for guest_log in capabilities.supported_guest_logs if guest_log != disabled_log
-                ]
-
-        return Result.Ok(capabilities)
+        return self.adjust_capabilities(capabilities).bind(_disable_guest_logs)
 
     def get_pool_tags(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session
@@ -2929,8 +2925,8 @@ class FlavorBasedPoolDriver(PoolDriver, Generic[PoolImageInfoT, FlavorT]):
         if guest_request.environment.has_ks_specification:
             r_capabilities = self.capabilities()
 
-            if r_capabilities.is_error:
-                return Error(r_capabilities.unwrap_error())
+            if not is_successful(r_capabilities):
+                return Error(r_capabilities.failure())
 
             capabilities = r_capabilities.unwrap()
 

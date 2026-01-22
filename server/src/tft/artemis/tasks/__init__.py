@@ -28,6 +28,7 @@ import sqlalchemy.orm.exc
 import sqlalchemy.orm.session
 import stackprinter
 from gluetool.result import Error, Ok, Result
+from returns.result import Result as _Result
 from typing_extensions import Protocol, Self, TypedDict
 
 from .. import (
@@ -1961,6 +1962,9 @@ class Workspace:
 
     def _error(self, error: Result[Any, Failure], label: str, no_effect: bool = False) -> None:
         self._fail(error.unwrap_error(), label, no_effect=no_effect)
+
+    def _error_v2(self, error: _Result[Any, Failure], label: str, no_effect: bool = False) -> None:
+        self._fail(error.failure(), label, no_effect=no_effect)
 
     def update_guest_state(
         self,

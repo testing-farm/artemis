@@ -21,6 +21,7 @@ import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 from keystoneauth1.identity import v3
 from novaclient import client as nocl
+from returns.result import Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
 
 from .. import Failure, JSONType, process_output_to_str, safe_call
@@ -202,7 +203,7 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
                 )
             )
 
-    def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
+    def adjust_capabilities(self, capabilities: PoolCapabilities) -> _Result[PoolCapabilities, Failure]:
         capabilities.supports_hostnames = False
         capabilities.supports_native_post_install_script = True
         capabilities.supports_console_url = True
@@ -212,7 +213,7 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
             ('console:interactive', GuestLogContentType.URL),
         ]
 
-        return Ok(capabilities)
+        return _Ok(capabilities)
 
     def _run_os(
         self, options: list[str], json_format: bool = True, commandname: Optional[str] = None

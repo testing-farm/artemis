@@ -14,6 +14,7 @@ from typing import cast
 
 import gluetool.log
 import sqlalchemy.orm.session
+from returns.pipeline import is_successful
 
 from .. import Failure
 from ..db import DB
@@ -93,8 +94,8 @@ class Workspace(_Workspace):
             # If we need to perform kickstart setup, divert into this task instead
             r_capabilities = self.pool.capabilities()
 
-            if r_capabilities.is_error:
-                return self._error(r_capabilities, 'could not get pool capabilities')
+            if not is_successful(r_capabilities):
+                return self._error_v2(r_capabilities, 'could not get pool capabilities')
 
             if self.gr.environment.has_ks_specification and not r_capabilities.unwrap().supports_native_kickstart:
                 next_task = prepare_kickstart

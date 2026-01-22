@@ -15,6 +15,7 @@ import proto
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 from google.cloud import compute_v1
+from returns.result import Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
 
 from .. import Failure, log_dict_yaml
@@ -103,7 +104,7 @@ class GCPDriver(PoolDriver):
                 )
             )
 
-    def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
+    def adjust_capabilities(self, capabilities: PoolCapabilities) -> _Result[PoolCapabilities, Failure]:
         capabilities.supported_architectures = ['x86_64']
         capabilities.supports_snapshots = False
         capabilities.supports_console_url = False
@@ -111,7 +112,7 @@ class GCPDriver(PoolDriver):
         capabilities.supports_native_post_install_script = False
         capabilities.supported_guest_logs = []
         capabilities.supports_hostnames = False
-        return Ok(capabilities)
+        return _Ok(capabilities)
 
     @cached_property
     def _service_account_info(self) -> Any:

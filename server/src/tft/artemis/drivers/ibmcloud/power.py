@@ -11,6 +11,7 @@ from typing import Any, Optional, TypedDict, cast
 import gluetool.log
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
+from returns.result import Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
 
 from tft.artemis.drivers import PoolDriver, PoolImageInfo, PoolImageInfoT
@@ -181,14 +182,14 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
     ) -> None:
         super().__init__(logger, poolname, pool_config)
 
-    def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
+    def adjust_capabilities(self, capabilities: PoolCapabilities) -> _Result[PoolCapabilities, Failure]:
         capabilities.supports_hostnames = False
         capabilities.supports_native_post_install_script = True
         capabilities.supported_guest_logs = [
             ('console:interactive', GuestLogContentType.URL),
         ]
 
-        return Ok(capabilities)
+        return _Ok(capabilities)
 
     def fetch_pool_image_info(self) -> Result[list[PoolImageInfo], Failure]:
         def _fetch_images(filters: Optional[ConfigImageFilter] = None) -> Result[list[PoolImageInfo], Failure]:

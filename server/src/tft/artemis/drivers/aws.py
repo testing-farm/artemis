@@ -28,6 +28,7 @@ from gluetool.result import Error, Ok, Result
 from gluetool.utils import normalize_bool_option
 from jinja2 import Template
 from returns.pipeline import is_successful
+from returns.result import Result as _Result, Success as _Ok
 from tmt.hardware import UNITS, Operator
 from typing_extensions import Literal, TypedDict
 
@@ -1556,7 +1557,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
 
         return Ok(images)
 
-    def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
+    def adjust_capabilities(self, capabilities: PoolCapabilities) -> _Result[PoolCapabilities, Failure]:
         capabilities.supports_hostnames = False
         capabilities.supports_native_post_install_script = True
         capabilities.supported_guest_logs = [
@@ -1564,7 +1565,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
             ('console:interactive', GuestLogContentType.URL),
         ]
 
-        return Ok(capabilities)
+        return _Ok(capabilities)
 
     def release_pool_resources(
         self, logger: gluetool.log.ContextAdapter, raw_resource_ids: SerializedPoolResourcesIDs
@@ -2860,8 +2861,8 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
 
         r_capabilities = self.capabilities()
 
-        if r_capabilities.is_error:
-            return Error(r_capabilities.unwrap_error())
+        if not is_successful(r_capabilities):
+            return Error(r_capabilities.failure())
 
         capabilities = r_capabilities.unwrap()
 

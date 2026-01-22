@@ -16,6 +16,7 @@ import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 from gluetool.utils import normalize_bool_option
 from returns.pipeline import is_successful
+from returns.result import Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
 
 from tft.artemis.drivers.aws import awscli_error_cause_extractor
@@ -290,14 +291,14 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
     def use_public_ip(self) -> bool:
         return normalize_bool_option(self.pool_config.get('use-public-ip', False))
 
-    def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
+    def adjust_capabilities(self, capabilities: PoolCapabilities) -> _Result[PoolCapabilities, Failure]:
         capabilities.supports_hostnames = False
         capabilities.supports_native_post_install_script = True
         capabilities.supported_guest_logs = [
             ('console:dump', GuestLogContentType.BLOB),
         ]
 
-        return Ok(capabilities)
+        return _Ok(capabilities)
 
     def release_pool_resources(
         self, logger: gluetool.log.ContextAdapter, raw_resource_ids: SerializedPoolResourcesIDs
