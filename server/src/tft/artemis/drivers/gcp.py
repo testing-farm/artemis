@@ -122,6 +122,7 @@ class GCPDriver(PoolDriver):
             boot=FlavorBoot(),
             ssh=ssh_info,
             supports_kickstart=False,
+            creation_date=None,
         )
 
         return Ok(image_info)

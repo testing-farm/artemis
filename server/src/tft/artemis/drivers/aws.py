@@ -2805,6 +2805,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
                             # `None`
                             ena_support=image.get('EnaSupport', False) or False,
                             boot_mode=aws_boot_mode,
+                            creation_date=image['CreationDate'],
                         )
                     )
 

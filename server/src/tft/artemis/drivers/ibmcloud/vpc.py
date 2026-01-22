@@ -5,9 +5,7 @@ import dataclasses
 import datetime
 import functools
 import json
-import re
 from collections.abc import Iterator
-from re import Pattern
 from typing import Any, Optional, TypedDict, cast
 
 import gluetool.log
@@ -26,7 +24,7 @@ from tft.artemis.drivers.ibmcloud import (
     IBMCloudSession,
 )
 
-from ... import Failure, log_dict_yaml
+from ... import Failure
 from ...db import GuestRequest
 from ...environment import (
     Flavor,
@@ -108,6 +106,7 @@ class APIImageType(TypedDict):
     user_data_format: str
     status: str
     operating_system: dict[str, Any]
+    created_at: str
 
 
 ConfigImageFilter = TypedDict(
@@ -137,6 +136,31 @@ class IBMCloudVPCPoolImageInfo(PoolImageInfo):
     # One of ipxe, esxi_kickstart, cloud_init
     user_data_format: str
 
+    @classmethod
+    def from_raw_image(cls, image: dict[str, Any]) -> Result[PoolImageInfo, Failure]:
+        """
+        This method transforms a dictionary representing one image from cloud image list command into a PoolImageInfo
+        """
+
+        try:
+            return Ok(
+                IBMCloudVPCPoolImageInfo(
+                    crn=image['crn'],
+                    id=image['id'],
+                    name=image['name'],
+                    status=image['status'],
+                    visibility=image['visibility'],
+                    user_data_format=image['user_data_format'],
+                    arch=image['operating_system']['architecture'],
+                    boot=FlavorBoot(),
+                    ssh=PoolImageSSHInfo(),
+                    supports_kickstart=False,
+                    creation_date=image['created_at'],
+                )
+            )
+        except KeyError as exc:
+            return Error(Failure.from_exc('malformed image description', exc, image_info=image))
+
 
 class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
     drivername = 'ibmcloud-vpc'
@@ -154,106 +178,6 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
         pool_config: dict[str, Any],
     ) -> None:
         super().__init__(logger, poolname, pool_config)
-
-    def fetch_pool_image_info(self) -> Result[list[PoolImageInfo], Failure]:
-        def _fetch_images(filters: Optional[ConfigImageFilter] = None) -> Result[list[PoolImageInfo], Failure]:
-            name_pattern: Optional[Pattern[str]] = None
-            arch_pattern: Optional[Pattern[str]] = None
-
-            logger = self.logger
-
-            # NOTE(ivasilev) Due to the newly discovered issue with ibmcloud cli crashing on listing 500+
-            # images without resource_group filter passed let's pass one now.
-            # That is not a great solution, but without this cache population and ibmcloud usage is paralyzed,
-            # so passing resource group it is.
-            resource_group = self.pool_config.get('resource-group', 'Default')
-
-            list_images_cmd = ['is', 'images', '--output', 'json', '--resource-group-name', resource_group]
-
-            def _process_regex_filter(filter_name: str, filters: ConfigImageFilter) -> Optional[Pattern[Any]]:
-                if filter_name not in filters:
-                    return None
-                return re.compile(filters[filter_name])  # type: ignore[literal-required]
-
-            if filters:
-                if 'visibility' in filters:
-                    list_images_cmd.extend(['--visibility', filters['visibility']])
-                if 'owner-type' in filters:
-                    list_images_cmd.extend(['--owner-type', filters['owner-type']])
-                if 'status' in filters:
-                    list_images_cmd.extend(['--status', filters['status']])
-                if 'user-data-format' in filters:
-                    list_images_cmd.extend(['--user-data-format', filters['user-data-format']])
-
-                try:
-                    name_pattern = _process_regex_filter('name-regex', filters)
-                    arch_pattern = _process_regex_filter('arch-regex', filters)
-                except re.error as exc:
-                    return Error(Failure.from_exc('failed to compile regex', exc))
-
-            with IBMCloudSession(logger, self) as session:
-                r_images_list = session.run(logger, list_images_cmd, commandname='ibmcloud.vm-image-list')
-
-                if r_images_list.is_error:
-                    return Error(
-                        Failure.from_failure('failed to fetch image information', r_images_list.unwrap_error())
-                    )
-
-            images: list[PoolImageInfo] = []
-            for image in cast(list[APIImageType], r_images_list.unwrap()):
-                try:
-                    # Apply wild-card filter if specified, unfortunately no way to filter by name or regex via cli
-                    if name_pattern and not name_pattern.match(image['name']):
-                        continue
-
-                    arch = image['operating_system']['architecture']
-                    if arch_pattern and not arch_pattern.match(arch):
-                        continue
-                    images.append(
-                        IBMCloudVPCPoolImageInfo(
-                            crn=image['crn'],
-                            id=image['id'],
-                            name=image['name'],
-                            status=image['status'],
-                            visibility=image['visibility'],
-                            user_data_format=image['user_data_format'],
-                            arch=arch,
-                            boot=FlavorBoot(),
-                            ssh=PoolImageSSHInfo(),
-                            supports_kickstart=False,
-                        )
-                    )
-                except KeyError as exc:
-                    return Error(
-                        Failure.from_exc('malformed image description', exc, image_info=r_images_list.unwrap())
-                    )
-
-            log_dict_yaml(self.logger.debug, 'image filters', filters)
-            log_dict_yaml(self.logger.debug, 'found images', [image.name for image in images])
-
-            return Ok(images)
-
-        images: list[PoolImageInfo] = []
-        image_filters = cast(list[ConfigImageFilter], self.pool_config.get('image-filters', []))
-
-        if image_filters:
-            for filters in image_filters:
-                r_images = _fetch_images(filters)
-
-                if r_images.is_error:
-                    return r_images
-
-                images += r_images.unwrap()
-
-        else:
-            r_images = _fetch_images()
-
-            if r_images.is_error:
-                return r_images
-
-            images += r_images.unwrap()
-
-        return Ok(images)
 
     def fetch_pool_flavor_info(self) -> Result[list[Flavor], Failure]:
         # See https://cloud.ibm.com/docs/vpc?topic=vpc-vs-profiles&interface=cli for more info
@@ -406,6 +330,33 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
             )
 
         return Ok(resources)
+
+    def list_images_raw(
+        self, logger: gluetool.log.ContextAdapter, filters: Optional[dict[str, Any]] = None
+    ) -> Result[list[dict[str, Any]], Failure]:
+        """
+        This method will will issue a cloud guest list command and return a list of dictionaries representing
+        cloud images (raw means that data is returned in the same form the cloud sends it to us, no processing applied).
+        """
+        resource_group = self.pool_config.get('resource-group', 'Default')
+
+        list_images_cmd = ['is', 'images', '--output', 'json', '--resource-group-name', resource_group]
+        if filters:
+            if 'visibility' in filters:
+                list_images_cmd.extend(['--visibility', filters['visibility']])
+            if 'owner-type' in filters:
+                list_images_cmd.extend(['--owner-type', filters['owner-type']])
+            if 'status' in filters:
+                list_images_cmd.extend(['--status', filters['status']])
+            if 'user-data-format' in filters:
+                list_images_cmd.extend(['--user-data-format', filters['user-data-format']])
+
+        with IBMCloudSession(logger, self) as session:
+            r_images_list = session.run(logger, list_images_cmd, commandname='ibmcloud.vm-image-list')
+
+            if r_images_list.is_error:
+                return Error(Failure.from_failure('failed to fetch image information', r_images_list.unwrap_error()))
+            return Ok(cast(list[dict[str, Any]], r_images_list.unwrap()))
 
     def list_instances(self, logger: gluetool.log.ContextAdapter) -> Result[list[IBMCloudVPCInstance], Failure]:
         with IBMCloudSession(logger, self) as session:

@@ -5,7 +5,6 @@ import dataclasses
 import datetime
 import functools
 import re
-from re import Pattern
 from typing import Any, Optional, TypedDict, cast
 
 import gluetool.log
@@ -24,7 +23,7 @@ from tft.artemis.drivers.ibmcloud import (
     IBMCloudSession,
 )
 
-from ... import Failure, JSONType, log_dict_yaml, logging_filter, process_output_to_str
+from ... import Failure, JSONType, logging_filter, process_output_to_str
 from ...db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
 from ...environment import Flavor, FlavorBoot
 from ...knobs import Knob
@@ -164,6 +163,34 @@ class IBMCloudPowerPoolImageInfo(PoolImageInfo):
     # /pcloud/v1/cloud-instances/f60e5369884840cd85c1490f4fb506eb/images/b44fe39f-3ec4-4baa-ada5-cbd56acaec1d
     href: str
 
+    @classmethod
+    def from_raw_image(cls, image: dict[str, Any]) -> Result[PoolImageInfo, Failure]:
+        """
+        This method transforms a dictionary representing one image from cloud image list command into a PoolImageInfo
+        """
+
+        arch = image['specifications']['architecture']
+        # NOTE(ivasilev) ppc64 needs special treatment, as IBM had this brilliant idea to put both
+        # ppc64 and ppc64le as `ppc64` and differentiate upon the value of `endianness` field..
+        if arch == 'ppc64':
+            arch = 'ppc64le' if image['specifications']['endianness'] == 'little-endian' else 'ppc64'
+
+        try:
+            return Ok(
+                IBMCloudPowerPoolImageInfo(
+                    href=image['href'],
+                    id=image['imageID'],
+                    name=image['name'],
+                    arch=arch,
+                    boot=FlavorBoot(),
+                    ssh=PoolImageSSHInfo(),
+                    supports_kickstart=False,
+                    creation_date=image['creationDate'],
+                )
+            )
+        except KeyError as exc:
+            return Error(Failure.from_exc('malformed image description', exc, image_info=image))
+
 
 class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
     drivername = 'ibmcloud-power'
@@ -190,93 +217,26 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
 
         return Ok(capabilities)
 
-    def fetch_pool_image_info(self) -> Result[list[PoolImageInfo], Failure]:
-        def _fetch_images(filters: Optional[ConfigImageFilter] = None) -> Result[list[PoolImageInfo], Failure]:
-            # operating system as defined in operatingSystem.version
-            name_pattern: Optional[Pattern[str]] = None
-            arch_pattern: Optional[Pattern[str]] = None
+    def list_images_raw(
+        self, logger: gluetool.log.ContextAdapter, filters: Optional[dict[str, Any]] = None
+    ) -> Result[list[dict[str, Any]], Failure]:
+        """
+        This method will will issue a cloud guest list command and return a list of dictionaries representing
+        cloud images (raw means that data is returned in the same form the cloud sends it to us, no processing applied).
+        """
+        images_list = None
+        with IBMCloudPowerSession(logger, self) as session:
+            r_images_list = session.run(logger, ['pi', 'image', 'list', '--json'], commandname='ibmcloud.pi-image-list')
 
-            logger = self.logger
+            if r_images_list.is_error:
+                return Error(Failure.from_failure('failed to fetch image information', r_images_list.unwrap_error()))
 
-            def _process_regex_filter(filter_name: str, filters: ConfigImageFilter) -> Optional[Pattern[Any]]:
-                if filter_name not in filters:
-                    return None
-                return re.compile(filters[filter_name])  # type: ignore[literal-required]
+            images_list = cast(dict[str, Any], r_images_list.unwrap())
 
-            if filters:
-                try:
-                    name_pattern = _process_regex_filter('name-regex', filters)
-                    arch_pattern = _process_regex_filter('arch-regex', filters)
-                except re.error as exc:
-                    return Error(Failure.from_exc('failed to compile regex', exc))
+        if 'images' not in images_list:
+            return Error(Failure('Unexpected cli return, items key is missing', data=images_list))
 
-            with IBMCloudPowerSession(logger, self) as session:
-                r_images_list = session.run(
-                    logger, ['pi', 'image', 'list', '--json'], commandname='ibmcloud.pi-image-list'
-                )
-
-                if r_images_list.is_error:
-                    return Error(
-                        Failure.from_failure('failed to fetch image information', r_images_list.unwrap_error())
-                    )
-
-            images: list[PoolImageInfo] = []
-            for image in cast(list[APIImageType], cast(dict[str, Any], r_images_list.unwrap()).get('images', [])):
-                try:
-                    # Apply wild-card filter if specified, unfortunately no way to filter by name or regex via cli
-                    if name_pattern and not name_pattern.match(image['name']):
-                        continue
-
-                    arch = image['specifications']['architecture']
-                    # NOTE(ivasilev) ppc64 needs special treatment, as IBM had this brilliant idea to put both
-                    # ppc64 and ppc64le as `ppc64` and differentiate upon the value of `endianness` field..
-                    if arch == 'ppc64':
-                        arch = 'ppc64le' if image['specifications']['endianness'] == 'little-endian' else 'ppc64'
-                    if arch_pattern and not arch_pattern.match(arch):
-                        continue
-
-                    images.append(
-                        IBMCloudPowerPoolImageInfo(
-                            href=image['href'],
-                            id=image['imageID'],
-                            name=image['name'],
-                            arch=arch,
-                            boot=FlavorBoot(),
-                            ssh=PoolImageSSHInfo(),
-                            supports_kickstart=False,
-                        )
-                    )
-                except KeyError as exc:
-                    return Error(
-                        Failure.from_exc('malformed image description', exc, image_info=r_images_list.unwrap())
-                    )
-
-            log_dict_yaml(self.logger.debug, 'image filters', filters)
-            log_dict_yaml(self.logger.debug, 'found images', [image.name for image in images])
-
-            return Ok(images)
-
-        images: list[PoolImageInfo] = []
-        image_filters = cast(list[ConfigImageFilter], self.pool_config.get('image-filters', []))
-
-        if image_filters:
-            for filters in image_filters:
-                r_images = _fetch_images(filters)
-
-                if r_images.is_error:
-                    return r_images
-
-                images += r_images.unwrap()
-
-        else:
-            r_images = _fetch_images()
-
-            if r_images.is_error:
-                return r_images
-
-            images += r_images.unwrap()
-
-        return Ok(images)
+        return Ok(cast(list[dict[str, Any]], images_list['images']))
 
     def _filter_flavors_required_fields_defined(
         self,
