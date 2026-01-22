@@ -334,7 +334,9 @@ class Sentry:
                 if _SENTRY_TRACING_SAMPLE_PATTERN.match(sampling_context['transaction_context']['name']):
                     return 1.0
 
-                return KNOB_SENTRY_TRACING_SAMPLE_RATE.value
+                # Do not use the tracing sample rate - we have a valid pattern, trace only code matching the pattern,
+                # everything else shall remain "invisible".
+                return 0.0
 
         else:
             traces_sampler = None
