@@ -26,6 +26,8 @@ import pytest
 import sqlalchemy
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok
+from returns.pipeline import is_successful
+from returns.result import Failure as _Error, Success as _Ok
 
 import tft.artemis
 import tft.artemis.context
@@ -195,11 +197,11 @@ def test_collect_pool_capabilities(mock_inputs: MockInputs, mockpatch: MockPatch
     mock_capabilities = [MagicMock(name=f'{pool.poolname}.capabilities<mock>') for pool in mock_pools]
 
     for pool, capabilities in zip(mock_pools, mock_capabilities):
-        mockpatch(pool, 'capabilities').return_value = Ok(capabilities)
+        mockpatch(pool, 'capabilities').return_value = _Ok(capabilities)
 
     r = tft.artemis.routing_policies.collect_pool_capabilities(mock_pools)
 
-    assert r.is_ok
+    assert is_successful(r)
 
     collected = r.unwrap()
 
@@ -218,22 +220,22 @@ def test_collect_pool_capabilities_error(
 ) -> None:
     _, _, mock_pools, _ = mock_inputs
 
-    mockpatch(mock_pools[0], 'capabilities').return_value = Ok(
+    mockpatch(mock_pools[0], 'capabilities').return_value = _Ok(
         MagicMock(name=f'{mock_pools[0].poolname}.capabilities<mock>')
     )
-    mockpatch(mock_pools[1], 'capabilities').return_value = Error(MagicMock(name='failure<mock>'))
-    mockpatch(mock_pools[2], 'capabilities').return_value = Ok(
+    mockpatch(mock_pools[1], 'capabilities').return_value = _Error(MagicMock(name='failure<mock>'))
+    mockpatch(mock_pools[2], 'capabilities').return_value = _Ok(
         MagicMock(name=f'{mock_pools[2].poolname}.capabilities<mock>')
     )
 
     r = tft.artemis.routing_policies.collect_pool_capabilities(mock_pools)
 
-    assert r.is_error
+    assert not is_successful(r)
 
-    failure = r.unwrap_error()
+    failure = r.failure()
 
     assert isinstance(failure, tft.artemis.Failure)
-    assert failure.caused_by == cast(MagicMock, mock_pools[1]).capabilities.return_value.unwrap_error()
+    assert failure.caused_by == cast(MagicMock, mock_pools[1]).capabilities.return_value.failure()
 
 
 def test_run_routing_policies(

@@ -11,6 +11,8 @@ import gluetool.utils
 import sqlalchemy
 from gluetool.log import log_dict, log_table
 from gluetool.result import Error, Ok, Result
+from returns.pipeline import is_successful
+from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from typing_extensions import Protocol, TypedDict
 
 from . import Failure, Sentry, SerializableContainer, TracingOp, partition
@@ -286,7 +288,7 @@ def policy_boilerplate(fn: PolicyType) -> PolicyType:
     return wrapper
 
 
-def collect_pool_capabilities(pools: list[PoolDriver]) -> Result[list[tuple[PoolDriver, PoolCapabilities]], Failure]:
+def collect_pool_capabilities(pools: list[PoolDriver]) -> _Result[list[tuple[PoolDriver, PoolCapabilities]], Failure]:
     """
     Collect capabilities of given pools. Since pool's :py:meth:`PoolDriver.capabilities` can return a failure,
     we use this helper to simplify writing of policies by gathering capabilities, or returns the failure capturing
@@ -296,14 +298,16 @@ def collect_pool_capabilities(pools: list[PoolDriver]) -> Result[list[tuple[Pool
     :return: List of two item tuples, pool and its capabilities.
     """
 
-    oks, errors = partition(lambda result_pair: result_pair[1].is_ok, [(pool, pool.capabilities()) for pool in pools])
+    oks, errors = partition(
+        lambda result_pair: is_successful(result_pair[1]), ((pool, pool.capabilities()) for pool in pools)
+    )
 
     first_error_pair = next(iter(errors), None)
 
     if first_error_pair:
-        return Error(Failure.from_failure('failed to get pool capabilities', first_error_pair[1].unwrap_error()))
+        return _Error(Failure.from_failure('failed to get pool capabilities', first_error_pair[1].failure()))
 
-    return Ok([(pool, r.unwrap()) for pool, r in oks])
+    return _Ok([(pool, r.unwrap()) for pool, r in oks])
 
 
 def collect_pool_can_acquire(
@@ -456,8 +460,8 @@ def policy_supports_architecture(
 
     r_capabilities = collect_pool_capabilities(pools)
 
-    if r_capabilities.is_error:
-        return Error(r_capabilities.unwrap_error())
+    if not is_successful(r_capabilities):
+        return Error(r_capabilities.failure())
 
     pool_capabilities = r_capabilities.unwrap()
 
@@ -487,8 +491,8 @@ def policy_supports_snapshots(
 
     r_capabilities = collect_pool_capabilities(pools)
 
-    if r_capabilities.is_error:
-        return Error(r_capabilities.unwrap_error())
+    if not is_successful(r_capabilities):
+        return Error(r_capabilities.failure())
 
     pool_capabilities = r_capabilities.unwrap()
 
@@ -518,8 +522,8 @@ def policy_supports_guest_logs(
 
     r_capabilities = collect_pool_capabilities(pools)
 
-    if r_capabilities.is_error:
-        return Error(r_capabilities.unwrap_error())
+    if not is_successful(r_capabilities):
+        return Error(r_capabilities.failure())
 
     pool_capabilities = r_capabilities.unwrap()
 
@@ -547,8 +551,8 @@ def _prefer_spot_or_dedicated_instances(
 
     r_capabilities = collect_pool_capabilities(pools)
 
-    if r_capabilities.is_error:
-        return Error(r_capabilities.unwrap_error())
+    if not is_successful(r_capabilities):
+        return Error(r_capabilities.failure())
 
     preferred_pools = [
         pool
@@ -611,8 +615,8 @@ def policy_use_spot_instances(
 
     r_capabilities = collect_pool_capabilities(pools)
 
-    if r_capabilities.is_error:
-        return Error(r_capabilities.unwrap_error())
+    if not is_successful(r_capabilities):
+        return Error(r_capabilities.failure())
 
     artemis_use_spot = gluetool.utils.normalize_bool_option(
         guest_request.user_data.get(KNOB_USE_SPOT_LABEL.value, 'false') or 'false'

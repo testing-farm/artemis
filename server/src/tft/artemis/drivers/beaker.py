@@ -20,6 +20,7 @@ from gluetool.log import ContextAdapter, log_blob, log_table, log_xml
 from gluetool.result import Error, Ok, Result
 from gluetool.utils import ProcessOutput
 from returns.pipeline import is_successful
+from returns.result import Result as _Result, Success as _Ok
 from tmt.hardware import Operator
 from typing_extensions import TypedDict
 
@@ -1199,7 +1200,7 @@ class BeakerDriver(PoolDriver):
 
         self.avoid_groups_hostnames_cache_key = self.POOL_AVOID_GROUPS_HOSTNAMES_CACHE_KEY.format(self.poolname)  # noqa: FS002,E501
 
-    def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
+    def adjust_capabilities(self, capabilities: PoolCapabilities) -> _Result[PoolCapabilities, Failure]:
         capabilities.supports_hostnames = True
         capabilities.supports_native_kickstart = True
         capabilities.supported_guest_logs = [
@@ -1208,7 +1209,7 @@ class BeakerDriver(PoolDriver):
             ('sys.log:dump', GuestLogContentType.URL),
         ]
 
-        return Ok(capabilities)
+        return _Ok(capabilities)
 
     @property
     def avoid_groups(self) -> Result[list[str], Failure]:

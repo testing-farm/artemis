@@ -12,6 +12,7 @@ import requests
 import requests.exceptions
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
+from returns.result import Result as _Result, Success as _Ok
 
 from .. import Failure
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
@@ -58,7 +59,7 @@ class RestDriver(PoolDriver):
         super().__init__(logger, poolname, pool_config)
         self.url = self.pool_config['url']
 
-    def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
+    def adjust_capabilities(self, capabilities: PoolCapabilities) -> _Result[PoolCapabilities, Failure]:
         capabilities.supported_guest_logs = [
             ('console:dump', GuestLogContentType.BLOB),
             ('flasher-debug:dump', GuestLogContentType.URL),
@@ -67,7 +68,7 @@ class RestDriver(PoolDriver):
             ('flasher-event:dump', GuestLogContentType.BLOB),
         ]
 
-        return Ok(capabilities)
+        return _Ok(capabilities)
 
     def _get_headers(self, guestname: Optional[str] = None) -> dict[str, str]:
         """
