@@ -15,7 +15,7 @@ from alembic import op
 from sqlalchemy_utils import EncryptedType
 from sqlalchemy_utils.types.encrypted.encrypted_type import AesEngine
 
-from tft.artemis.knobs import get_vault_password
+from tft_artemis.knobs import get_vault_password
 
 # revision identifiers, used by Alembic.
 revision = '5b43d515411a'

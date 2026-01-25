@@ -11,7 +11,7 @@ Welcome to Artemis CLI code documentation!
    :maxdepth: 2
    :caption: Contents:
 
-   tft.artemis_cli
+   tft_artemis_cli
 
 
 Indices and tables

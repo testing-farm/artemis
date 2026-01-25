@@ -8,15 +8,15 @@ import gluetool.glue
 import gluetool.log
 from gluetool.result import Error
 
-from tft.artemis.drivers import ImageInfoMapperResultType
-from tft.artemis.drivers.aws import (
+from tft_artemis.drivers import ImageInfoMapperResultType
+from tft_artemis.drivers.aws import (
     KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH,
     KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE,
     AWSDriver,
     AWSPoolImageInfo,
 )
-from tft.artemis.drivers.hooks import map_environment_to_image_info
-from tft.artemis.environment import Environment
+from tft_artemis.drivers.hooks import map_environment_to_image_info
+from tft_artemis.environment import Environment
 
 
 def hook_AWS_ENVIRONMENT_TO_IMAGE(  # noqa: N802

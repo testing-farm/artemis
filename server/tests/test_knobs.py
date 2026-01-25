@@ -3,20 +3,20 @@
 
 import pytest
 
-import tft.artemis
-import tft.artemis.knobs
+import tft_artemis
+import tft_artemis.knobs
 
 
 def test_knob_missing_sources() -> None:
-    with pytest.raises(tft.artemis.knobs.KnobError) as excinfo:
-        _: tft.artemis.knobs.Knob[str] = tft.artemis.knobs.Knob('foo', 'dummy knob', has_db=False)
+    with pytest.raises(tft_artemis.knobs.KnobError) as excinfo:
+        _: tft_artemis.knobs.Knob[str] = tft_artemis.knobs.Knob('foo', 'dummy knob', has_db=False)
 
     assert excinfo.value.args[0] == 'Badly configured knob: no source specified - no DB, envvar or default value.'  # noqa: E501
 
 
 def test_knob_missing_default() -> None:
-    with pytest.raises(tft.artemis.knobs.KnobError) as excinfo:
-        _: tft.artemis.knobs.Knob[str] = tft.artemis.knobs.Knob(
+    with pytest.raises(tft_artemis.knobs.KnobError) as excinfo:
+        _: tft_artemis.knobs.Knob[str] = tft_artemis.knobs.Knob(
             'foo', 'dummy knob', has_db=False, envvar='DUMMY_ENVVAR', cast_from_str=str
         )
 
@@ -27,12 +27,12 @@ def test_knob_missing_default() -> None:
 
 
 def test_knob_missing_cast() -> None:
-    with pytest.raises(tft.artemis.knobs.KnobError) as excinfo:
-        tft.artemis.knobs.Knob('foo', 'dummy knob', has_db=True)
+    with pytest.raises(tft_artemis.knobs.KnobError) as excinfo:
+        tft_artemis.knobs.Knob('foo', 'dummy knob', has_db=True)
 
     assert excinfo.value.args[0] == 'Badly configured knob: has_db requested but no cast_from_str.'
 
-    with pytest.raises(tft.artemis.knobs.KnobError) as excinfo:
-        tft.artemis.knobs.Knob('foo', 'dummy knob', has_db=False, envvar='DUMMY_ENVVAR')
+    with pytest.raises(tft_artemis.knobs.KnobError) as excinfo:
+        tft_artemis.knobs.Knob('foo', 'dummy knob', has_db=False, envvar='DUMMY_ENVVAR')
 
     assert excinfo.value.args[0] == 'Badly configured knob: envvar requested but no cast_from_str.'

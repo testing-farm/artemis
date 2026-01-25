@@ -11,7 +11,7 @@ from typing import Optional, TypedDict, cast
 import gluetool.log
 from gluetool.result import Error, Ok, Result
 
-from tft.artemis.drivers import (
+from tft_artemis.drivers import (
     CLISessionPermanentDir,
     FlavorBasedPoolDriver,
     PoolData,

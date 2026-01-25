@@ -12,7 +12,7 @@ Create Date: 2021-07-28 16:04:51.125613
 
 from alembic import op
 
-from tft.artemis.db import convert_column_json_to_str, convert_column_str_to_json
+from tft_artemis.db import convert_column_json_to_str, convert_column_str_to_json
 
 # revision identifiers, used by Alembic.
 revision = '5529d49203b8'

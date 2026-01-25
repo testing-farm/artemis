@@ -13,15 +13,15 @@ but you probably won't need to touch :py:func:`hook_ROUTE` - it's pretty generic
 import gluetool.log
 import sqlalchemy
 
-import tft.artemis.drivers.aws
-import tft.artemis.drivers.azure
-import tft.artemis.drivers.gcp
-import tft.artemis.drivers.ibmcloud.power
-import tft.artemis.drivers.ibmcloud.vpc
-import tft.artemis.drivers.openstack
-from tft.artemis.db import GuestRequest
-from tft.artemis.drivers import PoolDriver
-from tft.artemis.routing_policies import (
+import tft_artemis.drivers.aws
+import tft_artemis.drivers.azure
+import tft_artemis.drivers.gcp
+import tft_artemis.drivers.ibmcloud.power
+import tft_artemis.drivers.ibmcloud.vpc
+import tft_artemis.drivers.openstack
+from tft_artemis.db import GuestRequest
+from tft_artemis.drivers import PoolDriver
+from tft_artemis.routing_policies import (
     PolicyReturnType,
     create_preferrence_filter_by_driver_class,
     policy_can_acquire,
@@ -44,25 +44,25 @@ from tft.artemis.routing_policies import (
 #: If there are OpenStack pools still in the mix, then prefer these pools over the rest. If there are no OpenStack
 #: pools allowed anymore, return the original list: *prefer*, not *use only*.
 policy_prefer_openstack = create_preferrence_filter_by_driver_class(
-    'prefer-openstack', tft.artemis.drivers.openstack.OpenStackDriver
+    'prefer-openstack', tft_artemis.drivers.openstack.OpenStackDriver
 )
 
 
 #: If there are AWS pools still in the mix, then prefer these pools over the rest. If there are no AWS
 #: pools allowed anymore, return the original list: *prefer*, not *use only*.
-policy_prefer_aws = create_preferrence_filter_by_driver_class('prefer-aws', tft.artemis.drivers.aws.AWSDriver)
+policy_prefer_aws = create_preferrence_filter_by_driver_class('prefer-aws', tft_artemis.drivers.aws.AWSDriver)
 
 
 #: If there are cloud-backed pools still in the mix, then prefer these pools over more expensive pools (like Beaker).
 #: If there are no cloud-backed pools available anymore, return the original list: *prefer*, not *use only*.
 policy_prefer_clouds = create_preferrence_filter_by_driver_class(
     'prefer-clouds',
-    tft.artemis.drivers.aws.AWSDriver,
-    tft.artemis.drivers.azure.AzureDriver,
-    tft.artemis.drivers.gcp.GCPDriver,
-    tft.artemis.drivers.ibmcloud.power.IBMCloudPowerDriver,
-    tft.artemis.drivers.ibmcloud.vpc.IBMCloudVPCDriver,
-    tft.artemis.drivers.openstack.OpenStackDriver,
+    tft_artemis.drivers.aws.AWSDriver,
+    tft_artemis.drivers.azure.AzureDriver,
+    tft_artemis.drivers.gcp.GCPDriver,
+    tft_artemis.drivers.ibmcloud.power.IBMCloudPowerDriver,
+    tft_artemis.drivers.ibmcloud.vpc.IBMCloudVPCDriver,
+    tft_artemis.drivers.openstack.OpenStackDriver,
 )
 
 

@@ -661,7 +661,7 @@ class TaskRequest(Base):
     """
     A request to run a task by dispatcher.
 
-    Dispatching a task immediately, e.g. with :py:func:`tft.artemis.tasks.dispatch_task`, might be easier
+    Dispatching a task immediately, e.g. with :py:func:`tft_artemis.tasks.dispatch_task`, might be easier
     but also prone to condition known as "dual write": when task is a follow-up of a DB change, it's impossible
     to guarantee that either both (the DB change and message dispatch) or none of those are performed, with DB
     or broker transactions only.

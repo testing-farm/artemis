@@ -4,16 +4,16 @@
 from typing import Any, Optional
 from unittest.mock import MagicMock
 
-import tft.artemis.guest
-import tft.artemis.tasks
-from tft.artemis.tasks import DoerType, TaskLogger
+import tft_artemis.guest
+import tft_artemis.tasks
+from tft_artemis.tasks import DoerType, TaskLogger
 
 
 def assert_task_core_call(
     task_core: MagicMock, taskname: str, doer: DoerType, *doer_args: Any, test_guest_logger: Optional[str] = None
 ) -> None:
     """
-    Test properties of a mock representing :py:func:`tft.artemis.task.task_core`.
+    Test properties of a mock representing :py:func:`tft_artemis.task.task_core`.
 
     The helper verifies several properties of the mock, assuming it has been used to dispatch a task doer.
     """
@@ -38,6 +38,6 @@ def assert_task_core_call(
     # Some tasks go even beyond task logger by creating a guest logger. If we were given a task name,
     # let's verify guest logger has been created correctly.
     if test_guest_logger:
-        assert isinstance(kwargs['logger']._logger, tft.artemis.tasks.MessageLogger)
-        assert isinstance(kwargs['logger']._logger._logger, tft.artemis.guest.GuestLogger)
+        assert isinstance(kwargs['logger']._logger, tft_artemis.tasks.MessageLogger)
+        assert isinstance(kwargs['logger']._logger._logger, tft_artemis.guest.GuestLogger)
         assert kwargs['logger']._logger._logger.guestname == test_guest_logger

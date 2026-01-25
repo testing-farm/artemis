@@ -12,8 +12,8 @@ import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 from tmt.hardware import UNITS
 
-from tft.artemis.drivers import PoolDriver, PoolImageInfo, PoolImageInfoT
-from tft.artemis.drivers.ibmcloud import (
+from tft_artemis.drivers import PoolDriver, PoolImageInfo, PoolImageInfoT
+from tft_artemis.drivers.ibmcloud import (
     IBMCloudDriver,
     IBMCloudFlavor,
     IBMCloudPoolData,

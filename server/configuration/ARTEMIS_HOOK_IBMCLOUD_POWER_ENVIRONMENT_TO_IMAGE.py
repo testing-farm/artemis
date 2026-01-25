@@ -7,14 +7,14 @@ import gluetool.glue
 import gluetool.log
 from gluetool.result import Error
 
-from tft.artemis.drivers import ImageInfoMapperResultType, PoolImageInfo
-from tft.artemis.drivers.hooks import map_environment_to_image_info
-from tft.artemis.drivers.ibmcloud.power import (
+from tft_artemis.drivers import ImageInfoMapperResultType, PoolImageInfo
+from tft_artemis.drivers.hooks import map_environment_to_image_info
+from tft_artemis.drivers.ibmcloud.power import (
     KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH,
     KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE,
     IBMCloudPowerDriver,
 )
-from tft.artemis.environment import Environment
+from tft_artemis.environment import Environment
 
 
 def hook_IBMCLOUD_POWER_ENVIRONMENT_TO_IMAGE(  # noqa: N802

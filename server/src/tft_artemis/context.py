@@ -75,7 +75,7 @@ def with_context(fn: Callable[..., T]) -> Callable[..., T]:
     To declare the will to accept a particular variable, declare it as a keyword parameter with a given name and type:
 
     * ``logger`` :py:class:`gluetool.logger.ContextAdapter` - :py:data:`LOGGER`
-    * ``db`` :py:class:`tft.artemis.db.DB` - :py:data:`DATABASE`
+    * ``db`` :py:class:`tft_artemis.db.DB` - :py:data:`DATABASE`
     * ``session`` :py:class:`sqlalchemy.orm.session.Session` - :py:data:`SESSION`
     * ``cache`` :py:class:`redis.Redis` - :py:data:`CACHE`
 

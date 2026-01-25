@@ -8,5 +8,3 @@ Subpackages
 
 .. toctree::
    :maxdepth: 4
-
-   tft.artemis

@@ -96,7 +96,7 @@ def map_environment_to_imagename_by_pattern_map(
         is passed to template when rendering.
     :param mapping_filename: if set, pattern mapping file of this name is searched in Artemis' configuration directory.
     :param mapping_filepath: if set, this pattern mapping file is searched.
-    :returns: either a image name, or :py:class:`tft.artemis.Failure` if the mapping was unsuccessfull.
+    :returns: either a image name, or :py:class:`tft_artemis.Failure` if the mapping was unsuccessfull.
     """
 
     if mapping_filepath:
@@ -161,7 +161,7 @@ def map_environment_to_image_info(
         is passed to template when rendering.
     :param mapping_filename: if set, pattern mapping file of this name is searched in Artemis' configuration directory.
     :param mapping_filepath: if set, this pattern mapping file is searched.
-    :returns: either cloud-specific image information, or :py:class:`tft.artemis.Failure` if the mapping was
+    :returns: either cloud-specific image information, or :py:class:`tft_artemis.Failure` if the mapping was
         unsuccessfull.
     """
 

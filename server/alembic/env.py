@@ -8,7 +8,7 @@ from typing import Any
 
 from alembic import context
 
-from tft.artemis import db, get_db, get_logger
+from tft_artemis import db, get_db, get_logger
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

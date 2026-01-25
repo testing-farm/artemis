@@ -96,7 +96,7 @@ def cmd_root(
         cmd += tasks
 
     else:
-        logger.info('running all tasks from tft.artemis.tasks package')
+        logger.info('running all tasks from tft_artemis.tasks package')
 
         cmd += list(find_task_modules())
 

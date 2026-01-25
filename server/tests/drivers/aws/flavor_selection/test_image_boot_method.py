@@ -9,9 +9,9 @@ import pytest
 import sqlalchemy.orm.session
 from gluetool.result import Ok
 
-from tft.artemis.db import GuestRequest
-from tft.artemis.drivers.aws import AWSDriver, AWSFlavor, AWSPoolImageInfo
-from tft.artemis.environment import FlavorBootMethodType, constraints_from_environment_requirements
+from tft_artemis.db import GuestRequest
+from tft_artemis.drivers.aws import AWSDriver, AWSFlavor, AWSPoolImageInfo
+from tft_artemis.environment import FlavorBootMethodType, constraints_from_environment_requirements
 
 
 def test_irrelevant_hw_constraints(

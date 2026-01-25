@@ -11,10 +11,10 @@ from gluetool.log import ContextAdapter
 from gluetool.result import Result
 from tmt.hardware import UNITS, Operator
 
-import tft.artemis
-import tft.artemis.drivers.beaker
-import tft.artemis.environment
-from tft.artemis.environment import (
+import tft_artemis
+import tft_artemis.drivers.beaker
+import tft_artemis.environment
+from tft_artemis.environment import (
     Constraint,
     ConstraintBase,
     Environment,
@@ -29,8 +29,8 @@ from tft.artemis.environment import (
 
 
 @pytest.fixture(name='schema_v0_0_19')
-def fixture_schema_v0_0_19() -> tft.artemis.JSONSchemaType:
-    r_schema = tft.artemis.load_packaged_validation_schema('environment-v0.0.19.yml')
+def fixture_schema_v0_0_19() -> tft_artemis.JSONSchemaType:
+    r_schema = tft_artemis.load_packaged_validation_schema('environment-v0.0.19.yml')
 
     assert r_schema.is_ok
 
@@ -38,8 +38,8 @@ def fixture_schema_v0_0_19() -> tft.artemis.JSONSchemaType:
 
 
 @pytest.fixture(name='kickstart_schema')
-def fixture_kickstart_schema() -> tft.artemis.JSONSchemaType:
-    r_schema = tft.artemis.load_packaged_validation_schema('environment-v0.0.53.yml')
+def fixture_kickstart_schema() -> tft_artemis.JSONSchemaType:
+    r_schema = tft_artemis.load_packaged_validation_schema('environment-v0.0.53.yml')
 
     assert r_schema.is_ok
 
@@ -47,12 +47,12 @@ def fixture_kickstart_schema() -> tft.artemis.JSONSchemaType:
 
 
 def parse_hw(text: str) -> ConstraintBase:
-    r_constraint = tft.artemis.environment.constraints_from_environment_requirements(
+    r_constraint = tft_artemis.environment.constraints_from_environment_requirements(
         gluetool.utils.from_yaml(textwrap.dedent(text))
     )
 
     if r_constraint.is_error:
-        r_constraint.unwrap_error().handle(tft.artemis.get_logger())
+        r_constraint.unwrap_error().handle(tft_artemis.get_logger())
 
     assert r_constraint.is_ok
 
@@ -67,16 +67,16 @@ def parse_spec(text: str) -> Any:
 def fixture_dummy_guest_request(name: str = 'dummy_guest_request') -> MagicMock:
     return MagicMock(
         name=name,
-        environment=tft.artemis.environment.Environment(
-            hw=tft.artemis.environment.HWRequirements(arch='x86_64'),
-            os=tft.artemis.environment.OsRequirements(compose='dummy-compose'),
-            kickstart=tft.artemis.environment.Kickstart(),
+        environment=tft_artemis.environment.Environment(
+            hw=tft_artemis.environment.HWRequirements(arch='x86_64'),
+            os=tft_artemis.environment.OsRequirements(compose='dummy-compose'),
+            kickstart=tft_artemis.environment.Kickstart(),
         ),
     )
 
 
 @pytest.fixture(name='pool')
-def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDriver:
+def fixture_pool(logger: ContextAdapter) -> tft_artemis.drivers.beaker.BeakerDriver:
     pool_config = """
     ---
 
@@ -105,14 +105,14 @@ def fixture_pool(logger: ContextAdapter) -> tft.artemis.drivers.beaker.BeakerDri
                 <key_value key="NETBOOT_METHOD" op="!=" value="efigrub"/>
     """
 
-    return tft.artemis.drivers.beaker.BeakerDriver(logger, 'beaker', parse_spec(pool_config))
+    return tft_artemis.drivers.beaker.BeakerDriver(logger, 'beaker', parse_spec(pool_config))
 
 
 def _eval_flavor(
     logger: ContextAdapter, constraint: ConstraintBase, flavor: Flavor
-) -> Result[bool, tft.artemis.Failure]:
-    tft.artemis.log_dict_yaml(logger.debug, 'constraint', constraint.serialize())
-    tft.artemis.log_dict_yaml(logger.debug, 'flavor', flavor.serialize())
+) -> Result[bool, tft_artemis.Failure]:
+    tft_artemis.log_dict_yaml(logger.debug, 'constraint', constraint.serialize())
+    tft_artemis.log_dict_yaml(logger.debug, 'flavor', flavor.serialize())
 
     return constraint.eval_flavor(logger, flavor)
 
@@ -138,7 +138,7 @@ def test_example_simple(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor', memory=UNITS('8 GiB')),
+            tft_artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor', memory=UNITS('8 GiB')),
         )
         is True
     )
@@ -147,7 +147,7 @@ def test_example_simple(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor', memory=UNITS('9 GiB')),
+            tft_artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor', memory=UNITS('9 GiB')),
         )
         is False
     )
@@ -169,10 +169,10 @@ def test_example_cpu(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor',
                 id='dummy-flavor',
-                cpu=tft.artemis.environment.FlavorCpu(processors=2, cores=16, model=37),
+                cpu=tft_artemis.environment.FlavorCpu(processors=2, cores=16, model=37),
             ),
         )
         is True
@@ -193,10 +193,10 @@ def test_example_disk(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor',
                 id='dummy-flavor',
-                disk=tft.artemis.environment.FlavorDisks([tft.artemis.environment.FlavorDisk(size=UNITS('500 GiB'))]),
+                disk=tft_artemis.environment.FlavorDisks([tft_artemis.environment.FlavorDisk(size=UNITS('500 GiB'))]),
             ),
         )
         is True
@@ -206,10 +206,10 @@ def test_example_disk(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor',
                 id='dummy-flavor',
-                disk=tft.artemis.environment.FlavorDisks([tft.artemis.environment.FlavorDisk(size=UNITS('600 GiB'))]),
+                disk=tft_artemis.environment.FlavorDisks([tft_artemis.environment.FlavorDisk(size=UNITS('600 GiB'))]),
             ),
         )
         is False
@@ -231,13 +231,13 @@ def test_example_multiple_disks(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor',
                 id='dummy-flavor',
-                disk=tft.artemis.environment.FlavorDisks(
+                disk=tft_artemis.environment.FlavorDisks(
                     [
-                        tft.artemis.environment.FlavorDisk(size=UNITS('40 GiB')),
-                        tft.artemis.environment.FlavorDisk(size=UNITS('1 TiB')),
+                        tft_artemis.environment.FlavorDisk(size=UNITS('40 GiB')),
+                        tft_artemis.environment.FlavorDisk(size=UNITS('1 TiB')),
                     ]
                 ),
             ),
@@ -249,13 +249,13 @@ def test_example_multiple_disks(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor',
                 id='dummy-flavor',
-                disk=tft.artemis.environment.FlavorDisks(
+                disk=tft_artemis.environment.FlavorDisks(
                     [
-                        tft.artemis.environment.FlavorDisk(size=UNITS('20 GiB')),
-                        tft.artemis.environment.FlavorDisk(size=UNITS('1 TiB')),
+                        tft_artemis.environment.FlavorDisk(size=UNITS('20 GiB')),
+                        tft_artemis.environment.FlavorDisk(size=UNITS('1 TiB')),
                     ]
                 ),
             ),
@@ -267,13 +267,13 @@ def test_example_multiple_disks(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor',
                 id='dummy-flavor',
-                disk=tft.artemis.environment.FlavorDisks(
+                disk=tft_artemis.environment.FlavorDisks(
                     [
-                        tft.artemis.environment.FlavorDisk(size=UNITS('40 GiB')),
-                        tft.artemis.environment.FlavorDisk(size=UNITS('500 GiB')),
+                        tft_artemis.environment.FlavorDisk(size=UNITS('40 GiB')),
+                        tft_artemis.environment.FlavorDisk(size=UNITS('500 GiB')),
                     ]
                 ),
             ),
@@ -296,10 +296,10 @@ def test_example_disk_oldstyle_space(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor',
                 id='dummy-flavor',
-                disk=tft.artemis.environment.FlavorDisks([tft.artemis.environment.FlavorDisk(size=UNITS('500 GiB'))]),
+                disk=tft_artemis.environment.FlavorDisks([tft_artemis.environment.FlavorDisk(size=UNITS('500 GiB'))]),
             ),
         )
         is True
@@ -309,10 +309,10 @@ def test_example_disk_oldstyle_space(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor',
                 id='dummy-flavor',
-                disk=tft.artemis.environment.FlavorDisks([tft.artemis.environment.FlavorDisk(size=UNITS('600 GiB'))]),
+                disk=tft_artemis.environment.FlavorDisks([tft_artemis.environment.FlavorDisk(size=UNITS('600 GiB'))]),
             ),
         )
         is False
@@ -336,13 +336,13 @@ def test_example_disks_expansion(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor',
                 id='dummy-flavor',
-                disk=tft.artemis.environment.FlavorDisks(
+                disk=tft_artemis.environment.FlavorDisks(
                     [
-                        tft.artemis.environment.FlavorDisk(size=UNITS('40 GiB')),
-                        tft.artemis.environment.FlavorDisk(
+                        tft_artemis.environment.FlavorDisk(size=UNITS('40 GiB')),
+                        tft_artemis.environment.FlavorDisk(
                             is_expansion=True, max_additional_items=5, min_size=UNITS('10 GiB'), max_size=UNITS('2 TiB')
                         ),
                     ]
@@ -356,13 +356,13 @@ def test_example_disks_expansion(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor',
                 id='dummy-flavor',
-                disk=tft.artemis.environment.FlavorDisks(
+                disk=tft_artemis.environment.FlavorDisks(
                     [
-                        tft.artemis.environment.FlavorDisk(size=UNITS('40 GiB')),
-                        tft.artemis.environment.FlavorDisk(
+                        tft_artemis.environment.FlavorDisk(size=UNITS('40 GiB')),
+                        tft_artemis.environment.FlavorDisk(
                             is_expansion=True, max_additional_items=1, min_size=UNITS('10 GiB'), max_size=UNITS('2 TiB')
                         ),
                     ]
@@ -376,13 +376,13 @@ def test_example_disks_expansion(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor',
                 id='dummy-flavor',
-                disk=tft.artemis.environment.FlavorDisks(
+                disk=tft_artemis.environment.FlavorDisks(
                     [
-                        tft.artemis.environment.FlavorDisk(size=UNITS('20 GiB')),
-                        tft.artemis.environment.FlavorDisk(size=UNITS('1 TiB')),
+                        tft_artemis.environment.FlavorDisk(size=UNITS('20 GiB')),
+                        tft_artemis.environment.FlavorDisk(size=UNITS('1 TiB')),
                     ]
                 ),
             ),
@@ -394,13 +394,13 @@ def test_example_disks_expansion(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor',
                 id='dummy-flavor',
-                disk=tft.artemis.environment.FlavorDisks(
+                disk=tft_artemis.environment.FlavorDisks(
                     [
-                        tft.artemis.environment.FlavorDisk(size=UNITS('40 GiB')),
-                        tft.artemis.environment.FlavorDisk(size=UNITS('500 GiB')),
+                        tft_artemis.environment.FlavorDisk(size=UNITS('40 GiB')),
+                        tft_artemis.environment.FlavorDisk(size=UNITS('500 GiB')),
                     ]
                 ),
             ),
@@ -423,7 +423,7 @@ def test_example_network(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor',
                 id='dummy-flavor',
                 network=FlavorNetworks([FlavorNetwork(type='eth'), FlavorNetwork(type='wifi')]),
@@ -436,7 +436,7 @@ def test_example_network(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor',
                 id='dummy-flavor',
                 network=FlavorNetworks([FlavorNetwork(type='wifi'), FlavorNetwork(type='eth')]),
@@ -449,7 +449,7 @@ def test_example_network(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor', id='dummy-flavor', network=FlavorNetworks([FlavorNetwork(type='eth')])
             ),
         )
@@ -460,7 +460,7 @@ def test_example_network(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor', id='dummy-flavor', network=FlavorNetworks([FlavorNetwork(type='wifi')])
             ),
         )
@@ -483,7 +483,7 @@ def test_example_multiple_networks(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor',
                 id='dummy-flavor',
                 network=FlavorNetworks([FlavorNetwork(type='eth'), FlavorNetwork(type='wifi')]),
@@ -496,7 +496,7 @@ def test_example_multiple_networks(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor',
                 id='dummy-flavor',
                 network=FlavorNetworks([FlavorNetwork(type='wifi'), FlavorNetwork(type='eth')]),
@@ -509,7 +509,7 @@ def test_example_multiple_networks(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor',
                 id='dummy-flavor',
                 network=FlavorNetworks([FlavorNetwork(type='eth'), FlavorNetwork(type='eth')]),
@@ -522,7 +522,7 @@ def test_example_multiple_networks(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor', id='dummy-flavor', network=FlavorNetworks([FlavorNetwork(type='eth')])
             ),
         )
@@ -544,7 +544,7 @@ def test_example_boot(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor', boot=FlavorBoot(method=['bios'])),
+            tft_artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor', boot=FlavorBoot(method=['bios'])),
         )
         is True
     )
@@ -553,7 +553,7 @@ def test_example_boot(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor', boot=FlavorBoot(method=['uefi'])),
+            tft_artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor', boot=FlavorBoot(method=['uefi'])),
         )
         is False
     )
@@ -562,7 +562,7 @@ def test_example_boot(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor', boot=FlavorBoot()),
+            tft_artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor', boot=FlavorBoot()),
         )
         is False
     )
@@ -571,7 +571,7 @@ def test_example_boot(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor', id='dummy-flavor', boot=FlavorBoot(method=['bios', 'uefi'])
             ),
         )
@@ -593,7 +593,7 @@ def test_example_boot_not(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor', boot=FlavorBoot(method=['bios'])),
+            tft_artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor', boot=FlavorBoot(method=['bios'])),
         )
         is False
     )
@@ -602,7 +602,7 @@ def test_example_boot_not(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor', boot=FlavorBoot(method=['uefi'])),
+            tft_artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor', boot=FlavorBoot(method=['uefi'])),
         )
         is True
     )
@@ -611,7 +611,7 @@ def test_example_boot_not(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor', boot=FlavorBoot()),
+            tft_artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor', boot=FlavorBoot()),
         )
         is True
     )
@@ -620,7 +620,7 @@ def test_example_boot_not(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor', id='dummy-flavor', boot=FlavorBoot(method=['bios', 'uefi'])
             ),
         )
@@ -644,7 +644,7 @@ def test_example_compatible(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor', id='dummy-flavor', compatible=FlavorCompatible(distro=['rhel-8', 'rhel-9'])
             ),
         )
@@ -655,7 +655,7 @@ def test_example_compatible(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor', id='dummy-flavor', compatible=FlavorCompatible(distro=['rhel-9'])
             ),
         )
@@ -666,7 +666,7 @@ def test_example_compatible(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor', id='dummy-flavor', compatible=FlavorCompatible(distro=[])
             ),
         )
@@ -677,7 +677,7 @@ def test_example_compatible(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor', id='dummy-flavor', compatible=FlavorCompatible(distro=['rhel-9', 'rhel-8'])
             ),
         )
@@ -700,7 +700,7 @@ def test_example_compatible_oneline(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor', id='dummy-flavor', compatible=FlavorCompatible(distro=['rhel-9'])
             ),
         )
@@ -722,7 +722,7 @@ def test_example_virtualization_is_virtualized(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor', id='dummy-flavor', virtualization=FlavorVirtualization(is_virtualized=True)
             ),
         )
@@ -733,7 +733,7 @@ def test_example_virtualization_is_virtualized(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor', id='dummy-flavor', virtualization=FlavorVirtualization(is_virtualized=False)
             ),
         )
@@ -744,7 +744,7 @@ def test_example_virtualization_is_virtualized(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor', id='dummy-flavor', virtualization=FlavorVirtualization()
             ),
         )
@@ -766,7 +766,7 @@ def test_example_virtualization_is_supported(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor', id='dummy-flavor', virtualization=FlavorVirtualization(is_supported=True)
             ),
         )
@@ -777,7 +777,7 @@ def test_example_virtualization_is_supported(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor', id='dummy-flavor', virtualization=FlavorVirtualization(is_supported=False)
             ),
         )
@@ -788,7 +788,7 @@ def test_example_virtualization_is_supported(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor', id='dummy-flavor', virtualization=FlavorVirtualization()
             ),
         )
@@ -810,7 +810,7 @@ def test_example_virtualization_hypervisor(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor', id='dummy-flavor', virtualization=FlavorVirtualization(hypervisor='xen')
             ),
         )
@@ -821,7 +821,7 @@ def test_example_virtualization_hypervisor(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor', id='dummy-flavor', virtualization=FlavorVirtualization(hypervisor='kvm')
             ),
         )
@@ -832,7 +832,7 @@ def test_example_virtualization_hypervisor(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor', id='dummy-flavor', virtualization=FlavorVirtualization()
             ),
         )
@@ -841,11 +841,11 @@ def test_example_virtualization_hypervisor(logger: ContextAdapter) -> None:
 
 
 def test_example_operators(logger: ContextAdapter) -> None:
-    flavor_big = tft.artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor', memory=UNITS('9 GiB'))
+    flavor_big = tft_artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor', memory=UNITS('9 GiB'))
 
-    flavor_right = tft.artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor', memory=UNITS('8 GiB'))
+    flavor_right = tft_artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor', memory=UNITS('8 GiB'))
 
-    flavor_small = tft.artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor', memory=UNITS('7 GiB'))
+    flavor_small = tft_artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor', memory=UNITS('7 GiB'))
 
     constraint = parse_hw(
         """
@@ -949,7 +949,7 @@ def test_example_units_conversion(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor', memory=UNITS('8 GiB')),
+            tft_artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor', memory=UNITS('8 GiB')),
         )
         is True
     )
@@ -969,8 +969,8 @@ def test_example_regex(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
-                name='dummy-flavor', id='dummy-flavor', cpu=tft.artemis.environment.FlavorCpu(model_name='someAMDmodel')
+            tft_artemis.environment.Flavor(
+                name='dummy-flavor', id='dummy-flavor', cpu=tft_artemis.environment.FlavorCpu(model_name='someAMDmodel')
             ),
         )
         is True
@@ -980,10 +980,10 @@ def test_example_regex(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor',
                 id='dummy-flavor',
-                cpu=tft.artemis.environment.FlavorCpu(model_name='someIntelmodel'),
+                cpu=tft_artemis.environment.FlavorCpu(model_name='someIntelmodel'),
             ),
         )
         is False
@@ -1012,8 +1012,8 @@ def test_example_logic(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
-                name='dummy-flavor', id='dummy-flavor', cpu=tft.artemis.environment.FlavorCpu(family=15, model=65)
+            tft_artemis.environment.Flavor(
+                name='dummy-flavor', id='dummy-flavor', cpu=tft_artemis.environment.FlavorCpu(family=15, model=65)
             ),
         )
         is True
@@ -1023,8 +1023,8 @@ def test_example_logic(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
-                name='dummy-flavor', id='dummy-flavor', cpu=tft.artemis.environment.FlavorCpu(family=15, model=67)
+            tft_artemis.environment.Flavor(
+                name='dummy-flavor', id='dummy-flavor', cpu=tft_artemis.environment.FlavorCpu(family=15, model=67)
             ),
         )
         is True
@@ -1034,8 +1034,8 @@ def test_example_logic(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
-                name='dummy-flavor', id='dummy-flavor', cpu=tft.artemis.environment.FlavorCpu(family=15, model=69)
+            tft_artemis.environment.Flavor(
+                name='dummy-flavor', id='dummy-flavor', cpu=tft_artemis.environment.FlavorCpu(family=15, model=69)
             ),
         )
         is True
@@ -1045,8 +1045,8 @@ def test_example_logic(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
-                name='dummy-flavor', id='dummy-flavor', cpu=tft.artemis.environment.FlavorCpu(family=15, model=70)
+            tft_artemis.environment.Flavor(
+                name='dummy-flavor', id='dummy-flavor', cpu=tft_artemis.environment.FlavorCpu(family=15, model=70)
             ),
         )
         is False
@@ -1056,8 +1056,8 @@ def test_example_logic(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
-                name='dummy-flavor', id='dummy-flavor', cpu=tft.artemis.environment.FlavorCpu(family=17, model=65)
+            tft_artemis.environment.Flavor(
+                name='dummy-flavor', id='dummy-flavor', cpu=tft_artemis.environment.FlavorCpu(family=17, model=65)
             ),
         )
         is False
@@ -1079,10 +1079,10 @@ def test_clueless_flavor(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor',
                 id='dummy-flavor',
-                cpu=tft.artemis.environment.FlavorCpu(family=79, model_name=None),
+                cpu=tft_artemis.environment.FlavorCpu(family=79, model_name=None),
             ),
         )
         is False
@@ -1158,8 +1158,8 @@ def test_cpu_flags(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
-                name='dummy-flavor', id='dummy-flavor', cpu=tft.artemis.environment.FlavorCpu(flag=[])
+            tft_artemis.environment.Flavor(
+                name='dummy-flavor', id='dummy-flavor', cpu=tft_artemis.environment.FlavorCpu(flag=[])
             ),
         )
         is False
@@ -1169,8 +1169,8 @@ def test_cpu_flags(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
-                name='dummy-flavor', id='dummy-flavor', cpu=tft.artemis.environment.FlavorCpu(flag=['avx', 'avx2'])
+            tft_artemis.environment.Flavor(
+                name='dummy-flavor', id='dummy-flavor', cpu=tft_artemis.environment.FlavorCpu(flag=['avx', 'avx2'])
             ),
         )
         is True
@@ -1180,17 +1180,17 @@ def test_cpu_flags(logger: ContextAdapter) -> None:
         eval_flavor(
             logger,
             constraint,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor',
                 id='dummy-flavor',
-                cpu=tft.artemis.environment.FlavorCpu(flag=['avx', 'avx2', 'smep']),
+                cpu=tft_artemis.environment.FlavorCpu(flag=['avx', 'avx2', 'smep']),
             ),
         )
         is False
     )
 
 
-def test_schema_no_constraints_v0_0_19(schema_v0_0_19: tft.artemis.JSONSchemaType, logger: ContextAdapter) -> None:
+def test_schema_no_constraints_v0_0_19(schema_v0_0_19: tft_artemis.JSONSchemaType, logger: ContextAdapter) -> None:
     spec = parse_spec(
         """
         ---
@@ -1203,7 +1203,7 @@ def test_schema_no_constraints_v0_0_19(schema_v0_0_19: tft.artemis.JSONSchemaTyp
         """
     )
 
-    r_validation = tft.artemis.validate_data(spec, schema_v0_0_19)
+    r_validation = tft_artemis.validate_data(spec, schema_v0_0_19)
 
     assert r_validation.is_ok
 
@@ -1212,7 +1212,7 @@ def test_schema_no_constraints_v0_0_19(schema_v0_0_19: tft.artemis.JSONSchemaTyp
     assert errors == []
 
 
-def test_schema_simple_v0_0_19(schema_v0_0_19: tft.artemis.JSONSchemaType, logger: ContextAdapter) -> None:
+def test_schema_simple_v0_0_19(schema_v0_0_19: tft_artemis.JSONSchemaType, logger: ContextAdapter) -> None:
     spec = parse_spec(
         """
         ---
@@ -1229,7 +1229,7 @@ def test_schema_simple_v0_0_19(schema_v0_0_19: tft.artemis.JSONSchemaType, logge
         """
     )
 
-    r_validation = tft.artemis.validate_data(spec, schema_v0_0_19)
+    r_validation = tft_artemis.validate_data(spec, schema_v0_0_19)
 
     assert r_validation.is_ok
 
@@ -1238,7 +1238,7 @@ def test_schema_simple_v0_0_19(schema_v0_0_19: tft.artemis.JSONSchemaType, logge
     assert errors == []
 
 
-def test_schema_logic_v0_0_19(schema_v0_0_19: tft.artemis.JSONSchemaType, logger: ContextAdapter) -> None:
+def test_schema_logic_v0_0_19(schema_v0_0_19: tft_artemis.JSONSchemaType, logger: ContextAdapter) -> None:
     spec = parse_spec(
         """
         ---
@@ -1263,7 +1263,7 @@ def test_schema_logic_v0_0_19(schema_v0_0_19: tft.artemis.JSONSchemaType, logger
         """
     )
 
-    r_validation = tft.artemis.validate_data(spec, schema_v0_0_19)
+    r_validation = tft_artemis.validate_data(spec, schema_v0_0_19)
 
     assert r_validation.is_ok
 
@@ -1437,7 +1437,7 @@ def test_parse_maximal_constraint() -> None:
 def test_beaker_preset(
     dummy_guest_request: MagicMock,
     logger: ContextAdapter,
-    pool: tft.artemis.drivers.beaker.BeakerDriver,
+    pool: tft_artemis.drivers.beaker.BeakerDriver,
     hw: str,
     expected: str,
 ) -> None:
@@ -1462,7 +1462,7 @@ def test_beaker_preset(
 
     assert r_constraints.is_ok
 
-    r_host_filter = tft.artemis.drivers.beaker.environment_to_beaker_filter(environment, dummy_guest_request, pool)
+    r_host_filter = tft_artemis.drivers.beaker.environment_to_beaker_filter(environment, dummy_guest_request, pool)
 
     if r_host_filter.is_error:
         r_host_filter.unwrap_error().handle(logger)
@@ -1494,8 +1494,8 @@ def test_beaker_preset(
                 - cpu:
                         model: 69
         """,
-            tft.artemis.environment.Flavor(
-                name='dummy-flavor', id='dummy-flavor', cpu=tft.artemis.environment.FlavorCpu(family=15, model=65)
+            tft_artemis.environment.Flavor(
+                name='dummy-flavor', id='dummy-flavor', cpu=tft_artemis.environment.FlavorCpu(family=15, model=65)
             ),
             [['cpu.model == 65', 'cpu.family == 15']],
         ),
@@ -1549,14 +1549,14 @@ def test_beaker_preset(
                     - cpu:
                         processors: ">= 3"
         """,
-            tft.artemis.environment.Flavor(
+            tft_artemis.environment.Flavor(
                 name='dummy-flavor',
                 id='dummy-flavor',
                 cpu=FlavorCpu(processors=8),
-                disk=tft.artemis.environment.FlavorDisks(
+                disk=tft_artemis.environment.FlavorDisks(
                     [
-                        tft.artemis.environment.FlavorDisk(size=UNITS('40 GiB')),
-                        tft.artemis.environment.FlavorDisk(size=UNITS('1 TiB')),
+                        tft_artemis.environment.FlavorDisk(size=UNITS('40 GiB')),
+                        tft_artemis.environment.FlavorDisk(size=UNITS('1 TiB')),
                     ]
                 ),
             ),
@@ -1588,8 +1588,8 @@ def test_beaker_preset(
             - device:
                 driver: ahci
         """,
-            tft.artemis.environment.Flavor(
-                name='dummy-flavor', id='dummy-flavor', device=tft.artemis.environment.FlavorDevice(driver='uhci')
+            tft_artemis.environment.Flavor(
+                name='dummy-flavor', id='dummy-flavor', device=tft_artemis.environment.FlavorDevice(driver='uhci')
             ),
             [['device.driver == uhci']],
         ),
@@ -1597,7 +1597,7 @@ def test_beaker_preset(
     ids=['SPANS1', 'SPANS2', 'SPANS3'],
 )
 def test_spans(
-    logger: ContextAdapter, hw: str, flavor: tft.artemis.environment.Flavor, expected_spans: list[list[str]]
+    logger: ContextAdapter, hw: str, flavor: tft_artemis.environment.Flavor, expected_spans: list[list[str]]
 ) -> None:
     constraint = parse_hw(hw)
 
@@ -1617,9 +1617,9 @@ def test_spans(
 
 
 def test_missing_flavor_attribute(logger: ContextAdapter) -> None:
-    constraint = tft.artemis.environment.Constraint.from_specification('foo', '> 1 GiB')
+    constraint = tft_artemis.environment.Constraint.from_specification('foo', '> 1 GiB')
 
-    flavor = tft.artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor')
+    flavor = tft_artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor')
 
     r = _eval_flavor(logger, constraint, flavor)
 
@@ -1629,14 +1629,14 @@ def test_missing_flavor_attribute(logger: ContextAdapter) -> None:
 
 
 def test_reducer_short_circuit_and(logger: ContextAdapter) -> None:
-    group = tft.artemis.environment.And(
+    group = tft_artemis.environment.And(
         [
-            tft.artemis.environment.Constraint.from_specification('cpu.processors', '> 1'),
-            tft.artemis.environment.Constraint.from_specification('foo', '> 1 GiB'),
+            tft_artemis.environment.Constraint.from_specification('cpu.processors', '> 1'),
+            tft_artemis.environment.Constraint.from_specification('foo', '> 1 GiB'),
         ]
     )
 
-    flavor = tft.artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor', cpu=FlavorCpu(processors=8))
+    flavor = tft_artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor', cpu=FlavorCpu(processors=8))
 
     r = _eval_flavor(logger, group, flavor)
 
@@ -1646,14 +1646,14 @@ def test_reducer_short_circuit_and(logger: ContextAdapter) -> None:
 
 
 def test_reducer_short_circuit_ok(logger: ContextAdapter) -> None:
-    group = tft.artemis.environment.Or(
+    group = tft_artemis.environment.Or(
         [
-            tft.artemis.environment.Constraint.from_specification('cpu.processors', '> 1'),
-            tft.artemis.environment.Constraint.from_specification('foo', '> 1 GiB'),
+            tft_artemis.environment.Constraint.from_specification('cpu.processors', '> 1'),
+            tft_artemis.environment.Constraint.from_specification('foo', '> 1 GiB'),
         ]
     )
 
-    flavor = tft.artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor', cpu=FlavorCpu(processors=8))
+    flavor = tft_artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor', cpu=FlavorCpu(processors=8))
 
     r = _eval_flavor(logger, group, flavor)
 
@@ -1670,9 +1670,9 @@ def test_reducer_short_circuit_ok(logger: ContextAdapter) -> None:
     ],
     ids=['arch', 'boot.method', 'disk[79].size'],
 )
-def test_expand_name(constraint_name: str, expected: tft.artemis.environment.ConstraintNameComponents) -> None:
+def test_expand_name(constraint_name: str, expected: tft_artemis.environment.ConstraintNameComponents) -> None:
     assert (
-        tft.artemis.environment.Constraint(
+        tft_artemis.environment.Constraint(
             name=constraint_name,
             # The following don't match expected type, but they are not used by any code we're going to run.
             operator=None,  # type: ignore[arg-type]
@@ -1784,7 +1784,7 @@ def test_operator_parsing(logger: ContextAdapter, raw_operator: str, operator: O
     assert constraint.value == UNITS('1 GiB')
 
 
-def test_kickstart_schema(kickstart_schema: tft.artemis.JSONSchemaType, logger: ContextAdapter) -> None:
+def test_kickstart_schema(kickstart_schema: tft_artemis.JSONSchemaType, logger: ContextAdapter) -> None:
     spec = parse_spec(
         """
         ---
@@ -1833,7 +1833,7 @@ def test_kickstart_schema(kickstart_schema: tft.artemis.JSONSchemaType, logger: 
         'spot_instance': None,
     }
 
-    r_validation = tft.artemis.validate_data(spec, kickstart_schema)
+    r_validation = tft_artemis.validate_data(spec, kickstart_schema)
 
     assert r_validation.is_ok
 

@@ -31,17 +31,17 @@ export ARTEMIS_HOOK_GCP_ENVIRONMENT_TO_IMAGE="${ARTEMIS_HOOK_GCP_ENVIRONMENT_TO_
 ARTEMIS_WORKER_OPTIONS="${ARTEMIS_WORKER_OPTIONS:-}"
 
 if [ "$SKIP_DB_INIT" = "" ]; then
-    poetry run alembic upgrade head || { echo "failed to upgrade DB Schema"; exit 1; }
-    poetry run artemis-db-init-content config-to-db || { echo "failed to initialize DB content"; exit 1; }
+    uv run alembic upgrade head || { echo "failed to upgrade DB Schema"; exit 1; }
+    uv run artemis-db-init-content config-to-db || { echo "failed to initialize DB content"; exit 1; }
 
     if [ "$ONLY_DB_INIT" != "" ]; then
         exit 0
     fi
 fi
 
-poetry run artemis-api-server &
-poetry run artemis-dispatcher &
-poetry run artemis-worker $ARTEMIS_WORKER_OPTIONS &
-poetry run artemis-scheduler &
+uv run artemis-api-server &
+uv run artemis-dispatcher &
+uv run artemis-worker $ARTEMIS_WORKER_OPTIONS &
+uv run artemis-scheduler &
 
 sleep 100000

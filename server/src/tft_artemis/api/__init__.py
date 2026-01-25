@@ -285,7 +285,7 @@ def _main_uvicorn() -> NoReturn:
     uvicorn_options: list[str] = []
 
     uvicorn_options += [
-        'tft.artemis.api:run_app',
+        'tft_artemis.api:run_app',
         '--factory',
         '--host',
         '0.0.0.0',
@@ -321,7 +321,7 @@ def _main_gunicorn() -> NoReturn:
 
     gunicorn_options += [
         '-k',
-        'tft.artemis.api.UvicornWorker',
+        'tft_artemis.api.UvicornWorker',
         '--bind',
         '0.0.0.0:8001',
         '--workers',
@@ -370,7 +370,7 @@ def _main_gunicorn() -> NoReturn:
             str(KNOB_API_ENGINE_WORKER_RESTART_REQUESTS_SPREAD.value),
         ]
 
-    os.execve(gunicorn_path, ['gunicorn', *gunicorn_options, 'tft.artemis.api:run_app()'], os.environ)
+    os.execve(gunicorn_path, ['gunicorn', *gunicorn_options, 'tft_artemis.api:run_app()'], os.environ)
 
 
 def main() -> NoReturn:

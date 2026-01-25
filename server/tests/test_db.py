@@ -15,10 +15,10 @@ import sqlalchemy.orm.session
 from sqlalchemy import Column, Integer, Text
 from sqlalchemy.schema import PrimaryKeyConstraint
 
-import tft.artemis.db
-import tft.artemis.tasks
-from tft.artemis.db import DB, Base, GuestEvent, GuestRequest, SafeQuery, TransactionResult, transaction, upsert
-from tft.artemis.guest import GuestState
+import tft_artemis.db
+import tft_artemis.tasks
+from tft_artemis.db import DB, Base, GuestEvent, GuestRequest, SafeQuery, TransactionResult, transaction, upsert
+from tft_artemis.guest import GuestState
 
 from . import MockPatcher, assert_failure_log
 
@@ -394,7 +394,7 @@ def test_transaction(caplog: _pytest.logging.LogCaptureFixture, logger: gluetool
     """
 
     with db.get_session(logger) as session:
-        update = tft.artemis.tasks._guest_state_update_query(
+        update = tft_artemis.tasks._guest_state_update_query(
             'dummy-guest', GuestState.PROVISIONING, current_state=GuestState.SHELF_LOOKUP
         ).unwrap()
 
@@ -441,7 +441,7 @@ def test_transaction_conflict(
 
     def thread1() -> None:
         with db.get_session(logger) as session:
-            update = tft.artemis.tasks._guest_state_update_query(
+            update = tft_artemis.tasks._guest_state_update_query(
                 'dummy-guest', GuestState.PROVISIONING, current_state=GuestState.SHELF_LOOKUP
             ).unwrap()
 
@@ -463,7 +463,7 @@ def test_transaction_conflict(
 
     def thread2() -> None:
         with db.get_session(logger) as session:
-            update = tft.artemis.tasks._guest_state_update_query(
+            update = tft_artemis.tasks._guest_state_update_query(
                 'dummy-guest', GuestState.PROMISED, current_state=GuestState.SHELF_LOOKUP
             ).unwrap()
 

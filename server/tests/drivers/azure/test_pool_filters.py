@@ -6,8 +6,8 @@ from unittest import mock
 import gluetool.log
 from gluetool.result import Error, Ok, Result
 
-from tft.artemis import Failure
-from tft.artemis.drivers.azure import AzureDriver
+from tft_artemis import Failure
+from tft_artemis.drivers.azure import AzureDriver
 
 AZURE_IMAGE_LIST = [
     {
@@ -118,7 +118,7 @@ class AzureSessionMock:
         return Error(Failure(f'Mock not set up for command {commandname}'))
 
 
-@mock.patch('tft.artemis.drivers.azure.AzureSession')
+@mock.patch('tft_artemis.drivers.azure.AzureSession')
 def test_fetch_pool_info(mock_az_session: 'mock.MagicMock', azure_pool: AzureDriver) -> None:
     mock_az_session.return_value.__enter__.return_value = AzureSessionMock
     images = azure_pool.fetch_pool_image_info().unwrap()
@@ -128,14 +128,14 @@ def test_fetch_pool_info(mock_az_session: 'mock.MagicMock', azure_pool: AzureDri
     assert image.name == 'RedHat:RHEL:7_9:7.9.2021051701'
 
 
-@mock.patch('tft.artemis.drivers.azure.AzureSession')
+@mock.patch('tft_artemis.drivers.azure.AzureSession')
 def test_fetch_pool_info_no_filters(mock_az_session: 'mock.MagicMock', azure_pool_no_filters: AzureDriver) -> None:
     mock_az_session.return_value.__enter__.return_value = AzureSessionMock
     images = azure_pool_no_filters.fetch_pool_image_info().unwrap()
     assert len(images) == len(AZURE_IMAGE_LIST)
 
 
-@mock.patch('tft.artemis.drivers.azure.AzureSession')
+@mock.patch('tft_artemis.drivers.azure.AzureSession')
 def test_fetch_pool_flavor_info(mock_az_session: 'mock.MagicMock', azure_pool: AzureDriver) -> None:
     mock_az_session.return_value.__enter__.return_value = AzureSessionMock
     flavors = azure_pool.fetch_pool_flavor_info().unwrap()
@@ -143,7 +143,7 @@ def test_fetch_pool_flavor_info(mock_az_session: 'mock.MagicMock', azure_pool: A
     assert len(flavors) == 2
 
 
-@mock.patch('tft.artemis.drivers.azure.AzureSession')
+@mock.patch('tft_artemis.drivers.azure.AzureSession')
 def test_fetch_pool_flavor_info_no_filters(
     mock_az_session: 'mock.MagicMock', azure_pool_no_filters: AzureDriver
 ) -> None:

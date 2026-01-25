@@ -6,9 +6,9 @@ from unittest.mock import MagicMock
 import gluetool.log
 import pytest
 
-import tft.artemis.drivers
-from tft.artemis.api.models import GuestRequest
-from tft.artemis.tasks import Workspace
+import tft_artemis.drivers
+from tft_artemis.api.models import GuestRequest
+from tft_artemis.tasks import Workspace
 
 
 @pytest.fixture(name='dummy_guest_request')
@@ -21,11 +21,11 @@ def fixture_dummy_guest_request(workspace: Workspace) -> MagicMock:
 @pytest.fixture(name='dummy_pool')
 def fixture_dummy_pool(
     logger: gluetool.log.ContextAdapter, workspace: Workspace, dummy_guest_request: GuestRequest
-) -> tft.artemis.drivers.PoolDriver:
+) -> tft_artemis.drivers.PoolDriver:
     assert workspace.gr
 
     workspace.gr.poolname = 'dummy-pool'
-    workspace.pool = tft.artemis.drivers.PoolDriver(logger, 'dummy-pool', {})
+    workspace.pool = tft_artemis.drivers.PoolDriver(logger, 'dummy-pool', {})
 
     return workspace.pool
 

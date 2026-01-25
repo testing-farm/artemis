@@ -16,8 +16,8 @@ https://keepachangelog.com/en/1.0.0/.
 
 For example:
 
-$ git log <last version tag>..master | poetry run ./generate-changelog.py
-$ git show | poetry run ./generate-changelog.py
+$ git log <last version tag>..master | uv run ./generate-changelog.py
+$ git show | uv run ./generate-changelog.py
 """
 
 

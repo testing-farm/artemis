@@ -11,15 +11,15 @@ import sqlalchemy
 from gluetool.log import ContextAdapter
 from gluetool.result import Ok, Result
 
-import tft.artemis.db
-import tft.artemis.drivers.aws
+import tft_artemis.db
+import tft_artemis.drivers.aws
 
-WATCHDOG_COMPLETE: Result[tft.artemis.drivers.WatchdogState, tft.artemis.Failure] = Ok(
-    tft.artemis.drivers.WatchdogState.COMPLETE
+WATCHDOG_COMPLETE: Result[tft_artemis.drivers.WatchdogState, tft_artemis.Failure] = Ok(
+    tft_artemis.drivers.WatchdogState.COMPLETE
 )
 
-WATCHDOG_CONTINUE: Result[tft.artemis.drivers.WatchdogState, tft.artemis.Failure] = Ok(
-    tft.artemis.drivers.WatchdogState.CONTINUE
+WATCHDOG_CONTINUE: Result[tft_artemis.drivers.WatchdogState, tft_artemis.Failure] = Ok(
+    tft_artemis.drivers.WatchdogState.CONTINUE
 )
 
 
@@ -67,17 +67,17 @@ WATCHDOG_CONTINUE: Result[tft.artemis.drivers.WatchdogState, tft.artemis.Failure
 )
 @pytest.mark.usefixtures('_schema_initialized_actual')
 def test_aws_guest_watchdog(
-    pool_data: tft.artemis.db.SerializedPoolDataMapping,
+    pool_data: tft_artemis.db.SerializedPoolDataMapping,
     state: str,
     code: str,
-    expected_state: Result[tft.artemis.drivers.WatchdogState, tft.artemis.Failure],
+    expected_state: Result[tft_artemis.drivers.WatchdogState, tft_artemis.Failure],
     expected_log_msg: str,
     monkeypatch: _pytest.monkeypatch.MonkeyPatch,
     logger: ContextAdapter,
     session: sqlalchemy.orm.session.Session,
     caplog: _pytest.logging.LogCaptureFixture,
 ) -> None:
-    guest_request = tft.artemis.db.GuestRequest(
+    guest_request = tft_artemis.db.GuestRequest(
         guestname='dummy-guest',
         _environment={},
         ownername='dummy-user',
@@ -96,12 +96,12 @@ def test_aws_guest_watchdog(
         _user_data={},
     )
     monkeypatch.setattr(
-        tft.artemis.drivers.aws.AWSDriver,
+        tft_artemis.drivers.aws.AWSDriver,
         '_describe_spot_instance',
         MagicMock(return_value=Ok({'State': state, 'Status': {'Code': code, 'Message': ''}})),
     )
     monkeypatch.setattr(guest_request, 'log_error_event', MagicMock())
-    aws_driver = tft.artemis.drivers.aws.AWSDriver(
+    aws_driver = tft_artemis.drivers.aws.AWSDriver(
         poolname='dummy-aws-pool',
         logger=logger,
         pool_config={
@@ -122,7 +122,7 @@ def test_aws_guest_watchdog(
             logger, session, 'spot instance terminated prematurely', ANY
         )
         failure = cast(MagicMock, guest_request.log_error_event).call_args.args[3]
-        assert isinstance(failure, tft.artemis.Failure)
+        assert isinstance(failure, tft_artemis.Failure)
         assert failure.message == 'spot instance terminated prematurely'
         assert failure.details['guestname'] == 'dummy-guest'
         assert failure.details['spot_instance_id'] == pool_data['dummy-aws-pool']['spot_instance_id']

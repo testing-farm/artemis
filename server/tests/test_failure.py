@@ -3,7 +3,7 @@
 
 import pytest
 
-from tft.artemis import Failure
+from tft_artemis import Failure
 
 
 @pytest.fixture(name='failure')

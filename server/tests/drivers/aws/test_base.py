@@ -5,7 +5,7 @@ from typing import Optional
 
 import pytest
 
-import tft.artemis.drivers.aws
+import tft_artemis.drivers.aws
 
 AWS_TAGS_EXAMPLES: dict[str, str] = {
     'tag1': 'value1',
@@ -21,7 +21,7 @@ AWS_TAGS_EXAMPLES: dict[str, str] = {
 
 
 def test_serialize_tags() -> None:
-    assert tft.artemis.drivers.aws._serialize_tags(AWS_TAGS_EXAMPLES) == [
+    assert tft_artemis.drivers.aws._serialize_tags(AWS_TAGS_EXAMPLES) == [
         'Key=tag1,Value=value1',
         'Key=tag2,Value=value2',
         'Key=tag3,Value=""',
@@ -33,7 +33,7 @@ def test_serialize_tags() -> None:
 
 
 def test_tags_to_tags_specifications() -> None:
-    assert tft.artemis.drivers.aws._tags_to_tag_specifications(AWS_TAGS_EXAMPLES, 'instance', 'volume') == [
+    assert tft_artemis.drivers.aws._tags_to_tag_specifications(AWS_TAGS_EXAMPLES, 'instance', 'volume') == [
         'ResourceType=instance,Tags=[{Key=tag1,Value=value1},{Key=tag2,Value=value2},{Key=tag3,Value=""},{Key=tag4,Value=""},{Key=tag5,Value=foo bar},{Key=tag6,Value=foo <quote>bar<quote>},{Key=tag7,Value=foo <singlequote>bar<singlequote>}]',  # noqa: E501,FS003
         'ResourceType=volume,Tags=[{Key=tag1,Value=value1},{Key=tag2,Value=value2},{Key=tag3,Value=""},{Key=tag4,Value=""},{Key=tag5,Value=foo bar},{Key=tag6,Value=foo <quote>bar<quote>},{Key=tag7,Value=foo <singlequote>bar<singlequote>}]',  # noqa: E501,FS003
     ]
@@ -44,4 +44,4 @@ def test_tags_to_tags_specifications() -> None:
     [('x86_64', 'x86_64'), ('arm64', 'aarch64'), ('i386', 'i386'), ('x86_64_mac', 'x86_64_mac')],
 )
 def test_aws_arch_to_arch(api_arch: str, artemis_arch: Optional[str]) -> None:
-    assert tft.artemis.drivers.aws._aws_arch_to_arch(api_arch) == artemis_arch
+    assert tft_artemis.drivers.aws._aws_arch_to_arch(api_arch) == artemis_arch

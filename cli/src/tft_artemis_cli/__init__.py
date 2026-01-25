@@ -309,7 +309,7 @@ def save_yaml(data: Any, filepath: str) -> None:
 
 def validate_struct(data: Any, schema_name: Any) -> ValidationResult:
     schema_filepath = pkg_resources.resource_filename(
-        'tft.artemis_cli', f'schemas/{schema_name}.yaml'
+        'tft_artemis_cli', f'schemas/{schema_name}.yaml'
     )
     schema = load_yaml(schema_filepath)
 

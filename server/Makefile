@@ -7,10 +7,10 @@ include ../Makefile.lib
 ##@ Installation
 
 install-no-drivers: _env-info  ## Install component alone, no development tools, no driver requirements
-	poetry env use $(DEFAULT_PYTHON) $$POETRY_ADDOPTS
-	poetry env info $$POETRY_ADDOPTS
-	poetry install -v --no-dev --remove-untracked $$POETRY_ADDOPTS
+	uv sync --no-extra full --no-dev $$UV_ADDOPTS
 
+install-docs: _env-info
+	uv sync --active --all-extras --group docs $$UV_ADDOPTS
 
 ##@ Tests
 
@@ -61,12 +61,12 @@ test-integration: _env-info  ## Run tests against real services
 
 gen-db-revision:  ## Generate new DB revision
 	rm -rf test.db
-	poetry run alembic upgrade head
-	poetry run alembic revision --autogenerate -m "$(NAME)"
+	uv run alembic upgrade head
+	uv run alembic revision --autogenerate -m "$(NAME)"
 
 ##@ Documentation
 
 docs: .common-docs docs-knobs
 
-docs-knobs: install  ## Generate up-to-date documentation of knobs
-	ARTEMIS_DB_URL=sqlite:// ARTEMIS_VAULT_PASSWORD=dummy-password poetry run ./extract-knobs --template-file ../docs/content/for-admins/knobs.adoc.j2 > ../docs/content/for-admins/knobs.adoc
+docs-knobs: install-docs  ## Generate up-to-date documentation of knobs
+	ARTEMIS_DB_URL=sqlite:// ARTEMIS_VAULT_PASSWORD=dummy-password uv run ./extract-knobs --template-file ../docs/content/for-admins/knobs.adoc.j2 > ../docs/content/for-admins/knobs.adoc

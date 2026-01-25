@@ -14,11 +14,7 @@ IMAGE_GILTAB_CI ?= quay.io/testing-farm/gitlab-ci-artemis:latest
 ##@ -- Common targets ---------------------
 
 _env-info:
-	@echo "# Poetry: $$(type poetry) $$(poetry --version $$POETRY_ADDOPTS)"
-	@echo "# Global Poetry configuration:"
-	@poetry config --list $$POETRY_ADDOPTS
-	@echo "# Local Poetry configuration:"
-	@poetry config --list --local $$POETRY_ADDOPTS
+	@echo "# uv: $$(type uv) $$(uv --version $$UV_ADDOPTS)"
 	@echo "# Tox: $$(type tox) $$(tox --version)"
 
 ##@ Images
@@ -32,14 +28,10 @@ push-ci:  ## Push container image for CI to registry
 ##@ Installation
 
 install: _env-info  ## Install component and development tools
-	poetry env use $(DEFAULT_PYTHON) $$POETRY_ADDOPTS
-	poetry env info $$POETRY_ADDOPTS
-	poetry install -v --remove-untracked -E full $$POETRY_ADDOPTS
+	uv sync --all-extras --dev $$UV_ADDOPTS
 
 install-no-dev: _env-info  ## Install component alone, no development tools
-	poetry env use $(DEFAULT_PYTHON) $$POETRY_ADDOPTS
-	poetry env info $$POETRY_ADDOPTS
-	poetry install -v --no-dev --remove-untracked -E full $$POETRY_ADDOPTS
+	uv sync --all-extras --no-dev $$UV_ADDOPTS
 
 ##@ Tests
 
@@ -51,7 +43,7 @@ test-units: _env-info  ## Run unit tests
 	tox -e py37
 
 test-pre-commit: install  ## Run pre-commit checks
-	git ls-files -- . | xargs -n200 poetry run pre-commit run --show-diff-on-failure --files
+	git ls-files -- . | xargs -n200 uv run pre-commit run --show-diff-on-failure --files
 
 coverage: _env-info  ## Run tests with coverage
 	tox -e py37-coverage
@@ -67,9 +59,11 @@ docs-autodocs:  ## Generate source code documentation
 
 ##@ Release
 
+build:  ## Build component as Python package
+	uv build $$UV_ADDOPTS
+
 publish:  ## Publish component as PyPI package
-	@poetry config pypi-token.pypi $(PYPI_TOKEN) $$POETRY_ADDOPTS
-	@poetry publish --skip-existing --build $$POETRY_ADDOPTS
+	@uv publish --token="$$PYPI_TOKEN" $$UV_ADDOPTS
 
 ##@ Utility
 

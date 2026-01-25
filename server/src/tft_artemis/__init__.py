@@ -1355,7 +1355,7 @@ def safe_call_and_handle(
 
     .. note::
 
-       Similar to :py:func:`tft.artemis.safe_call`, but
+       Similar to :py:func:`tft_artemis.safe_call`, but
 
        * does handle the potential failure, and
        * does not return :py:class:`Result` instance but either the bare value or ``None``.
@@ -1434,10 +1434,10 @@ def load_packaged_validation_schema(schema_subpath: str) -> Result[JSONSchemaTyp
     """
     Load a JSON schema for future use in data validation.
 
-    :param schema_subpath: path to a schema file relative to ``schema`` directory in ``tft.artemis`` package.
+    :param schema_subpath: path to a schema file relative to ``schema`` directory in ``tft_artemis`` package.
     """
 
-    root_schema_dirpath = pkg_resources.resource_filename('tft.artemis', 'schema')
+    root_schema_dirpath = pkg_resources.resource_filename('tft_artemis', 'schema')
 
     return load_validation_schema(os.path.join(root_schema_dirpath, schema_subpath))
 

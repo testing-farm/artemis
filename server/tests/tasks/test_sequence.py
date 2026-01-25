@@ -14,7 +14,7 @@ import gluetool.log
 import pytest
 import redis
 
-from tft.artemis.tasks import Actor, dispatch_sequence, task
+from tft_artemis.tasks import Actor, dispatch_sequence, task
 
 from .. import MATCH, assert_log
 

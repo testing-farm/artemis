@@ -8,10 +8,10 @@ import gluetool.utils
 from gluetool.log import ContextAdapter
 from tmt.hardware import UNITS
 
-import tft.artemis
-import tft.artemis.drivers
-import tft.artemis.drivers.beaker
-import tft.artemis.environment
+import tft_artemis
+import tft_artemis.drivers
+import tft_artemis.drivers.beaker
+import tft_artemis.environment
 
 
 def parse_spec(text: str) -> Any:
@@ -30,9 +30,9 @@ def test_patch_nop() -> None:
         """
     )
 
-    flavor = tft.artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor-id')
+    flavor = tft_artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor-id')
 
-    r_outcome = tft.artemis.drivers._apply_flavor_specification(flavor, flavor_spec)
+    r_outcome = tft_artemis.drivers._apply_flavor_specification(flavor, flavor_spec)
 
     assert r_outcome.is_ok
 
@@ -47,12 +47,12 @@ def test_patch_memory() -> None:
         """
     )
 
-    flavor = tft.artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor-id')
+    flavor = tft_artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor-id')
 
     assert flavor.arch is None
     assert flavor.memory is None
 
-    r_outcome = tft.artemis.drivers._apply_flavor_specification(flavor, flavor_spec)
+    r_outcome = tft_artemis.drivers._apply_flavor_specification(flavor, flavor_spec)
 
     assert r_outcome.is_ok
     assert flavor.arch == 'aarch64'
@@ -72,14 +72,14 @@ def test_patch_cpu() -> None:
         """
     )
 
-    flavor = tft.artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor-id')
+    flavor = tft_artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor-id')
 
     assert flavor.cpu.family is None
     assert flavor.cpu.family_name is None
     assert flavor.cpu.model is None
     assert flavor.cpu.model_name is None
 
-    r_outcome = tft.artemis.drivers._apply_flavor_specification(flavor, flavor_spec)
+    r_outcome = tft_artemis.drivers._apply_flavor_specification(flavor, flavor_spec)
 
     assert r_outcome.is_ok
 
@@ -100,15 +100,15 @@ def test_patch_disk() -> None:
         """
     )
 
-    flavor = tft.artemis.environment.Flavor(
+    flavor = tft_artemis.environment.Flavor(
         name='dummy-flavor',
         id='dummy-flavor-id',
-        disk=tft.artemis.environment.FlavorDisks([tft.artemis.environment.FlavorDisk()]),
+        disk=tft_artemis.environment.FlavorDisks([tft_artemis.environment.FlavorDisk()]),
     )
 
     assert flavor.disk[0].size is None
 
-    r_outcome = tft.artemis.drivers._apply_flavor_specification(flavor, flavor_spec)
+    r_outcome = tft_artemis.drivers._apply_flavor_specification(flavor, flavor_spec)
 
     assert r_outcome.is_ok
 
@@ -128,13 +128,13 @@ def test_patch_virtualization() -> None:
         """
     )
 
-    flavor = tft.artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor-id')
+    flavor = tft_artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor-id')
 
     assert flavor.virtualization.is_supported is None
     assert flavor.virtualization.is_virtualized is None
     assert flavor.virtualization.hypervisor is None
 
-    r_outcome = tft.artemis.drivers._apply_flavor_specification(flavor, flavor_spec)
+    r_outcome = tft_artemis.drivers._apply_flavor_specification(flavor, flavor_spec)
 
     assert r_outcome.is_ok
 
@@ -157,14 +157,14 @@ def test_patch_disk_expansion() -> None:
         """
     )
 
-    flavor = tft.artemis.environment.Flavor(
+    flavor = tft_artemis.environment.Flavor(
         name='dummy-flavor',
         id='dummy-flavor-id',
-        disk=tft.artemis.environment.FlavorDisks(
+        disk=tft_artemis.environment.FlavorDisks(
             [
-                tft.artemis.environment.FlavorDisk(),
-                tft.artemis.environment.FlavorDisk(),
-                tft.artemis.environment.FlavorDisk(),
+                tft_artemis.environment.FlavorDisk(),
+                tft_artemis.environment.FlavorDisk(),
+                tft_artemis.environment.FlavorDisk(),
             ]
         ),
     )
@@ -173,7 +173,7 @@ def test_patch_disk_expansion() -> None:
     assert flavor.disk[1].size is None
     assert flavor.disk[2].size is None
 
-    r_outcome = tft.artemis.drivers._apply_flavor_specification(flavor, flavor_spec)
+    r_outcome = tft_artemis.drivers._apply_flavor_specification(flavor, flavor_spec)
 
     assert r_outcome.is_ok
 
@@ -200,16 +200,16 @@ def test_patch_flavors(logger: ContextAdapter) -> None:
     )
 
     flavors = {
-        'foo': tft.artemis.environment.Flavor(name='foo', id='foo'),
-        'bar': tft.artemis.environment.Flavor(name='bar', id='bar'),
-        'baz': tft.artemis.environment.Flavor(name='baz', id='baz'),
+        'foo': tft_artemis.environment.Flavor(name='foo', id='foo'),
+        'bar': tft_artemis.environment.Flavor(name='bar', id='bar'),
+        'baz': tft_artemis.environment.Flavor(name='baz', id='baz'),
     }
 
     assert flavors['foo'].cpu.family is None
     assert flavors['bar'].cpu.family is None
     assert flavors['baz'].cpu.family is None
 
-    r_outcome = tft.artemis.drivers._patch_flavors(logger, flavors, patches)
+    r_outcome = tft_artemis.drivers._patch_flavors(logger, flavors, patches)
 
     assert r_outcome.is_ok
 
@@ -229,11 +229,11 @@ def test_patch_flavors_no_such_name(logger: ContextAdapter) -> None:
         """
     )
 
-    flavors = {'bar': tft.artemis.environment.Flavor(name='bar', id='bar')}
+    flavors = {'bar': tft_artemis.environment.Flavor(name='bar', id='bar')}
 
     assert flavors['bar'].cpu.family is None
 
-    r_outcome = tft.artemis.drivers._patch_flavors(logger, flavors, patches)
+    r_outcome = tft_artemis.drivers._patch_flavors(logger, flavors, patches)
 
     assert r_outcome.is_error
 
@@ -254,11 +254,11 @@ def test_patch_flavors_no_such_name_regex(logger: ContextAdapter) -> None:
         """
     )
 
-    flavors = {'bar': tft.artemis.environment.Flavor(name='bar', id='bar')}
+    flavors = {'bar': tft_artemis.environment.Flavor(name='bar', id='bar')}
 
     assert flavors['bar'].cpu.family is None
 
-    r_outcome = tft.artemis.drivers._patch_flavors(logger, flavors, patches)
+    r_outcome = tft_artemis.drivers._patch_flavors(logger, flavors, patches)
 
     assert r_outcome.is_error
 
@@ -280,12 +280,12 @@ def test_custom_flavors(logger: ContextAdapter) -> None:
         """
     )
 
-    flavors = {'foo': tft.artemis.environment.Flavor(name='foo', id='foo')}
+    flavors = {'foo': tft_artemis.environment.Flavor(name='foo', id='foo')}
 
     assert flavors['foo'].cpu.family is None
     assert 'foo-with-family' not in flavors
 
-    r_outcome = tft.artemis.drivers._custom_flavors(logger, flavors, patches)
+    r_outcome = tft_artemis.drivers._custom_flavors(logger, flavors, patches)
 
     assert r_outcome.is_ok
 
@@ -312,12 +312,12 @@ def test_custom_flavors_no_such_base(logger: ContextAdapter) -> None:
         """
     )
 
-    flavors = {'foo': tft.artemis.environment.Flavor(name='foo', id='foo')}
+    flavors = {'foo': tft_artemis.environment.Flavor(name='foo', id='foo')}
 
     assert flavors['foo'].cpu.family is None
     assert 'foo-with-family' not in flavors
 
-    r_outcome = tft.artemis.drivers._custom_flavors(logger, flavors, patches)
+    r_outcome = tft_artemis.drivers._custom_flavors(logger, flavors, patches)
 
     assert r_outcome.is_error
 

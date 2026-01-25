@@ -11,7 +11,7 @@ Welcome to Artemis server code documentation!
    :maxdepth: 2
    :caption: Contents:
 
-   tft.artemis
+
 
 
 Indices and tables

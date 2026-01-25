@@ -19,7 +19,7 @@ import jinja2_ansible_filters.core_filters
 def _knob_envvar(knob) -> Optional[str]:
     """ """
 
-    from tft.artemis.knobs import KnobSourceEnv
+    from tft_artemis.knobs import KnobSourceEnv
 
     for source in knob._sources:
         if not isinstance(source, KnobSourceEnv):
@@ -31,7 +31,7 @@ def _knob_envvar(knob) -> Optional[str]:
 
 
 def _knob_editable(knob) -> bool:
-    from tft.artemis.knobs import KnobSourceDB
+    from tft_artemis.knobs import KnobSourceDB
 
     for source in knob._sources:
         if not isinstance(source, KnobSourceDB):
@@ -43,7 +43,7 @@ def _knob_editable(knob) -> bool:
 
 
 def _knob_default(knob) -> Optional[str]:
-    from tft.artemis.knobs import KnobSourceDefault
+    from tft_artemis.knobs import KnobSourceDefault
 
     for source in knob._sources:
         if not isinstance(source, KnobSourceDefault):
@@ -67,7 +67,7 @@ jinja2.defaults.DEFAULT_FILTERS['knob_default'] = _knob_default
 jinja2.defaults.DEFAULT_FILTERS.update(jinja2_ansible_filters.core_filters.FilterModule().filters())
 
 
-from tft.artemis.knobs import Knob  # noqa: E402
+from tft_artemis.knobs import Knob  # noqa: E402
 
 
 def extract_knobs(options: argparse.Namespace) -> list[Knob]:
@@ -78,7 +78,7 @@ def extract_knobs(options: argparse.Namespace) -> list[Knob]:
 
     known_knobs: list[str] = []
 
-    for module_info in pkgutil.walk_packages(['src/tft/artemis'], 'tft.artemis.'):
+    for module_info in pkgutil.walk_packages(['src/tft_artemis'], 'tft_artemis.'):
         module = importlib.import_module(module_info.name)
 
         # print(module_info.name, inspect.getmembers(module, is_knob))  # noqa: ERA001

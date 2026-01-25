@@ -278,7 +278,7 @@ class MetricsBase:
 
         .. note::
 
-           **Requires** the context variables defined in :py:mod:`tft.artemis` to be set properly.
+           **Requires** the context variables defined in :py:mod:`tft_artemis` to be set properly.
 
         The default implementation delegates the call to all child fields that are descendants of ``MetricsBase``
         class.
@@ -293,7 +293,7 @@ class MetricsBase:
 
                 .. note::
 
-           **Requires** the context variables defined in :py:mod:`tft.artemis` to be set properly.
+           **Requires** the context variables defined in :py:mod:`tft_artemis` to be set properly.
 
         The default implementation delegates the call to all child fields that are descendants of ``MetricsBase``
         class.
@@ -3483,7 +3483,7 @@ class Metrics(MetricsBase):
 
         .. note::
 
-           **Requires** the context variables defined in :py:mod:`tft.artemis` to be set properly.
+           **Requires** the context variables defined in :py:mod:`tft_artemis` to be set properly.
 
         :param logger: logger to use for logging.
         :param db: DB instance to use for DB access.

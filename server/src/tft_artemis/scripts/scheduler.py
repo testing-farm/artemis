@@ -38,7 +38,7 @@ def cmd_root(tasks: list[str]) -> None:
         cmd += tasks
 
     else:
-        logger.info('scheduling all tasks from tft.artemis.tasks package')
+        logger.info('scheduling all tasks from tft_artemis.tasks package')
 
         cmd += list(find_task_modules())
 

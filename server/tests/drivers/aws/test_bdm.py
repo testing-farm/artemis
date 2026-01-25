@@ -6,20 +6,20 @@ from typing import Optional
 import _pytest.monkeypatch
 import pytest
 
-import tft.artemis.drivers.aws
+import tft_artemis.drivers.aws
 
 
 def test_bdm_find_free_device_name_empty() -> None:
-    mappings = tft.artemis.drivers.aws.BlockDeviceMappings()
+    mappings = tft_artemis.drivers.aws.BlockDeviceMappings()
 
     r_name = mappings.find_free_device_name()
 
     assert r_name.is_ok
-    assert r_name.unwrap() == tft.artemis.drivers.aws.EBS_DEVICE_NAMES[0]
+    assert r_name.unwrap() == tft_artemis.drivers.aws.EBS_DEVICE_NAMES[0]
 
 
 def test_bdm_find_free_device_name_real_root() -> None:
-    mappings = tft.artemis.drivers.aws.BlockDeviceMappings(
+    mappings = tft_artemis.drivers.aws.BlockDeviceMappings(
         [
             # Root device, for those /dev/sda1 is reserved
             {'DeviceName': '/dev/sda1', 'Ebs': {}}
@@ -29,11 +29,11 @@ def test_bdm_find_free_device_name_real_root() -> None:
     r_name = mappings.find_free_device_name()
 
     assert r_name.is_ok
-    assert r_name.unwrap() == tft.artemis.drivers.aws.EBS_DEVICE_NAMES[0]
+    assert r_name.unwrap() == tft_artemis.drivers.aws.EBS_DEVICE_NAMES[0]
 
 
 def test_bdm_find_free_device_name() -> None:
-    mappings = tft.artemis.drivers.aws.BlockDeviceMappings(
+    mappings = tft_artemis.drivers.aws.BlockDeviceMappings(
         [
             # Root device, for those /dev/sda1 is reserved
             {'DeviceName': '/dev/sda1', 'Ebs': {}},
@@ -51,8 +51,8 @@ def test_bdm_find_free_device_name() -> None:
 
 
 def test_bdm_find_free_device_name_exhausted(monkeypatch: _pytest.monkeypatch.MonkeyPatch) -> None:
-    mappings = tft.artemis.drivers.aws.BlockDeviceMappings()
-    monkeypatch.setattr(tft.artemis.drivers.aws, 'EBS_DEVICE_NAMES', [])
+    mappings = tft_artemis.drivers.aws.BlockDeviceMappings()
+    monkeypatch.setattr(tft_artemis.drivers.aws, 'EBS_DEVICE_NAMES', [])
 
     r = mappings.find_free_device_name()
 
@@ -61,7 +61,7 @@ def test_bdm_find_free_device_name_exhausted(monkeypatch: _pytest.monkeypatch.Mo
 
 
 def test_bdm_enlarge() -> None:
-    mappings = tft.artemis.drivers.aws.BlockDeviceMappings()
+    mappings = tft_artemis.drivers.aws.BlockDeviceMappings()
 
     assert len(mappings) == 0
 
@@ -75,8 +75,8 @@ def test_bdm_enlarge() -> None:
 
 
 def test_bdm_enlarge_exhausted_names(monkeypatch: _pytest.monkeypatch.MonkeyPatch) -> None:
-    mappings = tft.artemis.drivers.aws.BlockDeviceMappings()
-    monkeypatch.setattr(tft.artemis.drivers.aws, 'EBS_DEVICE_NAMES', [])
+    mappings = tft_artemis.drivers.aws.BlockDeviceMappings()
+    monkeypatch.setattr(tft_artemis.drivers.aws, 'EBS_DEVICE_NAMES', [])
 
     r = mappings.enlarge(5)
 
@@ -91,4 +91,4 @@ def test_bdm_enlarge_exhausted_names(monkeypatch: _pytest.monkeypatch.MonkeyPatc
     [('x86_64', 'x86_64'), ('arm64', 'aarch64'), ('i386', 'i386'), ('x86_64_mac', 'x86_64_mac')],
 )
 def test_aws_arch_to_arch(api_arch: str, artemis_arch: Optional[str]) -> None:
-    assert tft.artemis.drivers.aws._aws_arch_to_arch(api_arch) == artemis_arch
+    assert tft_artemis.drivers.aws._aws_arch_to_arch(api_arch) == artemis_arch

@@ -7,7 +7,7 @@ from unittest import mock
 
 import pytest
 import rich.console
-from tft.artemis_cli import print_guest_logs
+from tft_artemis_cli import print_guest_logs
 
 
 def _load_expected_data(relative_path: str):

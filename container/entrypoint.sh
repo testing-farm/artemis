@@ -80,25 +80,25 @@ cd /APP
 
 case $APP in
     api)
-        COMMAND="poetry run artemis-api-server"
+        COMMAND="uv run artemis-api-server"
         ;;
     dispatcher)
-        COMMAND="poetry run artemis-dispatcher"
+        COMMAND="uv run artemis-dispatcher"
         ;;
     initdb)
         # Initialize or upgrade the database to the latest version
-        poetry run alembic upgrade ${ARTEMIS_DB_SCHEMA_REVISION:-"head"} || { echo "failed to upgrade DB Schema"; exit 1; }
+        uv run alembic upgrade ${ARTEMIS_DB_SCHEMA_REVISION:-"head"} || { echo "failed to upgrade DB Schema"; exit 1; }
         # Initialize records from server.yml
-        poetry run artemis-db-init-content config-to-db || { echo "failed to initialize DB content"; exit 1; }
+        uv run artemis-db-init-content config-to-db || { echo "failed to initialize DB content"; exit 1; }
         exit 0
         ;;
     scheduler)
         expose_hooks
-        COMMAND="poetry run artemis-scheduler"
+        COMMAND="uv run artemis-scheduler"
         ;;
     worker)
         expose_hooks
-        COMMAND="poetry run artemis-worker $ARTEMIS_WORKER_OPTIONS"
+        COMMAND="uv run artemis-worker $ARTEMIS_WORKER_OPTIONS"
         ;;
     *)
         echo "Unknown application '$APP'"

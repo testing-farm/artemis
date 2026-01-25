@@ -53,3 +53,8 @@ repos:
         args:
           - --license-filepath
           - LICENSE_SPDX
+
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.9.26
+    hooks:
+      - id: uv-lock

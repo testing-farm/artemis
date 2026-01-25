@@ -30,11 +30,11 @@ import sqlalchemy.engine.interfaces
 import sqlalchemy.engine.url
 import sqlalchemy_utils.functions
 
-import tft.artemis
-import tft.artemis.context
-import tft.artemis.db
-import tft.artemis.knobs
-import tft.artemis.tasks
+import tft_artemis
+import tft_artemis.context
+import tft_artemis.db
+import tft_artemis.knobs
+import tft_artemis.tasks
 
 from . import MockPatcher
 
@@ -116,13 +116,13 @@ def mockpatch(monkeypatch: _pytest.monkeypatch.MonkeyPatch) -> MockPatcher:
 def logger(caplog: _pytest.logging.LogCaptureFixture) -> gluetool.log.ContextAdapter:
     # Set the most detailed log level possible. It may help when debugging test failures, and we don't
     # keep it for the future, it gets thrown away when tests did not fail.
-    tft.artemis.knobs.KNOB_LOGGING_LEVEL.value = logging.DEBUG
+    tft_artemis.knobs.KNOB_LOGGING_LEVEL.value = logging.DEBUG
 
     # When testing logging, we can easily inspect captured log records. Non-JSON log *output* is better
     # for humans when investigating test suite output and failed tests.
-    tft.artemis.knobs.KNOB_LOGGING_JSON.value = False
+    tft_artemis.knobs.KNOB_LOGGING_JSON.value = False
 
-    logger = tft.artemis.get_logger()
+    logger = tft_artemis.get_logger()
 
     assert gluetool.log.Logging.logger is not None
 
@@ -133,7 +133,7 @@ def logger(caplog: _pytest.logging.LogCaptureFixture) -> gluetool.log.ContextAda
 
 
 @pytest.fixture
-def db(logger: gluetool.log.ContextAdapter, db_url: str) -> Generator[tft.artemis.db.DB, None, None]:
+def db(logger: gluetool.log.ContextAdapter, db_url: str) -> Generator[tft_artemis.db.DB, None, None]:
     parsed_url = sqlalchemy.engine.url.make_url(db_url)
 
     dialect_name = cast(Callable[[], sqlalchemy.engine.interfaces.Dialect], parsed_url.get_dialect)().name
@@ -145,10 +145,10 @@ def db(logger: gluetool.log.ContextAdapter, db_url: str) -> Generator[tft.artemi
         sqlalchemy_utils.functions.create_database(db_url)
 
     try:
-        tft.artemis.db.DB.instance = None
-        tft.artemis.tasks._ROOT_DB = None
+        tft_artemis.db.DB.instance = None
+        tft_artemis.tasks._ROOT_DB = None
 
-        yield tft.artemis.db.DB(logger, db_url)
+        yield tft_artemis.db.DB(logger, db_url)
 
     finally:
         if dialect_name != 'sqlalchemy':
@@ -157,7 +157,7 @@ def db(logger: gluetool.log.ContextAdapter, db_url: str) -> Generator[tft.artemi
 
 @pytest.fixture
 def session(
-    logger: gluetool.log.ContextAdapter, db: tft.artemis.db.DB
+    logger: gluetool.log.ContextAdapter, db: tft_artemis.db.DB
 ) -> Generator[sqlalchemy.orm.session.Session, None, None]:
     with db.get_session(logger) as session:
         yield session
@@ -181,7 +181,7 @@ def skip_postgresql(session: sqlalchemy.orm.session.Session) -> None:
 
 @pytest.fixture(name='schema_actual')
 def fixture_schema_actual(
-    request: _pytest.fixtures.FixtureRequest, logger: gluetool.log.ContextAdapter, db: tft.artemis.db.DB
+    request: _pytest.fixtures.FixtureRequest, logger: gluetool.log.ContextAdapter, db: tft_artemis.db.DB
 ) -> None:
     alembic_config = alembic.config.Config()
     alembic_config.set_main_option('script_location', os.path.join(request.config.rootpath, 'alembic'))
@@ -196,32 +196,32 @@ def fixture_schema_initialized_actual(
     # TODO: cannot use `usefixtures` for a fixture - find a pytest issue where this is tracked
     schema_actual: Any,
 ) -> None:
-    import tft.artemis.environment
+    import tft_artemis.environment
 
-    session.execute(sqlalchemy.insert(tft.artemis.db.User).values(username='dummy-user', role='ADMIN'))
+    session.execute(sqlalchemy.insert(tft_artemis.db.User).values(username='dummy-user', role='ADMIN'))
     session.execute(
-        sqlalchemy.insert(tft.artemis.db.SSHKey).values(
+        sqlalchemy.insert(tft_artemis.db.SSHKey).values(
             keyname='dummy-ssh-key', enabled=True, ownername='dummy-user', file='', private='', public=''
         )
     )
 
     session.execute(
-        sqlalchemy.insert(tft.artemis.db.Pool).values(poolname='dummy-pool', driver='localhost', _parameters={})
+        sqlalchemy.insert(tft_artemis.db.Pool).values(poolname='dummy-pool', driver='localhost', _parameters={})
     )
 
     session.execute(
-        sqlalchemy.insert(tft.artemis.db.GuestShelf).values(
-            shelfname='dummy-shelf', ownername='dummy-user', state=tft.artemis.guest.GuestState.READY
+        sqlalchemy.insert(tft_artemis.db.GuestShelf).values(
+            shelfname='dummy-shelf', ownername='dummy-user', state=tft_artemis.guest.GuestState.READY
         )
     )
 
     session.execute(
-        tft.artemis.db.GuestRequest.create_query(
+        tft_artemis.db.GuestRequest.create_query(
             'dummy-guest',
-            tft.artemis.environment.Environment(
-                hw=tft.artemis.environment.HWRequirements(arch='x86_64'),
-                os=tft.artemis.environment.OsRequirements(compose='dummy-compose'),
-                kickstart=tft.artemis.environment.Kickstart(),
+            tft_artemis.environment.Environment(
+                hw=tft_artemis.environment.HWRequirements(arch='x86_64'),
+                os=tft_artemis.environment.OsRequirements(compose='dummy-compose'),
+                kickstart=tft_artemis.environment.Kickstart(),
             ),
             'dummy-user',
             None,
@@ -245,12 +245,12 @@ def fixture_schema_initialized_actual(
     )
 
     session.execute(
-        sqlalchemy.insert(tft.artemis.db.GuestRequest).values(
+        sqlalchemy.insert(tft_artemis.db.GuestRequest).values(
             guestname='dummy-guest-with-shelf',
-            _environment=tft.artemis.environment.Environment(
-                hw=tft.artemis.environment.HWRequirements(arch='x86_64'),
-                os=tft.artemis.environment.OsRequirements(compose='dummy-compose'),
-                kickstart=tft.artemis.environment.Kickstart(),
+            _environment=tft_artemis.environment.Environment(
+                hw=tft_artemis.environment.HWRequirements(arch='x86_64'),
+                os=tft_artemis.environment.OsRequirements(compose='dummy-compose'),
+                kickstart=tft_artemis.environment.Kickstart(),
             ).serialize(),
             ownername='dummy-user',
             shelfname='dummy-shelf',
@@ -262,7 +262,7 @@ def fixture_schema_initialized_actual(
             skip_prepare_verify_ssh=False,
             post_install_script=None,
             _log_types=[],
-            state=tft.artemis.guest.GuestState.READY,
+            state=tft_artemis.guest.GuestState.READY,
             state_mtime=datetime.datetime.utcnow(),
             poolname='dummy-pool',
             _pool_data=json.dumps({}),
@@ -271,12 +271,12 @@ def fixture_schema_initialized_actual(
     )
 
     session.execute(
-        sqlalchemy.insert(tft.artemis.db.GuestRequest).values(
+        sqlalchemy.insert(tft_artemis.db.GuestRequest).values(
             guestname='dummy-shelved-guest',
-            _environment=tft.artemis.environment.Environment(
-                hw=tft.artemis.environment.HWRequirements(arch='x86_64'),
-                os=tft.artemis.environment.OsRequirements(compose='dummy-compose'),
-                kickstart=tft.artemis.environment.Kickstart(),
+            _environment=tft_artemis.environment.Environment(
+                hw=tft_artemis.environment.HWRequirements(arch='x86_64'),
+                os=tft_artemis.environment.OsRequirements(compose='dummy-compose'),
+                kickstart=tft_artemis.environment.Kickstart(),
             ).serialize(),
             ownername='dummy-user',
             shelfname='dummy-shelf',
@@ -288,7 +288,7 @@ def fixture_schema_initialized_actual(
             skip_prepare_verify_ssh=False,
             post_install_script=None,
             _log_types=[],
-            state=tft.artemis.guest.GuestState.SHELVED,
+            state=tft_artemis.guest.GuestState.SHELVED,
             state_mtime=datetime.datetime.utcnow(),
             poolname='dummy-pool',
             _pool_data=json.dumps({}),
@@ -312,12 +312,12 @@ def fixture_redis(
 
     mock_contextvar = contextvars.ContextVar('CACHE', default=get_cache(logger))
 
-    monkeypatch.setattr(tft.artemis, 'get_cache', get_cache)
-    monkeypatch.setattr(tft.artemis.context, 'get_cache', get_cache)
+    monkeypatch.setattr(tft_artemis, 'get_cache', get_cache)
+    monkeypatch.setattr(tft_artemis.context, 'get_cache', get_cache)
 
-    monkeypatch.setattr(tft.artemis.context, 'CACHE', mock_contextvar)
+    monkeypatch.setattr(tft_artemis.context, 'CACHE', mock_contextvar)
 
-    monkeypatch.setitem(tft.artemis.context.CONTEXT_PROVIDERS, ('cache', redis.Redis), mock_contextvar)
+    monkeypatch.setitem(tft_artemis.context.CONTEXT_PROVIDERS, ('cache', redis.Redis), mock_contextvar)
 
     yield
 
@@ -332,7 +332,7 @@ def fixture_broker(
     def get_broker(
         logger: gluetool.log.ContextAdapter, application_name: Optional[str] = None
     ) -> dramatiq.broker.Broker:
-        middleware = tft.artemis.get_broker_middleware(logger)
+        middleware = tft_artemis.get_broker_middleware(logger)
         broker = dramatiq.brokers.stub.StubBroker(middleware=middleware)
 
         dramatiq.set_broker(broker)
@@ -341,8 +341,8 @@ def fixture_broker(
 
     broker = get_broker(logger)
 
-    monkeypatch.setattr(tft.artemis, 'get_broker', get_broker)
-    tft.artemis.tasks.BROKER = broker
+    monkeypatch.setattr(tft_artemis, 'get_broker', get_broker)
+    tft_artemis.tasks.BROKER = broker
 
     return broker
 
@@ -363,7 +363,7 @@ def worker(
 
 @pytest.fixture(name='cache')
 def fixture_cache(logger: gluetool.log.ContextAdapter, redis: redis.Redis) -> redis.Redis:
-    return tft.artemis.get_cache(logger)
+    return tft_artemis.get_cache(logger)
 
 
 @pytest.fixture(name='current_message')
@@ -378,8 +378,8 @@ def fixture_current_message() -> Generator[dramatiq.MessageProxy, None, None]:
 
     proxy = dramatiq.MessageProxy(message)
 
-    tft.artemis.context.CURRENT_MESSAGE.set(proxy)
+    tft_artemis.context.CURRENT_MESSAGE.set(proxy)
 
     yield proxy
 
-    tft.artemis.context.CURRENT_MESSAGE.set(None)
+    tft_artemis.context.CURRENT_MESSAGE.set(None)

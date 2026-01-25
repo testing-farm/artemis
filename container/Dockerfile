@@ -58,6 +58,7 @@ RUN    microdnf --refresh \
                            openssl-devel \
                            postgresql \
                            python3.9 \
+                           uv \
                            # required by `openstack`
                            which \
                            # for debugging
@@ -69,7 +70,6 @@ RUN    microdnf --refresh \
     && update-crypto-policies --set LEGACY \
     && microdnf clean all \
     && rm -rf /var/cache/dnf \
-    && curl -sSL https://install.python-poetry.org | python3.9 - --version 1.4.2 \
     && sed -ri "s|\[libdefaults\]|\[libdefaults\]\n  default_ccache_name = FILE:$KRB_CCACHE|" /etc/krb5.conf
 
 #
@@ -148,13 +148,7 @@ COPY server /APP/
 # TODO: remove once server/client Makefiles wouldn't refer to their parent directory
 COPY Makefile.lib /
 RUN    cd /APP \
-    # New parallel installer does not seem to work correctly, way too many crashes
-    # when plenty of packages are needed.
-    && poetry config experimental.new-installer false \
-    && poetry config installer.parallel false \
-    && PYTHON=python3.9 make install-no-dev \
-    # Make Poetry configuration accesible to Poetry in containers
-    && chmod a+rw /tmp/.config/pypoetry/config.toml
+    && make install-no-dev
 
 #
 # Make sure we can edit /etc/passwd, required to set valid username when run via Openshift

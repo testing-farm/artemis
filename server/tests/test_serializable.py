@@ -7,16 +7,16 @@ import textwrap
 import pytest
 import ruamel.yaml.main
 
-import tft.artemis
+import tft_artemis
 
 
 @pytest.fixture(name='yaml')
 def fixture_yaml() -> ruamel.yaml.main.YAML:
-    return tft.artemis.get_yaml()
+    return tft_artemis.get_yaml()
 
 
 @dataclasses.dataclass
-class Container(tft.artemis.SerializableContainer):
+class Container(tft_artemis.SerializableContainer):
     bar: int = 79
     baz: list[str] = dataclasses.field(default_factory=list)
 
@@ -29,12 +29,12 @@ class UnusedContainer(Container):
 
 
 @dataclasses.dataclass
-class NestedContainer(tft.artemis.SerializableContainer):
+class NestedContainer(tft_artemis.SerializableContainer):
     bar: str
 
 
 @dataclasses.dataclass(repr=False)
-class NestingContainer(tft.artemis.SerializableContainer):
+class NestingContainer(tft_artemis.SerializableContainer):
     foo: str
     child: NestedContainer
     baz: int
@@ -96,10 +96,10 @@ def test_yaml() -> None:
 
 
 def test_yaml_dumpable_registry() -> None:
-    assert Container in tft.artemis._YAML_DUMPABLE_CLASSES
-    assert NestedContainer in tft.artemis._YAML_DUMPABLE_CLASSES
-    assert NestingContainer in tft.artemis._YAML_DUMPABLE_CLASSES
-    assert UnusedContainer in tft.artemis._YAML_DUMPABLE_CLASSES
+    assert Container in tft_artemis._YAML_DUMPABLE_CLASSES
+    assert NestedContainer in tft_artemis._YAML_DUMPABLE_CLASSES
+    assert NestingContainer in tft_artemis._YAML_DUMPABLE_CLASSES
+    assert UnusedContainer in tft_artemis._YAML_DUMPABLE_CLASSES
 
 
 def test_nesting(nesting_container: NestingContainer) -> None:
@@ -114,7 +114,7 @@ def test_nesting(nesting_container: NestingContainer) -> None:
 
 
 def test_to_yaml(yaml: ruamel.yaml.main.YAML, nesting_container: NestingContainer) -> None:
-    assert tft.artemis.format_dict_yaml(nesting_container) == NESTING_CONTAINER_AS_STRING
+    assert tft_artemis.format_dict_yaml(nesting_container) == NESTING_CONTAINER_AS_STRING
 
 
 def test_to_str(yaml: ruamel.yaml.main.YAML, nesting_container: NestingContainer) -> None:

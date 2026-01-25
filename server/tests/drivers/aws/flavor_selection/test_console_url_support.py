@@ -7,8 +7,8 @@ from unittest.mock import MagicMock
 import gluetool.log
 import sqlalchemy.orm.session
 
-from tft.artemis.db import GuestRequest
-from tft.artemis.drivers.aws import AWSDriver, AWSFlavor, AWSPoolImageInfo
+from tft_artemis.db import GuestRequest
+from tft_artemis.drivers.aws import AWSDriver, AWSFlavor, AWSPoolImageInfo
 
 
 def test_sanity(

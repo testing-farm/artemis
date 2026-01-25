@@ -4,12 +4,12 @@
 import gluetool.log
 import pytest
 
-import tft.artemis.drivers.aws
+import tft_artemis.drivers.aws
 
 
 @pytest.fixture(name='aws_pool', scope='function')
-def fixture_aws_pool(logger: gluetool.log.ContextAdapter) -> tft.artemis.drivers.aws.AWSDriver:
-    return tft.artemis.drivers.aws.AWSDriver(
+def fixture_aws_pool(logger: gluetool.log.ContextAdapter) -> tft_artemis.drivers.aws.AWSDriver:
+    return tft_artemis.drivers.aws.AWSDriver(
         logger,
         'aws',
         {

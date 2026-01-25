@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 import yaml
 
-from tft.artemis.security_group_rules import SecurityGroupRule, SecurityGroupRules
+from tft_artemis.security_group_rules import SecurityGroupRule, SecurityGroupRules
 
 
 @pytest.mark.parametrize(

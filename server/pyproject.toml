@@ -1,129 +1,119 @@
-[tool.poetry]
+[project]
 name = "tft-artemis"
 version = "0.0.83"
 description = "Artemis is a machine provisioning service. Its goal is to provision a machine - using a set of preconfigured providers as backends - which would satisfy the given hardware and software requirements."
 authors = [
-  "Milos Prchlik <mprchlik@redhat.com>",
-  "Anna Khaitovich <akhaitov@redhat.com>",
-  "Evgeny Fedin <efedin@redhat.com>",
-  "Miroslav Vadkerti <mvadkert@redhat.com>",
-  "Ondrej Ptak <optak@redhat.com>",
-  "Daniel Simko <dasimko@redhat.com",
-  "Guy Inger <ginger@redhat.com>"
+  { name = "Milos Prchlik", email = "mprchlik@redhat.com>" },
+  { name = "Anna Khaitovich", email = "akhaitov@redhat.com>" },
+  { name = "Evgeny Fedin", email = "efedin@redhat.com>" },
+  { name = "Miroslav Vadkerti", email = "mvadkert@redhat.com>" },
+  { name = "Ondrej Ptak", email = "optak@redhat.com>" },
+  { name = "Daniel Simko", email = "dasimko@redhat.com" },
+  { name = "Guy Inger", email = "ginger@redhat.com>" },
 ]
 license = "Apache-2.0"
-packages = [
-  { include = "tft", from = "src" }
+
+requires-python = "~=3.9.0"
+
+dependencies = [
+  # New mypy vs. new Alembic: https://github.com/python/mypy/issues/11038 - Alembic 1.7.4 adds a workaround
+  "alembic == 1.8.1",
+  # BeautifulSoup could be updated but it's pinned by gluetool to an older version...
+  # "beautifulsoup4",
+  "click",
+  "dramatiq[rabbitmq]",
+  "gluetool >=2.5",
+  "gunicorn",
+  "jinja2-ansible-filters",
+  "jq",
+  "Pint ==0.18",
+  # Avoid newer versions until either https://github.com/python/mypy/issues/10757 is fixed, or package
+  # delivers proper type annotations.
+  "prometheus-client ~=0.12.0",
+  "pyinstrument",
+  "psycopg2",
+  "sqlalchemy[mypy, postgresql, postgresql-psycopg]",
+  "sqlalchemy-utils[encrypted]",
+  "stackprinter",
+  # Bumping just one minor version of starlette seems to mess with mypy
+  "starlette ==0.41.2",
+  "typing-extensions",
+  # pendulum 3.x has an ugly bug when timezone is not specified, https://github.com/sdispater/pendulum/issues/791
+  "pendulum ~=2.0",
+  "periodiq",
+  "redis",
+  "returns",
+  "jsonschema",
+  "sentry-sdk ~=2.18",
+  "setuptools",
+  "fastapi",
+  "uvicorn",
+  "pykickstart ~=3.58",
+  "tmt",
 ]
-include = ["artemis/schema"]
 
-[tool.poetry.dependencies]
-python = "~3.9.0"
-# New mypy vs. new Alembic: https://github.com/python/mypy/issues/11038 - Alembic 1.7.4 adds a workaround
-alembic = "1.8.1"
-awscli = { version = ">=1.36.13", optional = true }
-azure-cli = { version = "*", optional = true }
-beaker-client = { version = "*", optional = true }
-# BeautifulSoup could be updated but it's pinned by gluetool to an older version...
-# beautifulsoup4 = "^4.9.3"
-click = "*"
-# TODO: 1.13.0 and newer add typing support, way bigger patch
-dramatiq = {git = "https://github.com/dansimko/dramatiq.git", rev = "1.13.0-close-write-pipe", extras = ["rabbitmq"]}
-gluetool = "^2.5"
-gunicorn = "*"
-jinja2-ansible-filters = "*"
-jq = "*"
-Pint = "0.18"
-# Avoid newer versions until either https://github.com/python/mypy/issues/10757 is fixed, or package
-# delivers proper type annotations.
-prometheus-client = "^0.12.0"
-pyinstrument = "*"
-psycopg2 = "*"
-# Do not use openstackclient >=7, there is some conflict between
-# it and openstacksdk when calling `get_limits()`
-python-openstackclient = { version = "^6.0.0", optional = true }
-# See https://github.com/python-poetry/poetry/issues/4402
-# sqlalchemy = ">=1.4,<1.4.23"
-sqlalchemy = { version = "*", extras = [ "mypy", "postgresql", "postgresql-psycopg" ] }
-sqlalchemy-utils = { version = "*", extras = ["encrypted"] }
-stackprinter = "*"
-# Bumping just one minor version of starlette seems to mess with mypy
-starlette = "0.41.2"
-typing-extensions = "*"
-# pendulum 3.x has an ugly bug when timezone is not specified, https://github.com/sdispater/pendulum/issues/791
-pendulum = "^2.0"
-periodiq = "*"
-redis = "*"
-returns = "*"
-jsonschema = "*"
-sentry-sdk = "^2.18"
-setuptools = "*"
-python-glanceclient = "*"
-python-novaclient = "*"
-fastapi = "*"
-uvicorn = "*"
-google-cloud-compute = "*"
-pykickstart = "^3.58"
-tmt = {git = "https://github.com/teemtee/tmt.git", rev = "main"}
+[project.optional-dependencies]
+full = [
+  "awscli >=1.36.13",
+  "azure-cli",
+  "beaker-client",
+  # Do not use openstackclient >=7, there is some conflict between
+  # it and openstacksdk when calling `get_limits()`
+  "python-openstackclient ~=6.0.0",
+  "python-glanceclient",
+  "python-novaclient",
+  "google-cloud-compute",
+]
 
-[tool.poetry.extras]
-full = [ "awscli", "azure-cli", "beaker-client", "python-openstackclient", "google-cloud-compute" ]
+[tool.uv.sources]
+dramatiq = { git = "https://github.com/dansimko/dramatiq.git", branch = "1.13.0-close-write-pipe" }
 
-[tool.poetry.dev-dependencies]
+[dependency-groups]
 # All development dependencies are left unpinned, untill we run into troubles with a particular version.
+dev = [
+  # Install `toml` extra to allow parsing pyproject.toml - no need for special config file for coverage.
+  "coverage[toml]",
+  "darglint",
+  # flake8 5 introduced a bug https://github.com/tholo/pytest-flake8/issues/87
+  "flake8 < 5.0.0",
+  "flake8-docstrings",
+  "flake8-use-fstring",
+  "httpx",
+  "mypy",
+  "pytest",
+  "pre-commit",
+  "pytest-flake8",
+  "pytest-icdiff",
+  "pytest-mock",
+  "redislite",
+  # sqlalchemy-stubs = "*"
+  "types-Pillow",
+  "types-mock",
+  "types-setuptools",
+]
 
-# Install `toml` extra to allow parsing pyproject.toml - no need for special config file for coverage.
-coverage = { version = "*", extras = ["toml"] }
-darglint = "*"
-# flake8 5 introduced a bug https://github.com/tholo/pytest-flake8/issues/87
-flake8 = "<5.0.0"
-flake8-docstrings = "*"
-flake8-use-fstring = "*"
-httpx = "*"
-# This will be trimmed down to 0.730 or something because of much more specific mypy-extensions bellow. Blocked
-# by Gluetool.
-# TODO: 1.4.0 is the current release, but fails to play nicely with old typing-extensions
-# mypy = "^0.991"
-mypy = "*"
-pytest = "*"
-pre-commit = "*"
-pytest-flake8 = "*"
-pytest-icdiff = "*"
-pytest-mock = "*"
-redislite = "*"
-# sqlalchemy-stubs = "*"
-types-Pillow = "*"
-types-mock = "*"
-types-setuptools = "*"
+docs = [
+  "Sphinx",
+  "sphinx-autodoc-typehints",
+  "sphinx-typlog-theme",
+]
 
-# mypy-extensions must match gluetool requiremens.
-# mypy-extensions = "0.4.1"
-
-#
-# Autogenerated docs
-#
-# NOTE FOR GLUETOOL DEVELS: gluetool must become more up-to-date and more tolerant when it comes to Sphinx versions,
-# it is blocking us from using less buggy Sphinx with support for type annotations.
-# Sphinx = "^3.2.1"
-# sphinx-autodoc-typehints = "^1.11.0"
-# sphinx-typlog-theme = "^0.8.0"
-
-[tool.poetry.scripts]
-artemis-api-server = "tft.artemis.api:main"
-artemis-worker = "tft.artemis.scripts.worker:cmd_root"
-artemis-dispatcher = "tft.artemis.dispatcher:main"
-artemis-scheduler = "tft.artemis.scripts.scheduler:cmd_root"
+[project.scripts]
+artemis-api-server = "tft_artemis.api:main"
+artemis-worker = "tft_artemis.scripts.worker:cmd_root"
+artemis-dispatcher = "tft_artemis.dispatcher:main"
+artemis-scheduler = "tft_artemis.scripts.scheduler:cmd_root"
 
 # New tools to work with database
-artemis-db-init-content = "tft.artemis.scripts.init_db_content:cmd_root"
+artemis-db-init-content = "tft_artemis.scripts.init_db_content:cmd_root"
 
 [build-system]
-requires = ["poetry>=0.12"]
-build-backend = "poetry.masonry.api"
+requires = ["uv_build>=0.9.26,<0.10.0"]
+build-backend = "uv_build"
 
 [tool.coverage.run]
 source = [
-  "src/tft/artemis"
+  "src/tft_artemis"
 ]
 
 [tool.pytest.ini_options]
@@ -183,10 +173,10 @@ lint.task-tags = ["TODO", "FIXME", "NEW"]
 # This file was generated, ignore it
 "autodocs/source/conf.py" = ["ERA"]
 # These files have valid commented out code blocks which should be ignored, there is no better way to ignore them
-"src/tft/artemis/drivers/azure.py" = ["ERA"]
-"src/tft/artemis/drivers/ibmcloudvpc.py" = ["ERA"]
-"src/tft/artemis/drivers/openstack.py" = ["ERA"]
-"src/tft/artemis/environment.py" = ["ERA"]
+"src/tft_artemis/drivers/azure.py" = ["ERA"]
+"src/tft_artemis/drivers/ibmcloudvpc.py" = ["ERA"]
+"src/tft_artemis/drivers/openstack.py" = ["ERA"]
+"src/tft_artemis/environment.py" = ["ERA"]
 "tests/test_db.py" = ["ERA"]
 
 [tool.ruff.lint.isort]
