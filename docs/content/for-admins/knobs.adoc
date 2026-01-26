@@ -1151,6 +1151,22 @@ for full list of connection parameters that can be specified via URL.
 
 5+|A pattern for needle to match in environment to image mapping file.
 
+|`ibmcloud.mapping.instance-name.template`
+|`str`
+|`ARTEMIS_IBMCLOUD_INSTANCE_NAME_TEMPLATE`
+|`artemis-{{ GUESTNAME }}`
+|no
+
+
+|`ibmcloud.mapping.instance-name.template:$entityname`
+|
+|`ARTEMIS_IBMCLOUD_INSTANCE_NAME_TEMPLATE_$entityname`
+|
+|
+
+
+5+|A pattern for artemis guest name
+
 |`logging.cli.command-pattern`
 |`str`
 |`ARTEMIS_LOG_CLI_COMMAND_PATTERN`
@@ -1408,6 +1424,22 @@ of crashed resources.
 
 
 5+|If unset for a pool, the given pool is ignored by Artemis in general.
+
+|`pool.instances-per-request-limit`
+|`int`
+|`ARTEMIS_POOL_INSTANCES_PER_REQUEST_LIMIT`
+|`7`
+|no
+
+
+|`pool.instances-per-request-limit:$entityname`
+|
+|`ARTEMIS_POOL_INSTANCES_PER_REQUEST_LIMIT_$entityname`
+|
+|
+
+
+5+|Maximum number of instances allowed to be present in cloud simultaneously for a single guest request
 
 |`pool.max-parallel-cli-sessions`
 |`int`

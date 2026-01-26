@@ -375,6 +375,16 @@ KNOB_PARALLEL_CLI_SESSIONS: Knob[int] = Knob(
     default=4,
 )
 
+KNOB_INSTANCES_PER_REQUEST_LIMIT: Knob[int] = Knob(
+    'pool.instances-per-request-limit',
+    'Maximum number of instances allowed to be present in cloud simultaneously for a single guest request',
+    has_db=False,
+    per_entity=True,
+    envvar='ARTEMIS_POOL_INSTANCES_PER_REQUEST_LIMIT',
+    cast_from_str=int,
+    default=7,
+)
+
 
 # Precompile the slow command pattern
 try:
@@ -2106,7 +2116,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         tags['ArtemisGuestName'] = guest_request.guestname
         # TODO: drivers could accept a template for the name, to allow custom naming schemes
-        tags['ArtemisGuestLabel'] = f'artemis-guest-{datetime.datetime.utcnow().strftime("%Y-%m-%d-%H-%M-%S")}'
+        tags['ArtemisGuestLabel'] = f'artemis-guest-{guest_request.guestname}'
 
         r_rendered_tags = render_tags(
             logger, tags, {'GUESTNAME': guest_request.guestname, 'ENVIRONMENT': guest_request.environment}
