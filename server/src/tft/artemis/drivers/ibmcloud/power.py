@@ -163,34 +163,6 @@ class IBMCloudPowerPoolImageInfo(PoolImageInfo):
     # /pcloud/v1/cloud-instances/f60e5369884840cd85c1490f4fb506eb/images/b44fe39f-3ec4-4baa-ada5-cbd56acaec1d
     href: str
 
-    @classmethod
-    def from_raw_image(cls, image: dict[str, Any]) -> Result[PoolImageInfo, Failure]:
-        """
-        This method transforms a dictionary representing one image from cloud image list command into a PoolImageInfo
-        """
-
-        arch = image['specifications']['architecture']
-        # NOTE(ivasilev) ppc64 needs special treatment, as IBM had this brilliant idea to put both
-        # ppc64 and ppc64le as `ppc64` and differentiate upon the value of `endianness` field..
-        if arch == 'ppc64':
-            arch = 'ppc64le' if image['specifications']['endianness'] == 'little-endian' else 'ppc64'
-
-        try:
-            return Ok(
-                IBMCloudPowerPoolImageInfo(
-                    href=image['href'],
-                    id=image['imageID'],
-                    name=image['name'],
-                    arch=arch,
-                    boot=FlavorBoot(),
-                    ssh=PoolImageSSHInfo(),
-                    supports_kickstart=False,
-                    creation_date=image['creationDate'],
-                )
-            )
-        except KeyError as exc:
-            return Error(Failure.from_exc('malformed image description', exc, image_info=image))
-
 
 class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
     drivername = 'ibmcloud-power'
@@ -217,8 +189,8 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
 
         return Ok(capabilities)
 
-    def list_images_raw(
-        self, logger: gluetool.log.ContextAdapter, filters: Optional[dict[str, Any]] = None
+    def _list_images_raw(
+        self, logger: gluetool.log.ContextAdapter, filters: Optional[ConfigImageFilter] = None
     ) -> Result[list[dict[str, Any]], Failure]:
         """
         This method will will issue a cloud guest list command and return a list of dictionaries representing
@@ -237,6 +209,52 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
             return Error(Failure('Unexpected cli return, items key is missing', data=images_list))
 
         return Ok(cast(list[dict[str, Any]], images_list['images']))
+
+    def list_images(
+        self, logger: gluetool.log.ContextAdapter, filters: Optional[ConfigImageFilter] = None
+    ) -> Result[list[PoolImageInfo], Failure]:
+        """
+        This method will will issue a cloud guest list command and return a list of pool image info objects for this
+        particular cloud.
+        Filters argument contains optional filtering options to be applied on the cloud side.
+        """
+        r_images_list_raw = self._list_images_raw(logger, filters)
+
+        def _from_raw_image(image: dict[str, Any]) -> Result[PoolImageInfo, Failure]:
+            try:
+                arch = image['specifications']['architecture']
+                # NOTE(ivasilev) ppc64 needs special treatment, as IBM had this brilliant idea to put both
+                # ppc64 and ppc64le as `ppc64` and differentiate upon the value of `endianness` field..
+                if arch == 'ppc64':
+                    arch = 'ppc64le' if image['specifications']['endianness'] == 'little-endian' else 'ppc64'
+
+                return Ok(
+                    IBMCloudPowerPoolImageInfo(
+                        href=image['href'],
+                        id=image['imageID'],
+                        name=image['name'],
+                        arch=arch,
+                        boot=FlavorBoot(),
+                        ssh=PoolImageSSHInfo(),
+                        supports_kickstart=False,
+                        creation_date=image['creationDate'],
+                    )
+                )
+            except KeyError as exc:
+                return Error(Failure.from_exc('malformed image description', exc, image_info=image))
+
+        res = []
+        for image_raw in r_images_list_raw.unwrap():
+            r_image = _from_raw_image(image_raw)
+            if r_image.is_error:
+                return Error(
+                    Failure.from_failure(
+                        'Failed converting image data to a PoolImageInfo object', r_image.unwrap_error()
+                    )
+                )
+            res.append(r_image.unwrap())
+
+        return Ok(res)
 
     def _filter_flavors_required_fields_defined(
         self,

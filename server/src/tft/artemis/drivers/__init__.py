@@ -537,13 +537,6 @@ class PoolImageInfo(SerializableContainer):
 
         return serialized
 
-    @classmethod
-    def from_raw_image(cls, image: dict[str, Any]) -> Result['PoolImageInfo', Failure]:
-        """
-        This method transforms a dictionary representing one image from cloud image list command into a PoolImageInfo
-        """
-        raise NotImplementedError
-
     def is_old_enough(self, logger: gluetool.log.ContextAdapter, threshold: int) -> bool:
         if not self.creation_date:
             return False

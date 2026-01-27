@@ -136,31 +136,6 @@ class IBMCloudVPCPoolImageInfo(PoolImageInfo):
     # One of ipxe, esxi_kickstart, cloud_init
     user_data_format: str
 
-    @classmethod
-    def from_raw_image(cls, image: dict[str, Any]) -> Result[PoolImageInfo, Failure]:
-        """
-        This method transforms a dictionary representing one image from cloud image list command into a PoolImageInfo
-        """
-
-        try:
-            return Ok(
-                IBMCloudVPCPoolImageInfo(
-                    crn=image['crn'],
-                    id=image['id'],
-                    name=image['name'],
-                    status=image['status'],
-                    visibility=image['visibility'],
-                    user_data_format=image['user_data_format'],
-                    arch=image['operating_system']['architecture'],
-                    boot=FlavorBoot(),
-                    ssh=PoolImageSSHInfo(),
-                    supports_kickstart=False,
-                    creation_date=image['created_at'],
-                )
-            )
-        except KeyError as exc:
-            return Error(Failure.from_exc('malformed image description', exc, image_info=image))
-
 
 class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
     drivername = 'ibmcloud-vpc'
@@ -331,8 +306,8 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
 
         return Ok(resources)
 
-    def list_images_raw(
-        self, logger: gluetool.log.ContextAdapter, filters: Optional[dict[str, Any]] = None
+    def _list_images_raw(
+        self, logger: gluetool.log.ContextAdapter, filters: Optional[ConfigImageFilter] = None
     ) -> Result[list[dict[str, Any]], Failure]:
         """
         This method will will issue a cloud guest list command and return a list of dictionaries representing
@@ -357,6 +332,49 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
             if r_images_list.is_error:
                 return Error(Failure.from_failure('failed to fetch image information', r_images_list.unwrap_error()))
             return Ok(cast(list[dict[str, Any]], r_images_list.unwrap()))
+
+    def list_images(
+        self, logger: gluetool.log.ContextAdapter, filters: Optional[ConfigImageFilter] = None
+    ) -> Result[list[PoolImageInfo], Failure]:
+        """
+        This method will will issue a cloud guest list command and return a list of pool image info objects for this
+        particular cloud.
+        Filters argument contains optional filtering options to be applied on the cloud side.
+        """
+        r_images_list_raw = self._list_images_raw(logger, filters)
+
+        def _from_raw_image(image: dict[str, Any]) -> Result[PoolImageInfo, Failure]:
+            try:
+                return Ok(
+                    IBMCloudVPCPoolImageInfo(
+                        crn=image['crn'],
+                        id=image['id'],
+                        name=image['name'],
+                        status=image['status'],
+                        visibility=image['visibility'],
+                        user_data_format=image['user_data_format'],
+                        arch=image['operating_system']['architecture'],
+                        boot=FlavorBoot(),
+                        ssh=PoolImageSSHInfo(),
+                        supports_kickstart=False,
+                        creation_date=image['created_at'],
+                    )
+                )
+            except KeyError as exc:
+                return Error(Failure.from_exc('malformed image description', exc, image_info=image))
+
+        res = []
+        for image_raw in r_images_list_raw.unwrap():
+            r_image = _from_raw_image(image_raw)
+            if r_image.is_error:
+                return Error(
+                    Failure.from_failure(
+                        'Failed converting image data to a PoolImageInfo object', r_image.unwrap_error()
+                    )
+                )
+            res.append(r_image.unwrap())
+
+        return Ok(res)
 
     def list_instances(self, logger: gluetool.log.ContextAdapter) -> Result[list[IBMCloudVPCInstance], Failure]:
         with IBMCloudSession(logger, self) as session:

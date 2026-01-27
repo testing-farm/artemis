@@ -498,13 +498,13 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor], Gener
 
         raise NotImplementedError
 
-    def list_images_raw(
-        self, logger: gluetool.log.ContextAdapter, filters: Optional[dict[str, Any]] = None
-    ) -> Result[list[dict[str, Any]], Failure]:
+    def list_images(
+        self, logger: gluetool.log.ContextAdapter, filters: Optional[ConfigImageFilter] = None
+    ) -> Result[list[PoolImageInfo], Failure]:
         """
-        This method will will issue a cloud guest list command and return a list of dictionaries representing
-        cloud images (raw means that data is returned in the same form the cloud sends it to us, no processing applied).
-        Filters argument contains optional filtering options to be applied on cloud side.
+        This method will will issue a cloud guest list command and return a list of pool image info objects for this
+        particular cloud.
+        Filters argument contains optional filtering options to be applied on the cloud side.
         """
         raise NotImplementedError
 
@@ -532,20 +532,11 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor], Gener
 
             images: list[PoolImageInfo] = []
 
-            r_images_list = self.list_images_raw(self.logger)
+            r_images_list = self.list_images(self.logger, filters)
             if r_images_list.is_error:
                 return Error(Failure.from_failure('Could not list images', r_images_list.unwrap_error()))
 
-            for image_raw in r_images_list.unwrap():
-                r_image = self.image_info_class.from_raw_image(image_raw)
-                if r_image.is_error:
-                    return Error(
-                        Failure.from_failure(
-                            'Failed converting image data to a PoolImageInfo object', r_image.unwrap_error()
-                        )
-                    )
-                image = r_image.unwrap()
-
+            for image in r_images_list.unwrap():
                 if name_pattern and not name_pattern.match(image.name):
                     continue
 
