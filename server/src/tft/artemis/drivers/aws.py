@@ -139,6 +139,8 @@ APIBlockDeviceMappingsType = list[APIBlockDeviceMappingType]
 #: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/device_naming.html#available-ec2-device-names
 EBS_DEVICE_NAMES = [f'/dev/sd{letter}' for letter in 'fghijklmnop']
 
+AWS_DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S.%fZ'
+
 
 # Type of container holding network interface info.
 class APINetworkInterfaceType(TypedDict, total=True):
@@ -372,6 +374,10 @@ class AWSPoolImageInfo(PoolImageInfo):
     #: Carries original `BootMode` image field.
     boot_mode: Optional[str]
 
+    @classmethod
+    def datetime_format(cls) -> str:
+        return AWS_DATETIME_FORMAT
+
     def serialize_scrubbed(self) -> dict[str, Any]:
         serialized = super().serialize_scrubbed()
 
@@ -408,7 +414,7 @@ def _base64_encode(data: str) -> str:
 
 def is_old_enough(logger: gluetool.log.ContextAdapter, timestamp: str, threshold: int) -> bool:
     try:
-        parsed_timestamp = datetime.datetime.strptime(timestamp, '%Y-%m-%dT%H:%M:%S.%fZ')
+        parsed_timestamp = datetime.datetime.strptime(timestamp, AWS_DATETIME_FORMAT)
 
     except Exception as exc:
         Failure.from_exc('failed to parse timestamp', exc, timestamp=timestamp).handle(logger)
@@ -2805,7 +2811,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
                             # `None`
                             ena_support=image.get('EnaSupport', False) or False,
                             boot_mode=aws_boot_mode,
-                            creation_date=image['CreationDate'],
+                            creation_date=AWSPoolImageInfo.strptime(image['CreationDate']),
                         )
                     )
 
@@ -3039,7 +3045,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
 
         output = cast(dict[str, str], r_output.unwrap())
 
-        timestamp = datetime.datetime.strptime(output['Timestamp'], '%Y-%m-%dT%H:%M:%S.%fZ')
+        timestamp = datetime.datetime.strptime(output['Timestamp'], AWS_DATETIME_FORMAT)
         console_output = output.get('Output')
 
         return Ok((timestamp, console_output))
