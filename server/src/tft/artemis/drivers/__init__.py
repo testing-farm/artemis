@@ -522,6 +522,8 @@ class PoolImageInfo(SerializableContainer):
 
     supports_kickstart: bool
 
+    creation_date: Optional[str]
+
     def serialize_scrubbed(self) -> dict[str, Any]:
         """
         Serialize properties to JSON while scrubbing sensitive information.
@@ -534,6 +536,22 @@ class PoolImageInfo(SerializableContainer):
         del serialized['id']
 
         return serialized
+
+    def is_old_enough(self, logger: gluetool.log.ContextAdapter, threshold: int) -> bool:
+        if not self.creation_date:
+            return False
+        try:
+            # NOTE(ivasilev) Make datetime format class level property?
+            parsed_timestamp = datetime.datetime.strptime(self.creation_date, '%Y-%m-%dT%H:%M:%S.%fZ')
+
+        except Exception as exc:
+            Failure.from_exc('failed to parse timestamp', exc, timestamp=self.creation_date).handle(logger)
+
+            return False
+
+        diff = datetime.datetime.utcnow() - parsed_timestamp
+
+        return diff.total_seconds() >= threshold
 
 
 class FlavorKeyGetterType(Protocol):

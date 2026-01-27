@@ -1416,6 +1416,8 @@ class BeakerDriver(PoolDriver):
                 boot=FlavorBoot(),
                 ssh=PoolImageSSHInfo(),
                 supports_kickstart=groups['bootc_image'] is None,
+                # beaker images don't have a concept of creation date
+                creation_date=None,
             )
 
             if groups['variant'] is not None:
