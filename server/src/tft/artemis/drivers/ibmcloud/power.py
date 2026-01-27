@@ -164,6 +164,10 @@ class IBMCloudPowerPoolImageInfo(PoolImageInfo):
     # /pcloud/v1/cloud-instances/f60e5369884840cd85c1490f4fb506eb/images/b44fe39f-3ec4-4baa-ada5-cbd56acaec1d
     href: str
 
+    @classmethod
+    def datetime_format(cls) -> str:
+        return IBMCLOUD_DATETIME_FORMAT
+
 
 class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
     drivername = 'ibmcloud-power'
@@ -244,7 +248,7 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
                             boot=FlavorBoot(),
                             ssh=PoolImageSSHInfo(),
                             supports_kickstart=False,
-                            creation_date=image['creationDate'],
+                            creation_date=IBMCloudPowerPoolImageInfo.strptime(image['creationDate']),
                         )
                     )
                 except KeyError as exc:

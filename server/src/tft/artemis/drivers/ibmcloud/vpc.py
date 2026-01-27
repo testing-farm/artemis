@@ -137,6 +137,10 @@ class IBMCloudVPCPoolImageInfo(PoolImageInfo):
     # One of ipxe, esxi_kickstart, cloud_init
     user_data_format: str
 
+    @classmethod
+    def datetime_format(cls) -> str:
+        return IBMCLOUD_DATETIME_FORMAT
+
 
 class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
     drivername = 'ibmcloud-vpc'
@@ -221,7 +225,7 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
                             boot=FlavorBoot(),
                             ssh=PoolImageSSHInfo(),
                             supports_kickstart=False,
-                            creation_date=image['created_at'],
+                            creation_date=IBMCloudVPCPoolImageInfo.strptime(image['created_at']),
                         )
                     )
                 except KeyError as exc:

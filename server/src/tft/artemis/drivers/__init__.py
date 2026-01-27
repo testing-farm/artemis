@@ -522,7 +522,7 @@ class PoolImageInfo(SerializableContainer):
 
     supports_kickstart: bool
 
-    creation_date: Optional[str]
+    creation_date: Optional[datetime.datetime]
 
     def serialize_scrubbed(self) -> dict[str, Any]:
         """
@@ -537,19 +537,39 @@ class PoolImageInfo(SerializableContainer):
 
         return serialized
 
+    @classmethod
+    def datetime_format(cls) -> str:
+        # NOTE(ivasilev) After python-3.11+ chain of property/classmethod won't work anymore, we can finally use
+        # dataclass.field(default=DATETIME_FORMAT, kw_only=True) instead of having it as a classmethod.
+        # Chaining classmethod/property is deprecated already and is dropped in py3.11 so no property for us here.
+        return '%Y-%m-%dT%H:%M:%S.%fZ'
+
+    @classmethod
+    def strptime(cls, datetime_str: str) -> datetime.datetime:
+        return datetime.datetime.strptime(datetime_str, cls.datetime_format())
+
+    def serialize(self) -> dict[str, Any]:
+        serialized = super().serialize()
+
+        if serialized['creation_date']:
+            serialized['creation_date'] = serialized['creation_date'].strftime(self.datetime_format())
+
+        return serialized
+
+    @classmethod
+    def unserialize(cls, serialized: dict[str, Any]) -> 'PoolImageInfo':
+        pool_image_info = super().unserialize(serialized)
+
+        if serialized['creation_date']:
+            pool_image_info.creation_date = cls.strptime(serialized['creation_date'])
+
+        return pool_image_info
+
     def is_old_enough(self, logger: gluetool.log.ContextAdapter, threshold: int) -> bool:
         if not self.creation_date:
             return False
-        try:
-            # NOTE(ivasilev) Make datetime format class level property?
-            parsed_timestamp = datetime.datetime.strptime(self.creation_date, '%Y-%m-%dT%H:%M:%S.%fZ')
 
-        except Exception as exc:
-            Failure.from_exc('failed to parse timestamp', exc, timestamp=self.creation_date).handle(logger)
-
-            return False
-
-        diff = datetime.datetime.utcnow() - parsed_timestamp
+        diff = datetime.datetime.utcnow() - self.creation_date
 
         return diff.total_seconds() >= threshold
 
