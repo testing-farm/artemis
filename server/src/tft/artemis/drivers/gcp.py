@@ -122,6 +122,9 @@ class GCPDriver(PoolDriver):
             boot=FlavorBoot(),
             ssh=ssh_info,
             supports_kickstart=False,
+            # Not tested, but relevant creation date field should be creation_timestamp in RFC3339 format
+            # https://docs.cloud.google.com/python/docs/reference/compute/latest/google.cloud.compute_v1.types.Image
+            creation_date=image_description.creation_timestamp,
         )
 
         return Ok(image_info)

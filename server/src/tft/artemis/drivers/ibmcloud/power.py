@@ -244,6 +244,7 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
                             boot=FlavorBoot(),
                             ssh=PoolImageSSHInfo(),
                             supports_kickstart=False,
+                            creation_date=image['creationDate'],
                         )
                     )
                 except KeyError as exc:

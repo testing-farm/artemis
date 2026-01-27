@@ -221,6 +221,7 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
                             boot=FlavorBoot(),
                             ssh=PoolImageSSHInfo(),
                             supports_kickstart=False,
+                            creation_date=image['created_at'],
                         )
                     )
                 except KeyError as exc:
