@@ -100,6 +100,7 @@ class APIImageType(TypedDict):
     href: str
     imageID: str
     specifications: dict[str, Any]
+    creationDate: str
 
 
 class IBMCloudPowerErrorCauses(PoolErrorCauses):

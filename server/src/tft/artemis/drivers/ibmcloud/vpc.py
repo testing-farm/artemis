@@ -108,6 +108,7 @@ class APIImageType(TypedDict):
     user_data_format: str
     status: str
     operating_system: dict[str, Any]
+    created_at: str
 
 
 ConfigImageFilter = TypedDict(
