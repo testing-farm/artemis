@@ -191,6 +191,64 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
 
         return _Ok(capabilities)
 
+    def list_images(
+        self, logger: gluetool.log.ContextAdapter, filters: Optional[ConfigImageFilter] = None
+    ) -> Result[list[PoolImageInfo], Failure]:
+        """
+        This method will will issue a cloud guest list command and return a list of pool image info objects for this
+        particular cloud.
+        Filters argument contains optional filtering options to be applied on the cloud side.
+        """
+        raw_images: list[dict[str, Any]] = []
+        with IBMCloudPowerSession(logger, self) as session:
+            r_images_list = session.run(logger, ['pi', 'image', 'list', '--json'], commandname='ibmcloud.pi-image-list')
+
+            if r_images_list.is_error:
+                return Error(Failure.from_failure('failed to fetch image information', r_images_list.unwrap_error()))
+
+            images_list = cast(dict[str, Any], r_images_list.unwrap())
+
+            if 'images' not in images_list:
+                return Error(Failure('Unexpected cli return, items key is missing', data=images_list))
+
+            raw_images = images_list['images']
+
+        def _from_raw_image(image: dict[str, Any]) -> Result[PoolImageInfo, Failure]:
+            try:
+                arch = image['specifications']['architecture']
+                # NOTE(ivasilev) ppc64 needs special treatment, as IBM had this brilliant idea to put both
+                # ppc64 and ppc64le as `ppc64` and differentiate upon the value of `endianness` field..
+                if arch == 'ppc64':
+                    arch = 'ppc64le' if image['specifications']['endianness'] == 'little-endian' else 'ppc64'
+
+                return Ok(
+                    IBMCloudPowerPoolImageInfo(
+                        href=image['href'],
+                        id=image['imageID'],
+                        name=image['name'],
+                        arch=arch,
+                        boot=FlavorBoot(),
+                        ssh=PoolImageSSHInfo(),
+                        supports_kickstart=False,
+                        creation_date=image['creationDate'],
+                    )
+                )
+            except KeyError as exc:
+                return Error(Failure.from_exc('malformed image description', exc, image_info=image))
+
+        res = []
+        for image_raw in raw_images:
+            r_image = _from_raw_image(image_raw)
+            if r_image.is_error:
+                return Error(
+                    Failure.from_failure(
+                        'Failed converting image data to a PoolImageInfo object', r_image.unwrap_error()
+                    )
+                )
+            res.append(r_image.unwrap())
+
+        return Ok(res)
+
     def fetch_pool_image_info(self) -> Result[list[PoolImageInfo], Failure]:
         def _fetch_images(filters: Optional[ConfigImageFilter] = None) -> Result[list[PoolImageInfo], Failure]:
             # operating system as defined in operatingSystem.version
