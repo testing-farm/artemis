@@ -374,10 +374,6 @@ class AWSPoolImageInfo(PoolImageInfo):
     #: Carries original `BootMode` image field.
     boot_mode: Optional[str]
 
-    @classmethod
-    def datetime_format(cls) -> str:
-        return AWS_DATETIME_FORMAT
-
     def serialize_scrubbed(self) -> dict[str, Any]:
         serialized = super().serialize_scrubbed()
 
@@ -413,12 +409,8 @@ def _base64_encode(data: str) -> str:
 
 
 def is_old_enough(logger: gluetool.log.ContextAdapter, timestamp: str, threshold: int) -> bool:
-    try:
-        parsed_timestamp = datetime.datetime.strptime(timestamp, AWS_DATETIME_FORMAT)
-
-    except Exception as exc:
-        Failure.from_exc('failed to parse timestamp', exc, timestamp=timestamp).handle(logger)
-
+    parsed_timestamp = AWSDriver.convert_to_datetime(logger, timestamp)
+    if not parsed_timestamp:
         return False
 
     diff = datetime.datetime.utcnow() - parsed_timestamp
@@ -1522,6 +1514,16 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
     @property
     def use_public_ip(self) -> bool:
         return normalize_bool_option(self.pool_config.get('use-public-ip', False))
+
+    @classmethod
+    def convert_to_datetime(
+        cls, logger: gluetool.log.ContextAdapter, datetime_string: str
+    ) -> Optional[datetime.datetime]:
+        try:
+            return datetime.datetime.strptime(datetime_string, AWS_DATETIME_FORMAT)
+        except Exception as exc:
+            Failure.from_exc('failed to parse timestamp', exc, timestamp=datetime_string).handle(logger)
+            return None
 
     # ignore[override]: mismatch with PoolImageInfoT in the parent, will be resolved with later patches focusing on
     # the deduplication.
@@ -2811,7 +2813,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
                             # `None`
                             ena_support=image.get('EnaSupport', False) or False,
                             boot_mode=aws_boot_mode,
-                            creation_date=AWSPoolImageInfo.strptime(image['CreationDate']),
+                            creation_date=self.convert_to_datetime(self.logger, image['CreationDate']),
                         )
                     )
 
@@ -3045,7 +3047,9 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
 
         output = cast(dict[str, str], r_output.unwrap())
 
-        timestamp = datetime.datetime.strptime(output['Timestamp'], AWS_DATETIME_FORMAT)
+        timestamp = self.convert_to_datetime(logger, output['Timestamp'])
+        if not timestamp:
+            return Error(Failure('Could not convert datetime while fetching console blob'))
         console_output = output.get('Output')
 
         return Ok((timestamp, console_output))

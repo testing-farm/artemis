@@ -537,22 +537,11 @@ class PoolImageInfo(SerializableContainer):
 
         return serialized
 
-    @classmethod
-    def datetime_format(cls) -> str:
-        # NOTE(ivasilev) After python-3.11+ chain of property/classmethod won't work anymore, we can finally use
-        # dataclass.field(default=DATETIME_FORMAT, kw_only=True) instead of having it as a classmethod.
-        # Chaining classmethod/property is deprecated already and is dropped in py3.11 so no property for us here.
-        return '%Y-%m-%dT%H:%M:%S.%fZ'
-
-    @classmethod
-    def strptime(cls, datetime_str: str) -> datetime.datetime:
-        return datetime.datetime.strptime(datetime_str, cls.datetime_format())
-
     def serialize(self) -> dict[str, Any]:
         serialized = super().serialize()
 
-        if serialized['creation_date']:
-            serialized['creation_date'] = serialized['creation_date'].strftime(self.datetime_format())
+        if self.creation_date:
+            serialized['creation_date'] = self.creation_date.strftime(RESOURCE_CTIME_FMT)
 
         return serialized
 
@@ -561,7 +550,7 @@ class PoolImageInfo(SerializableContainer):
         pool_image_info = super().unserialize(serialized)
 
         if serialized['creation_date']:
-            pool_image_info.creation_date = cls.strptime(serialized['creation_date'])
+            pool_image_info.creation_date = datetime.datetime.strptime(serialized['creation_date'], RESOURCE_CTIME_FMT)
 
         return pool_image_info
 

@@ -138,10 +138,6 @@ class IBMCloudVPCPoolImageInfo(PoolImageInfo):
     # One of ipxe, esxi_kickstart, cloud_init
     user_data_format: str
 
-    @classmethod
-    def datetime_format(cls) -> str:
-        return IBMCLOUD_DATETIME_FORMAT
-
 
 class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
     drivername = 'ibmcloud-vpc'
@@ -226,7 +222,7 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
                             boot=FlavorBoot(),
                             ssh=PoolImageSSHInfo(),
                             supports_kickstart=False,
-                            creation_date=IBMCloudVPCPoolImageInfo.strptime(image['created_at']),
+                            creation_date=self.convert_to_datetime(logger, image['created_at']),
                         )
                     )
                 except KeyError as exc:
@@ -422,10 +418,15 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
 
             res = []
             for instance in cast(list[dict[str, Any]], r_instances_list.unwrap()):
-                try:
-                    created_at = datetime.datetime.strptime(instance['created_at'], IBMCLOUD_DATETIME_FORMAT)
-                except ValueError:
-                    return Error(Failure('Double check time format, could not convert time data'))
+                created_at = self.convert_to_datetime(logger, instance['created_at'])
+                if not created_at:
+                    return Error(
+                        Failure(
+                            'Could not convert datetime while listing instances',
+                            instance=instance['id'],
+                            created_at=instance['created_at'],
+                        )
+                    )
 
                 res.append(
                     IBMCloudVPCInstance(

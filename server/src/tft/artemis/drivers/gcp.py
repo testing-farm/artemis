@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import dataclasses
+import datetime
 import re
 import threading
 from functools import cached_property
@@ -57,6 +58,8 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
 
 DEFAULT_DISK_SIZE: SizeType = UNITS('20 GiB')
 
+GCP_DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S.%f%z'
+
 
 @dataclasses.dataclass
 class GCPPoolData(PoolData):
@@ -88,6 +91,16 @@ class GCPDriver(PoolDriver):
         return cast(
             compute_v1.InstancesClient, compute_v1.InstancesClient.from_service_account_info(self._service_account_info)
         )
+
+    @classmethod
+    def convert_to_datetime(
+        cls, logger: gluetool.log.ContextAdapter, datetime_string: str
+    ) -> Optional[datetime.datetime]:
+        try:
+            return datetime.datetime.strptime(datetime_string, GCP_DATETIME_FORMAT)
+        except Exception as exc:
+            Failure.from_exc('failed to parse timestamp', exc, timestamp=datetime_string).handle(logger)
+            return None
 
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
         capabilities.supported_architectures = ['x86_64']
@@ -124,7 +137,7 @@ class GCPDriver(PoolDriver):
             supports_kickstart=False,
             # Not tested, but relevant creation date field should be creation_timestamp in RFC3339 format
             # https://docs.cloud.google.com/python/docs/reference/compute/latest/google.cloud.compute_v1.types.Image
-            creation_date=image_description.creation_timestamp,
+            creation_date=self.convert_to_datetime(logger, image_description.creation_timestamp),
         )
 
         return Ok(image_info)
