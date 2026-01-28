@@ -199,7 +199,7 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
         particular cloud.
         Filters argument contains optional filtering options to be applied on the cloud side.
         """
-        raw_images: list[dict[str, Any]] = []
+        raw_images: list[APIImageType] = []
         with IBMCloudPowerSession(logger, self) as session:
             r_images_list = session.run(logger, ['pi', 'image', 'list', '--json'], commandname='ibmcloud.pi-image-list')
 
@@ -213,7 +213,7 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
 
             raw_images = images_list['images']
 
-        def _from_raw_image(image: dict[str, Any]) -> Result[PoolImageInfo, Failure]:
+        def _from_raw_image(image: APIImageType) -> Result[PoolImageInfo, Failure]:
             try:
                 arch = image['specifications']['architecture']
                 # NOTE(ivasilev) ppc64 needs special treatment, as IBM had this brilliant idea to put both
@@ -230,7 +230,7 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
                         boot=FlavorBoot(),
                         ssh=PoolImageSSHInfo(),
                         supports_kickstart=False,
-                        creation_date=image['creationDate'],
+                        creation_date=self.convert_to_datetime(self.logger, image['creationDate']),
                     )
                 )
             except KeyError as exc:

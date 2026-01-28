@@ -674,6 +674,67 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
             self.logger, _fetch, lambda raw_flavor: cast(str, raw_flavor['name']), _constructor
         )
 
+    def list_images(
+        self, logger: gluetool.log.ContextAdapter, filters: Optional[ConfigImageFilter] = None
+    ) -> Result[list[PoolImageInfo], Failure]:
+        """
+        This method will will issue a cloud guest list command and return a list of pool image info objects for this
+        particular cloud.
+        Filters argument contains optional filtering options to be applied on the cloud side.
+        """
+        list_images_cmd = ['vm', 'image', 'list', '--all']
+        raw_images: list[APIImageType] = []
+
+        if filters:
+            if 'offer' in filters:
+                list_images_cmd.extend(['--offer', filters['offer']])
+            if 'sku' in filters:
+                list_images_cmd.extend(['--sku', filters['sku']])
+            if 'publisher' in filters:
+                list_images_cmd.extend(['--publisher', filters['publisher']])
+
+        with AzureSession(logger, self) as session:
+            r_images_list = session.run_az(logger, list_images_cmd, commandname='az.vm-image-list')
+
+            if r_images_list.is_error:
+                return Error(Failure.from_failure('failed to fetch image information', r_images_list.unwrap_error()))
+            raw_images = r_images_list.unwrap()
+
+        def _from_raw_image(image: APIImageType) -> Result[PoolImageInfo, Failure]:
+            try:
+                return Ok(
+                    AzurePoolImageInfo(
+                        name=image['urn'],
+                        id=image['urn'],
+                        urn=image['urn'],
+                        offer=image['offer'],
+                        publisher=image['publisher'],
+                        sku=image['sku'],
+                        version=image['version'],
+                        arch=_azure_arch_to_arch(image['architecture']),
+                        boot=FlavorBoot(),
+                        ssh=PoolImageSSHInfo(),
+                        supports_kickstart=False,
+                        # azure image list command doesn't show creation date
+                        creation_date=None,
+                    )
+                )
+            except KeyError as exc:
+                return Error(Failure.from_exc('malformed image description', exc, image_info=image))
+
+        res = []
+        for image_raw in raw_images:
+            r_image = _from_raw_image(image_raw)
+            if r_image.is_error:
+                return Error(
+                    Failure.from_failure(
+                        'Failed converting image data to a PoolImageInfo object', r_image.unwrap_error()
+                    )
+                )
+            res.append(r_image.unwrap())
+
+        return Ok(res)
+
     def fetch_pool_image_info(self) -> Result[list[PoolImageInfo], Failure]:
         def _fetch_images(filters: Optional[ConfigImageFilter] = None) -> Result[list[PoolImageInfo], Failure]:
             name_pattern: Optional[Pattern[str]] = None
