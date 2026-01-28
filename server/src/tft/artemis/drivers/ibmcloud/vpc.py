@@ -340,15 +340,15 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
         resource_group = self.pool_config.get('resource-group', 'Default')
 
         list_images_cmd = ['is', 'images', '--output', 'json', '--resource-group-name', resource_group]
-        if filters:
-            if 'visibility' in filters:
-                list_images_cmd.extend(['--visibility', filters['visibility']])
-            if 'owner-type' in filters:
-                list_images_cmd.extend(['--owner-type', filters['owner-type']])
-            if 'status' in filters:
-                list_images_cmd.extend(['--status', filters['status']])
-            if 'user-data-format' in filters:
-                list_images_cmd.extend(['--user-data-format', filters['user-data-format']])
+        filters = filters or {}
+        if 'visibility' in filters:
+            list_images_cmd.extend(['--visibility', filters['visibility']])
+        if 'owner-type' in filters:
+            list_images_cmd.extend(['--owner-type', filters['owner-type']])
+        if 'status' in filters:
+            list_images_cmd.extend(['--status', filters['status']])
+        if 'user-data-format' in filters:
+            list_images_cmd.extend(['--user-data-format', filters['user-data-format']])
 
         raw_images: list[APIImageType] = []
         with IBMCloudSession(logger, self) as session:

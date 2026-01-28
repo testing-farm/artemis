@@ -1577,13 +1577,14 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         """
         raw_images: list[APIImageType] = []
         cli_options = ['ec2', 'describe-images']
+        filters = filters or {}
 
-        if filters and 'owner' in filters:
+        if 'owner' in filters:
             cli_options += ['--owners', filters['owner']]
         else:
             cli_options += ['--owners', 'self']
 
-        if filters and 'name-wildcard' in filters:
+        if 'name-wildcard' in filters:
             cli_options += ['--filter', f'Name=name,Values={filters["name-wildcard"]}']
 
         r_raw_images = self._aws_command(cli_options, key='Images', commandname='aws.ec2-describe-images')

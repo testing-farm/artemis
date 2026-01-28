@@ -684,14 +684,14 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
         """
         list_images_cmd = ['vm', 'image', 'list', '--all']
         raw_images: list[APIImageType] = []
+        filters = filters or {}
 
-        if filters:
-            if 'offer' in filters:
-                list_images_cmd.extend(['--offer', filters['offer']])
-            if 'sku' in filters:
-                list_images_cmd.extend(['--sku', filters['sku']])
-            if 'publisher' in filters:
-                list_images_cmd.extend(['--publisher', filters['publisher']])
+        if 'offer' in filters:
+            list_images_cmd.extend(['--offer', filters['offer']])
+        if 'sku' in filters:
+            list_images_cmd.extend(['--sku', filters['sku']])
+        if 'publisher' in filters:
+            list_images_cmd.extend(['--publisher', filters['publisher']])
 
         with AzureSession(logger, self) as session:
             r_images_list = session.run_az(logger, list_images_cmd, commandname='az.vm-image-list')
