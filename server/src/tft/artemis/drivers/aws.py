@@ -1565,6 +1565,76 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
 
         return Ok(capabilities)
 
+    def list_images(
+        self, logger: gluetool.log.ContextAdapter, filters: Optional[ConfigImageFilter] = None
+    ) -> Result[list[PoolImageInfo], Failure]:
+        """
+        This method will will issue a cloud guest list command and return a list of pool image info objects for this
+        particular cloud.
+        Filters argument contains optional filtering options to be applied on the cloud side.
+        """
+        raw_images: list[APIImageType] = []
+        cli_options = ['ec2', 'describe-images']
+
+        if filters and 'owner' in filters:
+            cli_options += ['--owners', filters['owner']]
+        else:
+            cli_options += ['--owners', 'self']
+
+        if filters and 'name-wildcard' in filters:
+            cli_options += ['--filter', f'Name=name,Values={filters["name-wildcard"]}']
+
+        r_raw_images = self._aws_command(cli_options, key='Images', commandname='aws.ec2-describe-images')
+        if r_raw_images.is_error:
+            return Error(Failure.from_failure('failed to fetch image information', r_raw_images.unwrap_error()))
+        raw_images = r_raw_images.unwrap()
+
+        def _from_raw_image(image: APIImageType) -> Result[PoolImageInfo, Failure]:
+            try:
+                aws_boot_mode = cast(Optional[str], JQ_QUERY_IMAGE_SUPPORTED_BOOT_MODE.input(image).first())
+
+            except Exception as exc:
+                return Error(Failure.from_exc('failed to parse AWS output', exc))
+
+            try:
+                arch = _aws_arch_to_arch(image['Architecture'])
+
+                return Ok(
+                    AWSPoolImageInfo(
+                        # .Name is optional and may be undefined or missing - use .ImageId in such a case
+                        name=image.get('Name') or image['ImageId'],
+                        id=image['ImageId'],
+                        arch=arch,
+                        boot=FlavorBoot(method=_aws_ami_boot_mode_to_boot_method(aws_boot_mode, arch))
+                        if aws_boot_mode is not None
+                        else FlavorBoot(),
+                        ssh=PoolImageSSHInfo(),
+                        supports_kickstart=False,
+                        platform_details=image['PlatformDetails'],
+                        block_device_mappings=image['BlockDeviceMappings'],
+                        # some AMI lack this field, and we need to make sure it's really a boolean, not `null` or
+                        # `None`
+                        ena_support=image.get('EnaSupport', False) or False,
+                        boot_mode=aws_boot_mode,
+                        creation_date=self.convert_to_datetime(self.logger, image['CreationDate']),
+                    )
+                )
+            except KeyError as exc:
+                return Error(Failure.from_exc('malformed image description', exc, image_info=image))
+
+        res = []
+        for image_raw in raw_images:
+            r_image = _from_raw_image(image_raw)
+            if r_image.is_error:
+                return Error(
+                    Failure.from_failure(
+                        'Failed converting image data to a PoolImageInfo object', r_image.unwrap_error()
+                    )
+                )
+            res.append(r_image.unwrap())
+
+        return Ok(res)
+
     def release_pool_resources(
         self, logger: gluetool.log.ContextAdapter, raw_resource_ids: SerializedPoolResourcesIDs
     ) -> Result[ReleasePoolResourcesState, Failure]:

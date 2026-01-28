@@ -322,33 +322,6 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
             self.logger, _fetch, lambda raw_flavor: cast(str, raw_flavor['name']), _constructor
         )
 
-    def _list_images_raw(
-        self, logger: gluetool.log.ContextAdapter, filters: Optional[ConfigImageFilter] = None
-    ) -> Result[list[dict[str, Any]], Failure]:
-        """
-        This method will will issue a cloud guest list command and return a list of dictionaries representing
-        cloud images (raw means that data is returned in the same form the cloud sends it to us, no processing applied).
-        """
-        resource_group = self.pool_config.get('resource-group', 'Default')
-
-        list_images_cmd = ['is', 'images', '--output', 'json', '--resource-group-name', resource_group]
-        if filters:
-            if 'visibility' in filters:
-                list_images_cmd.extend(['--visibility', filters['visibility']])
-            if 'owner-type' in filters:
-                list_images_cmd.extend(['--owner-type', filters['owner-type']])
-            if 'status' in filters:
-                list_images_cmd.extend(['--status', filters['status']])
-            if 'user-data-format' in filters:
-                list_images_cmd.extend(['--user-data-format', filters['user-data-format']])
-
-        with IBMCloudSession(logger, self) as session:
-            r_images_list = session.run(logger, list_images_cmd, commandname='ibmcloud.vm-image-list')
-
-            if r_images_list.is_error:
-                return Error(Failure.from_failure('failed to fetch image information', r_images_list.unwrap_error()))
-            return Ok(cast(list[dict[str, Any]], r_images_list.unwrap()))
-
     def list_images(
         self, logger: gluetool.log.ContextAdapter, filters: Optional[ConfigImageFilter] = None
     ) -> Result[list[PoolImageInfo], Failure]:
@@ -370,15 +343,15 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
             if 'user-data-format' in filters:
                 list_images_cmd.extend(['--user-data-format', filters['user-data-format']])
 
-        raw_images: list[dict[str, Any]] = []
+        raw_images: list[APIImageType] = []
         with IBMCloudSession(logger, self) as session:
             r_images_list = session.run(logger, list_images_cmd, commandname='ibmcloud.vm-image-list')
 
             if r_images_list.is_error:
                 return Error(Failure.from_failure('failed to fetch image information', r_images_list.unwrap_error()))
-            raw_images = r_images_list.unwrap()
+            raw_images = cast(list[APIImageType], r_images_list.unwrap())
 
-        def _from_raw_image(image: dict[str, Any]) -> Result[PoolImageInfo, Failure]:
+        def _from_raw_image(image: APIImageType) -> Result[PoolImageInfo, Failure]:
             try:
                 return Ok(
                     IBMCloudVPCPoolImageInfo(
@@ -392,7 +365,7 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
                         boot=FlavorBoot(),
                         ssh=PoolImageSSHInfo(),
                         supports_kickstart=False,
-                        creation_date=image['created_at'],
+                        creation_date=self.convert_to_datetime(self.logger, image['created_at']),
                     )
                 )
             except KeyError as exc:
