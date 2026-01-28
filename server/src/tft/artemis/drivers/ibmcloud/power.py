@@ -15,7 +15,6 @@ from tmt.hardware import UNITS
 
 from tft.artemis.drivers import PoolDriver, PoolImageInfo, PoolImageInfoT
 from tft.artemis.drivers.ibmcloud import (
-    IBMCLOUD_DATETIME_FORMAT,
     IBMCloudDriver,
     IBMCloudFlavor,
     IBMCloudInstance,
@@ -165,10 +164,6 @@ class IBMCloudPowerPoolImageInfo(PoolImageInfo):
     # /pcloud/v1/cloud-instances/f60e5369884840cd85c1490f4fb506eb/images/b44fe39f-3ec4-4baa-ada5-cbd56acaec1d
     href: str
 
-    @classmethod
-    def datetime_format(cls) -> str:
-        return IBMCLOUD_DATETIME_FORMAT
-
 
 class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
     drivername = 'ibmcloud-power'
@@ -249,7 +244,7 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
                             boot=FlavorBoot(),
                             ssh=PoolImageSSHInfo(),
                             supports_kickstart=False,
-                            creation_date=IBMCloudPowerPoolImageInfo.strptime(image['creationDate']),
+                            creation_date=self.convert_to_datetime(logger, image['creationDate']),
                         )
                     )
                 except KeyError as exc:
@@ -467,14 +462,13 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
                 return Error(Failure.from_failure('Instance creation failed', r_instance_create.unwrap_error()))
 
             instance = cast(list[dict[str, Any]], r_instance_create.unwrap())[0]
-            try:
-                created_at = datetime.datetime.strptime(instance['creationDate'], IBMCLOUD_DATETIME_FORMAT)
-            except ValueError:
+            created_at = self.convert_to_datetime(logger, instance['creationDate'])
+            if not created_at:
                 return Error(
                     Failure(
-                        'Double check time format, could not convert time data',
-                        raw_datetime=instance['creationDate'],
-                        format=IBMCLOUD_DATETIME_FORMAT,
+                        'Could not convert datetime while creating an instance',
+                        instance_id=instance['pvmInstanceID'],
+                        created_at=instance['creationDate'],
                     )
                 )
 
@@ -594,10 +588,15 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
 
             res = []
             for instance in cast(dict[str, Any], r_instances_list.unwrap())['pvmInstances']:
-                try:
-                    created_at = datetime.datetime.strptime(instance['creationDate'], IBMCLOUD_DATETIME_FORMAT)
-                except ValueError:
-                    return Error(Failure('Double check time format, could not convert time data'))
+                created_at = self.convert_to_datetime(logger, instance['creationDate'])
+                if not created_at:
+                    return Error(
+                        Failure(
+                            'Could not convert datetime while listing instances',
+                            instance=instance['id'],
+                            created_at=instance['creationDate'],
+                        )
+                    )
 
                 res.append(
                     IBMCloudPowerInstance(

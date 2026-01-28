@@ -218,8 +218,9 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor], Gener
     flavor_info_class = IBMCloudFlavor
     pool_data_class = IBMCloudPoolData
 
+    @classmethod
     def convert_to_datetime(
-        self, logger: gluetool.log.ContextAdapter, datetime_string: str
+        cls, logger: gluetool.log.ContextAdapter, datetime_string: str
     ) -> Optional[datetime.datetime]:
         try:
             return datetime.datetime.strptime(datetime_string, IBMCLOUD_DATETIME_FORMAT)
