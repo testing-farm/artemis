@@ -1573,7 +1573,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         filters: Optional[ConfigImageFilter] = None,  # type: ignore[override]
     ) -> Result[list[PoolImageInfo], Failure]:
         """
-        This method will will issue a cloud guest list command and return a list of pool image info objects for this
+        This method will issue a cloud guest list command and return a list of pool image info objects for this
         particular cloud.
         Filters argument contains optional filtering options to be applied on the cloud side.
         """

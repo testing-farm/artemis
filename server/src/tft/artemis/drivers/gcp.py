@@ -387,6 +387,11 @@ class GCPDriver(PoolDriver):
     def list_images(
         self, logger: gluetool.log.ContextAdapter, filters: Optional[ConfigImageFilter] = None
     ) -> Result[list[PoolImageInfo], Failure]:
+        """
+        This method will issue a cloud guest list command and return a list of pool image info objects for this
+        particular cloud.
+        Filters argument contains optional filtering options to be applied on the cloud side.
+        """
         image_project = self.pool_config['image-project']
 
         images_client = compute_v1.ImagesClient.from_service_account_info(self._service_account_info)
