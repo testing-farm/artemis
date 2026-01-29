@@ -10,7 +10,6 @@ import operator
 import os
 import re
 from collections.abc import Generator, Iterator, MutableSequence
-from re import Pattern
 from typing import (
     Any,
     Callable,
@@ -1486,6 +1485,8 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
     flavor_info_class = AWSFlavor
     pool_data_class = AWSPoolData
 
+    datetime_format = AWS_DATETIME_FORMAT
+
     _image_map_hook_name = 'AWS_ENVIRONMENT_TO_IMAGE'
 
     def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str, pool_config: dict[str, Any]) -> None:
@@ -2825,117 +2826,6 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
             resource_ids.append(AWSPoolResourcesIDs(security_group=pool_data.security_group))
 
         return self.dispatch_resource_cleanup(logger, session, *resource_ids, guest_request=guest_request)
-
-    def fetch_pool_image_info(self) -> Result[list[PoolImageInfo], Failure]:
-        def _fetch_images(filters: Optional[ConfigImageFilter] = None) -> Result[list[PoolImageInfo], Failure]:
-            name_patern: Optional[Pattern[str]] = None
-            creation_date_patern: Optional[Pattern[str]] = None
-            max_age: Optional[int] = None
-
-            if filters:
-                if 'name-regex' in filters:
-                    name_patern = re.compile(filters['name-regex'])
-
-                if 'creation-date-regex' in filters:
-                    creation_date_patern = re.compile(filters['creation-date-regex'])
-
-                if 'max-age' in filters:
-                    max_age = filters.get('max-age')
-
-            cli_options = ['ec2', 'describe-images']
-
-            if filters and 'owner' in filters:
-                cli_options += ['--owners', filters['owner']]
-
-            else:
-                cli_options += ['--owners', 'self']
-
-            if filters and 'name-wildcard' in filters:
-                cli_options += ['--filter', f'Name=name,Values={filters["name-wildcard"]}']
-
-            r_images = self._aws_command(cli_options, key='Images', commandname='aws.ec2-describe-images')
-
-            if r_images.is_error:
-                return Error(Failure.from_failure('failed to fetch image information', r_images.unwrap_error()))
-
-            images: list[PoolImageInfo] = []
-
-            for image in cast(list[APIImageType], r_images.unwrap()):
-                if name_patern is not None and not name_patern.match(image.get('Name') or image['ImageId']):
-                    continue
-
-                if creation_date_patern is not None and not creation_date_patern.match(image['CreationDate']):
-                    continue
-
-                if max_age is not None and is_old_enough(image['CreationDate'], max_age):
-                    continue
-
-                try:
-                    aws_boot_mode = cast(Optional[str], JQ_QUERY_IMAGE_SUPPORTED_BOOT_MODE.input(image).first())
-
-                except Exception as exc:
-                    return Error(Failure.from_exc('failed to parse AWS output', exc))
-
-                arch = _aws_arch_to_arch(image['Architecture'])
-                ctime = self.timestamp_to_datetime(image['CreationDate'])
-                if ctime.is_error:
-                    return Error(
-                        Failure.from_failure(
-                            'Could not convert timestamp', ctime.unwrap_error(), image=image['ImageId']
-                        )
-                    )
-
-                try:
-                    images.append(
-                        AWSPoolImageInfo(
-                            # .Name is optional and may be undefined or missing - use .ImageId in such a case
-                            name=image.get('Name') or image['ImageId'],
-                            id=image['ImageId'],
-                            arch=arch,
-                            boot=FlavorBoot(method=_aws_ami_boot_mode_to_boot_method(aws_boot_mode, arch))
-                            if aws_boot_mode is not None
-                            else FlavorBoot(),
-                            ssh=PoolImageSSHInfo(),
-                            supports_kickstart=False,
-                            platform_details=image['PlatformDetails'],
-                            block_device_mappings=image['BlockDeviceMappings'],
-                            # some AMI lack this field, and we need to make sure it's really a boolean, not `null` or
-                            # `None`
-                            ena_support=image.get('EnaSupport', False) or False,
-                            boot_mode=aws_boot_mode,
-                            created_at=ctime.unwrap(),
-                        )
-                    )
-
-                except KeyError as exc:
-                    return Error(Failure.from_exc('malformed image description', exc, image_info=r_images.unwrap()))
-
-            log_dict_yaml(self.logger.debug, 'image filters', filters)
-            log_dict_yaml(self.logger.debug, 'found images', [image.name for image in images])
-
-            return Ok(images)
-
-        images: list[PoolImageInfo] = []
-        image_filters = cast(list[ConfigImageFilter], self.pool_config.get('image-filters', []))
-
-        if image_filters:
-            for filters in image_filters:
-                r_images = _fetch_images(filters)
-
-                if r_images.is_error:
-                    return r_images
-
-                images += r_images.unwrap()
-
-        else:
-            r_images = _fetch_images()
-
-            if r_images.is_error:
-                return r_images
-
-            images += r_images.unwrap()
-
-        return Ok(images)
 
     def fetch_pool_flavor_info(self) -> Result[list[Flavor], Failure]:
         # See AWS docs: https://docs.aws.amazon.com/cli/latest/reference/ec2/describe-instance-types.html
