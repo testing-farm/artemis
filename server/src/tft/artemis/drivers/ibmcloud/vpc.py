@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import dataclasses
-import datetime
 import functools
 import json
 import re
@@ -17,7 +16,6 @@ from tmt.hardware import UNITS
 
 from tft.artemis.drivers import PoolDriver, PoolImageInfo
 from tft.artemis.drivers.ibmcloud import (
-    IBMCLOUD_DATETIME_FORMAT,
     IBMCloudDriver,
     IBMCloudFlavor,
     IBMCloudInstance,
@@ -523,16 +521,19 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
                 return Error(Failure.from_failure('Instance creation failed', r_instance_create.unwrap_error()))
 
             instance = cast(dict[str, Any], r_instance_create.unwrap())
-            try:
-                created_at = datetime.datetime.strptime(instance['created_at'], IBMCLOUD_DATETIME_FORMAT)
-            except ValueError:
-                return Error(Failure('Double check time format, could not convert time data'))
+            created_at = self.timestamp_to_datetime(instance['created_at'])
+            if created_at.is_error:
+                return Error(
+                    Failure.from_failure(
+                        'Could not parse instance create timestamp', created_at.unwrap_error(), instance=instance['id']
+                    )
+                )
             return Ok(
                 IBMCloudVPCInstance(
                     id=instance['id'],
                     name=instance['name'],
                     status=instance['status'],
-                    created_at=created_at,
+                    created_at=created_at.unwrap(),
                 )
             )
 
