@@ -1534,9 +1534,6 @@ class BeakerDriver(PoolDriver):
         if not is_successful(r_ks_meta):
             return Error(r_ks_meta.failure())
 
-        if r_ks_meta.is_error:
-            return Error(r_ks_meta.unwrap_error())
-
         ks_meta = r_ks_meta.unwrap()
 
         if guest_request.environment.has_ks_specification or ks_meta:
