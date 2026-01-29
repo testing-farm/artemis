@@ -235,6 +235,14 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
                     if arch_pattern and not arch_pattern.match(arch):
                         continue
 
+                    ctime = self.timestamp_to_datetime(image['creationDate'])
+                    if ctime.is_error:
+                        return Error(
+                            Failure.from_failure(
+                                'Could not parse image create timestamp', ctime.unwrap_error(), image=image['imageID']
+                            )
+                        )
+
                     images.append(
                         IBMCloudPowerPoolImageInfo(
                             href=image['href'],
@@ -244,7 +252,7 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
                             boot=FlavorBoot(),
                             ssh=PoolImageSSHInfo(),
                             supports_kickstart=False,
-                            creation_date=self.convert_to_datetime(logger, image['creationDate']),
+                            created_at=ctime.unwrap(),
                         )
                     )
                 except KeyError as exc:
@@ -462,13 +470,13 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
                 return Error(Failure.from_failure('Instance creation failed', r_instance_create.unwrap_error()))
 
             instance = cast(list[dict[str, Any]], r_instance_create.unwrap())[0]
-            created_at = self.convert_to_datetime(logger, instance['creationDate'])
-            if not created_at:
+            created_at = self.timestamp_to_datetime(instance['creationDate'])
+            if created_at.is_error:
                 return Error(
-                    Failure(
-                        'Could not convert datetime while creating an instance',
+                    Failure.from_failure(
+                        'Could not parse instance create timestamp',
+                        created_at.unwrap_error(),
                         instance_id=instance['pvmInstanceID'],
-                        created_at=instance['creationDate'],
                     )
                 )
 
@@ -477,7 +485,7 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
                     id=instance['pvmInstanceID'],
                     name=instance['serverName'],
                     status=instance['status'],
-                    created_at=created_at,
+                    created_at=created_at.unwrap(),
                 )
             )
 
@@ -588,19 +596,22 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
 
             res = []
             for instance in cast(dict[str, Any], r_instances_list.unwrap())['pvmInstances']:
-                created_at = self.convert_to_datetime(logger, instance['creationDate'])
-                if not created_at:
+                created_at = self.timestamp_to_datetime(instance['creationDate'])
+                if created_at.is_error:
                     return Error(
-                        Failure(
-                            'Could not convert datetime while listing instances',
+                        Failure.from_failure(
+                            'Could not parse instance timestamp',
+                            created_at.unwrap_error(),
                             instance=instance['id'],
-                            created_at=instance['creationDate'],
                         )
                     )
 
                 res.append(
                     IBMCloudPowerInstance(
-                        id=instance['id'], name=instance['name'], created_at=created_at, status=instance['status']
+                        id=instance['id'],
+                        name=instance['name'],
+                        created_at=created_at.unwrap(),
+                        status=instance['status'],
                     )
                 )
 

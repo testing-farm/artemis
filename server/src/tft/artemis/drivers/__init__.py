@@ -522,7 +522,7 @@ class PoolImageInfo(SerializableContainer):
 
     supports_kickstart: bool
 
-    creation_date: Optional[datetime.datetime]
+    created_at: Optional[datetime.datetime]
 
     def serialize_scrubbed(self) -> dict[str, Any]:
         """
@@ -540,8 +540,8 @@ class PoolImageInfo(SerializableContainer):
     def serialize(self) -> dict[str, Any]:
         serialized = super().serialize()
 
-        if self.creation_date:
-            serialized['creation_date'] = self.creation_date.strftime(RESOURCE_CTIME_FMT)
+        if self.created_at:
+            serialized['created_at'] = self.created_at.strftime(RESOURCE_CTIME_FMT)
 
         return serialized
 
@@ -549,18 +549,17 @@ class PoolImageInfo(SerializableContainer):
     def unserialize(cls, serialized: dict[str, Any]) -> 'PoolImageInfo':
         pool_image_info = super().unserialize(serialized)
 
-        if serialized['creation_date']:
-            pool_image_info.creation_date = datetime.datetime.strptime(serialized['creation_date'], RESOURCE_CTIME_FMT)
+        if serialized['created_at']:
+            pool_image_info.created_at = datetime.datetime.strptime(serialized['created_at'], RESOURCE_CTIME_FMT)
 
         return pool_image_info
 
-    def is_old_enough(self, logger: gluetool.log.ContextAdapter, threshold: int) -> bool:
-        if not self.creation_date:
-            return False
+    @property
+    def age(self) -> datetime.timedelta:
+        if self.created_at is None:
+            return datetime.timedelta()
 
-        diff = datetime.datetime.utcnow() - self.creation_date
-
-        return diff.total_seconds() >= threshold
+        return datetime.datetime.utcnow() - self.created_at
 
 
 class FlavorKeyGetterType(Protocol):

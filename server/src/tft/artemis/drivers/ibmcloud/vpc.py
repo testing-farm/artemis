@@ -210,6 +210,15 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
                     arch = image['operating_system']['architecture']
                     if arch_pattern and not arch_pattern.match(arch):
                         continue
+
+                    ctime = self.timestamp_to_datetime(image['created_at'])
+                    if ctime.is_error:
+                        return Error(
+                            Failure.from_failure(
+                                'Could not parse image create timestamp', ctime.unwrap_error(), image=image['id']
+                            )
+                        )
+
                     images.append(
                         IBMCloudVPCPoolImageInfo(
                             crn=image['crn'],
@@ -222,7 +231,7 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
                             boot=FlavorBoot(),
                             ssh=PoolImageSSHInfo(),
                             supports_kickstart=False,
-                            creation_date=self.convert_to_datetime(logger, image['created_at']),
+                            created_at=ctime.unwrap(),
                         )
                     )
                 except KeyError as exc:
@@ -418,13 +427,13 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
 
             res = []
             for instance in cast(list[dict[str, Any]], r_instances_list.unwrap()):
-                created_at = self.convert_to_datetime(logger, instance['created_at'])
-                if not created_at:
+                created_at = self.timestamp_to_datetime(instance['created_at'])
+                if created_at.is_error:
                     return Error(
-                        Failure(
-                            'Could not convert datetime while listing instances',
+                        Failure.from_failure(
+                            'Could not parse instance timestamp',
+                            created_at.unwrap_error(),
                             instance=instance['id'],
-                            created_at=instance['created_at'],
                         )
                     )
 
@@ -432,7 +441,7 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
                     IBMCloudVPCInstance(
                         id=instance['id'],
                         name=instance['name'],
-                        created_at=created_at,
+                        created_at=created_at.unwrap(),
                         status=instance['status'],
                     )
                 )

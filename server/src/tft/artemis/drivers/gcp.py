@@ -93,14 +93,15 @@ class GCPDriver(PoolDriver):
         )
 
     @classmethod
-    def convert_to_datetime(
-        cls, logger: gluetool.log.ContextAdapter, datetime_string: str
-    ) -> Optional[datetime.datetime]:
+    def timestamp_to_datetime(cls, timestamp: str) -> Result[datetime.datetime, Failure]:
         try:
-            return datetime.datetime.strptime(datetime_string, GCP_DATETIME_FORMAT)
+            return Ok(datetime.datetime.strptime(timestamp, GCP_DATETIME_FORMAT))
         except Exception as exc:
-            Failure.from_exc('failed to parse timestamp', exc, timestamp=datetime_string).handle(logger)
-            return None
+            return Error(
+                Failure.from_exc(
+                    'failed to parse timestamp', exc, timestamp=timestamp, strptime_format=GCP_DATETIME_FORMAT
+                )
+            )
 
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
         capabilities.supported_architectures = ['x86_64']
@@ -128,6 +129,17 @@ class GCPDriver(PoolDriver):
             return Error(Failure.from_exc('The given imagename was not found.', exc, imagename=image_name))
 
         ssh_info = PoolImageSSHInfo(username='artemis')
+        ctime = self.timestamp_to_datetime(image_description.creation_timestamp)
+        if ctime.is_error:
+            return Error(
+                Failure.from_failure(
+                    'Could not parse image create timestamp',
+                    ctime.unwrap_error(),
+                    image=image_description.self_link,
+                    strptime_format=GCP_DATETIME_FORMAT,
+                )
+            )
+
         image_info = PoolImageInfo(
             name=image_description.name,
             id=image_description.self_link,
@@ -137,7 +149,7 @@ class GCPDriver(PoolDriver):
             supports_kickstart=False,
             # Not tested, but relevant creation date field should be creation_timestamp in RFC3339 format
             # https://docs.cloud.google.com/python/docs/reference/compute/latest/google.cloud.compute_v1.types.Image
-            creation_date=self.convert_to_datetime(logger, image_description.creation_timestamp),
+            created_at=ctime.unwrap(),
         )
 
         return Ok(image_info)

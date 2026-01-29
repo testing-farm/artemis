@@ -877,7 +877,7 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
                         ssh=PoolImageSSHInfo(),
                         supports_kickstart=False,
                         # openstack image list command doesn't show creation date
-                        creation_date=None,
+                        created_at=None,
                     )
                     for image in r_images.unwrap()
                     if image_name_pattern is None or image_name_pattern.match(image['name'])
