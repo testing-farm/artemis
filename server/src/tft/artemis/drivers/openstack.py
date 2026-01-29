@@ -8,7 +8,6 @@ import operator
 import re
 import sys
 from collections.abc import Iterator
-from re import Pattern
 from typing import Any, Optional, TypedDict, Union, cast
 
 import glanceclient
@@ -97,11 +96,12 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
     default='{{ os.compose }}',
 )
 
+OPENSTACK_DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%SZ'
+
 ConfigImageFilter = TypedDict(
     'ConfigImageFilter',
     {
-        # NOTE(ivasilev) Should be renamed to name-regex as part of unification in the next patch
-        'image-regex': str,
+        'name-regex': str,
     },
     total=False,
 )
@@ -655,7 +655,7 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
 
         if status == 'build' and instance.created:
             try:
-                created_stamp = datetime.datetime.strptime(instance.created, '%Y-%m-%dT%H:%M:%SZ')
+                created_stamp = datetime.datetime.strptime(instance.created, OPENSTACK_DATETIME_FORMAT)
 
             except Exception as exc:
                 Failure.from_exc('failed to parse "created" timestamp', exc, stamp=instance.created).handle(self.logger)
@@ -863,7 +863,7 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
     def list_images(
         self,
         logger: gluetool.log.ContextAdapter,
-        filters: Optional[ConfigImageFilter] = None,  # type: ignore[override]
+        filters: Optional[ConfigImageFilter] = None,
     ) -> Result[list[PoolImageInfo], Failure]:
         """
         This method will issue a cloud guest list command and return a list of pool image info objects for this
@@ -907,43 +907,6 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
             res.append(r_image.unwrap())
 
         return Ok(res)
-
-    def fetch_pool_image_info(self) -> Result[list[PoolImageInfo], Failure]:
-        r_glance = self._get_glance()
-        if r_glance.is_error:
-            return Error(r_glance.unwrap_error())
-
-        if self.pool_config.get('image-regex'):
-            image_name_pattern: Optional[Pattern[str]] = re.compile(self.pool_config['image-regex'])
-
-        else:
-            image_name_pattern = None
-
-        r_images = safe_call(r_glance.unwrap().images.list)
-
-        if r_images.is_error:
-            return Error(Failure.from_failure('Failed to list images', r_images.unwrap_error()))
-
-        try:
-            return Ok(
-                [
-                    PoolImageInfo(
-                        name=image['name'],
-                        id=image['id'],
-                        arch=None,
-                        boot=FlavorBoot(method=[image.get('hw_firmware_type', 'bios')]),
-                        ssh=PoolImageSSHInfo(),
-                        supports_kickstart=False,
-                        # openstack image list command doesn't show creation date
-                        created_at=None,
-                    )
-                    for image in r_images.unwrap()
-                    if image_name_pattern is None or image_name_pattern.match(image['name'])
-                ]
-            )
-
-        except KeyError as exc:
-            return Error(Failure.from_exc('malformed image description', exc, image_info=r_images.unwrap()))
 
     def fetch_pool_flavor_info(self) -> Result[list[Flavor], Failure]:
         # Flavors are described by OpenStack CLI with the following structure:

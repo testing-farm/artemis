@@ -4,10 +4,8 @@
 import dataclasses
 import datetime
 import os
-import re
 import tempfile
 from collections.abc import Iterator
-from re import Pattern
 from typing import Any, Optional, TypedDict, Union, cast
 
 import gluetool.log
@@ -21,7 +19,7 @@ from tmt.hardware import UNITS
 
 from tft.artemis.drivers.aws import awscli_error_cause_extractor
 
-from .. import Failure, JSONType, log_dict_yaml, render_template
+from .. import Failure, JSONType, render_template
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, SnapshotRequest
 from ..environment import (
     Flavor,
@@ -95,6 +93,8 @@ AZURE_RESOURCE_TYPE: dict[str, ResourceType] = {
     'Microsoft.Network/networkInterfaces': ResourceType.NETWORK_INTERFACE,
     'Microsoft.Network/networkSecurityGroups': ResourceType.SECURITY_GROUP,
 }
+
+AZURE_DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S%z'
 
 
 ConfigImageFilter = TypedDict(
@@ -276,6 +276,8 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
     image_info_class = AzurePoolImageInfo
     flavor_info_class = AzureFlavor
     pool_data_class = AzurePoolData
+
+    datetime_format = AZURE_DATETIME_FORMAT
 
     _image_map_hook_name = 'AZURE_ENVIRONMENT_TO_IMAGE'
 
@@ -738,91 +740,6 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
 
         return Ok(res)
 
-    def fetch_pool_image_info(self) -> Result[list[PoolImageInfo], Failure]:
-        def _fetch_images(filters: Optional[ConfigImageFilter] = None) -> Result[list[PoolImageInfo], Failure]:
-            name_pattern: Optional[Pattern[str]] = None
-
-            # AzureSession needs a logger but fetch_pool_image_info doesn't pass one along
-            # This will take the logger from the gluetool.log.LoggerMixin, is there a better way?
-            logger = self.logger
-            list_images_cmd = ['vm', 'image', 'list', '--all']
-
-            if filters:
-                if 'offer' in filters:
-                    list_images_cmd.extend(['--offer', filters['offer']])
-                if 'sku' in filters:
-                    list_images_cmd.extend(['--sku', filters['sku']])
-                if 'publisher' in filters:
-                    list_images_cmd.extend(['--publisher', filters['publisher']])
-                if 'name-regex' in filters:
-                    try:
-                        name_pattern = re.compile(filters['name-regex'])
-                    except re.error as exc:
-                        return Error(Failure.from_exc('failed to compile regex', exc))
-
-            with AzureSession(logger, self) as session:
-                r_images_list = session.run_az(logger, list_images_cmd, commandname='az.vm-image-list')
-
-                if r_images_list.is_error:
-                    return Error(
-                        Failure.from_failure('failed to fetch image information', r_images_list.unwrap_error())
-                    )
-
-            images: list[PoolImageInfo] = []
-            for image in cast(list[APIImageType], r_images_list.unwrap()):
-                try:
-                    # Apply wild-card filter if specified, unfortunately no way to filter by urn via azure cli
-                    if name_pattern and not name_pattern.match(image['urn']):
-                        continue
-                    images.append(
-                        AzurePoolImageInfo(
-                            name=image['urn'],
-                            id=image['urn'],
-                            urn=image['urn'],
-                            offer=image['offer'],
-                            publisher=image['publisher'],
-                            sku=image['sku'],
-                            version=image['version'],
-                            arch=_azure_arch_to_arch(image['architecture']),
-                            boot=FlavorBoot(),
-                            ssh=PoolImageSSHInfo(),
-                            supports_kickstart=False,
-                            # azure image list command doesn't show creation date
-                            created_at=None,
-                        )
-                    )
-                except KeyError as exc:
-                    return Error(
-                        Failure.from_exc('malformed image description', exc, image_info=r_images_list.unwrap())
-                    )
-
-            log_dict_yaml(self.logger.debug, 'image filters', filters)
-            log_dict_yaml(self.logger.debug, 'found images', [image.name for image in images])
-
-            return Ok(images)
-
-        images: list[PoolImageInfo] = []
-        image_filters = cast(list[ConfigImageFilter], self.pool_config.get('image-filters', []))
-
-        if image_filters:
-            for filters in image_filters:
-                r_images = _fetch_images(filters)
-
-                if r_images.is_error:
-                    return r_images
-
-                images += r_images.unwrap()
-
-        else:
-            r_images = _fetch_images()
-
-            if r_images.is_error:
-                return r_images
-
-            images += r_images.unwrap()
-
-        return Ok(images)
-
     def acquire_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
@@ -1149,7 +1066,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
             blob = blob.replace('\x00', '\ufffd')
             try:
                 timestamp = datetime.datetime.strptime(
-                    serial_console_log['properties']['lastModified'], '%Y-%m-%dT%H:%M:%S%z'
+                    serial_console_log['properties']['lastModified'], AZURE_DATETIME_FORMAT
                 )
 
             except KeyError as exc:

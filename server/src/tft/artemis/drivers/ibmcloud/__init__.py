@@ -218,6 +218,8 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor], Gener
     flavor_info_class = IBMCloudFlavor
     pool_data_class = IBMCloudPoolData
 
+    datetime_format = IBMCLOUD_DATETIME_FORMAT
+
     @classmethod
     def timestamp_to_datetime(cls, timestamp: str) -> Result[datetime.datetime, Failure]:
         try:

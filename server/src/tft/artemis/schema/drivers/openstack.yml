@@ -33,7 +33,7 @@ properties:
   flavor-regex:
     type: string
 
-  image-regex:
+  name-regex:
     type: string
 
   ip-version:
