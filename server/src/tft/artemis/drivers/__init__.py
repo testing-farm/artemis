@@ -531,7 +531,7 @@ class PoolImageInfo(SerializableContainer):
         :returns: serialized form of flavor properties.
         """
 
-        serialized = dataclasses.asdict(self)
+        serialized = self.serialize()
 
         del serialized['id']
 
