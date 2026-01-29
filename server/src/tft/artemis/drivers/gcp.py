@@ -83,6 +83,8 @@ class GCPDriver(PoolDriver):
 
     pool_data_class = GCPPoolData
 
+    datetime_format = GCP_DATETIME_FORMAT
+
     _image_map_hook_name = 'GCP_ENVIRONMENT_TO_IMAGE'
 
     def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str, pool_config: dict[str, Any]) -> None:

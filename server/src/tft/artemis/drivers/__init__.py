@@ -1347,6 +1347,8 @@ class PoolDriver(gluetool.log.LoggerMixin):
     #: Hold all known guest log updaters, with key being driver name, log name and its content type.
     guest_log_updaters: ClassVar[dict[tuple[str, str, GuestLogContentType], str]] = {}
 
+    datetime_format: str = RESOURCE_CTIME_FMT
+
     def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str, pool_config: dict[str, Any]) -> None:
         super().__init__(logger)
 
@@ -2357,7 +2359,80 @@ class PoolDriver(gluetool.log.LoggerMixin):
         The real driver would probably to query its pool's API, and retrieve actual data.
         """
 
-        return Ok([])
+        def _fetch_images(filters: Optional[ConfigImageFilter] = None) -> Result[list[PoolImageInfo], Failure]:
+            name_pattern: Optional[re.Pattern[str]] = None
+            arch_pattern: Optional[re.Pattern[str]] = None
+            creation_date_pattern: Optional[re.Pattern[str]] = None
+            max_age: Optional[int] = None
+
+            filters = filters or {}
+
+            def _process_regex_filter(filter_name: str, filters: ConfigImageFilter) -> Optional[re.Pattern[Any]]:
+                if filter_name not in filters:
+                    return None
+                return re.compile(filters[filter_name])  # type: ignore[literal-required]
+
+            # Here will be all possible post cloud image list fetch filters
+            max_age = filters.get('max-age')
+            try:
+                name_pattern = _process_regex_filter('name-regex', filters)
+                arch_pattern = _process_regex_filter('arch-regex', filters)
+                creation_date_pattern = _process_regex_filter('creation-date-regex', filters)
+            except re.error as exc:
+                return Error(Failure.from_exc('failed to compile regex', exc))
+
+            images: list[PoolImageInfo] = []
+
+            r_images_list = self.list_images(self.logger, filters)
+            if r_images_list.is_error:
+                return Error(Failure.from_failure('Could not list images', r_images_list.unwrap_error()))
+
+            for image in r_images_list.unwrap():
+                if name_pattern and not name_pattern.match(image.name):
+                    continue
+
+                if arch_pattern and image.arch and not arch_pattern.match(image.arch):
+                    continue
+
+                if (
+                    creation_date_pattern is not None
+                    and image.created_at
+                    and not creation_date_pattern.match(image.created_at.strftime(self.datetime_format))
+                ):
+                    continue
+
+                if max_age is not None and image.age.total_seconds() > max_age:
+                    continue
+
+                # If reached that point -> image passed with flying colours, let's cache it
+                images.append(image)
+
+            log_dict_yaml(self.logger.debug, 'image filters', filters)
+            log_dict_yaml(self.logger.debug, 'found images', [image.name for image in images])
+
+            return Ok(images)
+
+        images: list[PoolImageInfo] = []
+        image_filters = cast(list[ConfigImageFilter], self.pool_config.get('image-filters', []))
+
+        if image_filters:
+            for filters in image_filters:
+                r_images = _fetch_images(filters)
+
+                if r_images.is_error:
+                    return r_images
+
+                images += r_images.unwrap()
+
+        else:
+            r_images = _fetch_images()
+
+            if r_images.is_error:
+                return r_images
+
+            images += r_images.unwrap()
+
+        return Ok(images)
 
     @rewrap_to_gluetool
     def generate_post_install_script(self, guest_request: GuestRequest) -> _Result[str, Failure]:
