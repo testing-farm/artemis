@@ -1568,7 +1568,9 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         return _Ok(capabilities)
 
     def list_images(
-        self, logger: gluetool.log.ContextAdapter, filters: Optional[ConfigImageFilter] = None
+        self,
+        logger: gluetool.log.ContextAdapter,
+        filters: Optional[ConfigImageFilter] = None,  # type: ignore[override]
     ) -> Result[list[PoolImageInfo], Failure]:
         """
         This method will will issue a cloud guest list command and return a list of pool image info objects for this
@@ -1590,7 +1592,8 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         r_raw_images = self._aws_command(cli_options, key='Images', commandname='aws.ec2-describe-images')
         if r_raw_images.is_error:
             return Error(Failure.from_failure('failed to fetch image information', r_raw_images.unwrap_error()))
-        raw_images = r_raw_images.unwrap()
+
+        raw_images = cast(list[APIImageType], r_raw_images.unwrap())
 
         def _from_raw_image(image: APIImageType) -> Result[PoolImageInfo, Failure]:
             try:
@@ -1601,6 +1604,13 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
 
             try:
                 arch = _aws_arch_to_arch(image['Architecture'])
+                created_at = self.timestamp_to_datetime(image['CreationDate'])
+                if created_at.is_error:
+                    return Error(
+                        Failure.from_failure(
+                            'Could not convert timestamp', created_at.unwrap_error(), image=image['ImageId']
+                        )
+                    )
 
                 return Ok(
                     AWSPoolImageInfo(
@@ -1619,7 +1629,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
                         # `None`
                         ena_support=image.get('EnaSupport', False) or False,
                         boot_mode=aws_boot_mode,
-                        creation_date=self.convert_to_datetime(self.logger, image['CreationDate']),
+                        created_at=created_at.unwrap(),
                     )
                 )
             except KeyError as exc:

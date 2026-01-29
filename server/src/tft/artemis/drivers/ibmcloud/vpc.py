@@ -330,7 +330,9 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
         )
 
     def list_images(
-        self, logger: gluetool.log.ContextAdapter, filters: Optional[ConfigImageFilter] = None
+        self,
+        logger: gluetool.log.ContextAdapter,
+        filters: Optional[ConfigImageFilter] = None,  # type: ignore[override]
     ) -> Result[list[PoolImageInfo], Failure]:
         """
         This method will will issue a cloud guest list command and return a list of pool image info objects for this
@@ -360,6 +362,13 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
 
         def _from_raw_image(image: APIImageType) -> Result[PoolImageInfo, Failure]:
             try:
+                created_at = self.timestamp_to_datetime(image['created_at'])
+                if created_at.is_error:
+                    return Error(
+                        Failure.from_failure(
+                            'Could not parse image create timestamp', created_at.unwrap_error(), image=image['id']
+                        )
+                    )
                 return Ok(
                     IBMCloudVPCPoolImageInfo(
                         crn=image['crn'],
@@ -372,7 +381,7 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
                         boot=FlavorBoot(),
                         ssh=PoolImageSSHInfo(),
                         supports_kickstart=False,
-                        creation_date=self.convert_to_datetime(self.logger, image['created_at']),
+                        created_at=created_at.unwrap(),
                     )
                 )
             except KeyError as exc:

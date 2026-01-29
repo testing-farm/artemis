@@ -221,6 +221,14 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
                 if arch == 'ppc64':
                     arch = 'ppc64le' if image['specifications']['endianness'] == 'little-endian' else 'ppc64'
 
+                created_at = self.timestamp_to_datetime(image['creationDate'])
+                if created_at.is_error:
+                    return Error(
+                        Failure.from_failure(
+                            'Could not parse image create timestamp', created_at.unwrap_error(), image=image['imageID']
+                        )
+                    )
+
                 return Ok(
                     IBMCloudPowerPoolImageInfo(
                         href=image['href'],
@@ -230,7 +238,7 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
                         boot=FlavorBoot(),
                         ssh=PoolImageSSHInfo(),
                         supports_kickstart=False,
-                        creation_date=self.convert_to_datetime(self.logger, image['creationDate']),
+                        created_at=created_at.unwrap(),
                     )
                 )
             except KeyError as exc:

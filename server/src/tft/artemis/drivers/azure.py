@@ -675,7 +675,9 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
         )
 
     def list_images(
-        self, logger: gluetool.log.ContextAdapter, filters: Optional[ConfigImageFilter] = None
+        self,
+        logger: gluetool.log.ContextAdapter,
+        filters: Optional[ConfigImageFilter] = None,  # type: ignore[override]
     ) -> Result[list[PoolImageInfo], Failure]:
         """
         This method will will issue a cloud guest list command and return a list of pool image info objects for this
@@ -698,7 +700,8 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
 
             if r_images_list.is_error:
                 return Error(Failure.from_failure('failed to fetch image information', r_images_list.unwrap_error()))
-            raw_images = r_images_list.unwrap()
+
+            raw_images = cast(list[APIImageType], r_images_list.unwrap())
 
         def _from_raw_image(image: APIImageType) -> Result[PoolImageInfo, Failure]:
             try:
@@ -716,7 +719,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
                         ssh=PoolImageSSHInfo(),
                         supports_kickstart=False,
                         # azure image list command doesn't show creation date
-                        creation_date=None,
+                        created_at=None,
                     )
                 )
             except KeyError as exc:
