@@ -3128,7 +3128,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
             return Ok((None, None))
 
         r_output = self._aws_command(
-            ['ec2', 'get-console-output', '--instance-id', pool_data.instance_id],
+            ['ec2', 'get-console-output', '--instance-id', pool_data.instance_id, '--latest'],
             commandname='aws.ec2-get-console-output',
         )
 
