@@ -876,6 +876,8 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
                         boot=FlavorBoot(method=[image.get('hw_firmware_type', 'bios')]),
                         ssh=PoolImageSSHInfo(),
                         supports_kickstart=False,
+                        # openstack image list command doesn't show creation date
+                        created_at=None,
                     )
                     for image in r_images.unwrap()
                     if image_name_pattern is None or image_name_pattern.match(image['name'])

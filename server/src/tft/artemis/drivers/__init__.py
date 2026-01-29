@@ -522,6 +522,8 @@ class PoolImageInfo(SerializableContainer):
 
     supports_kickstart: bool
 
+    created_at: Optional[datetime.datetime]
+
     def serialize_scrubbed(self) -> dict[str, Any]:
         """
         Serialize properties to JSON while scrubbing sensitive information.
@@ -529,11 +531,35 @@ class PoolImageInfo(SerializableContainer):
         :returns: serialized form of flavor properties.
         """
 
-        serialized = dataclasses.asdict(self)
+        serialized = self.serialize()
 
         del serialized['id']
 
         return serialized
+
+    def serialize(self) -> dict[str, Any]:
+        serialized = super().serialize()
+
+        if self.created_at:
+            serialized['created_at'] = self.created_at.strftime(RESOURCE_CTIME_FMT)
+
+        return serialized
+
+    @classmethod
+    def unserialize(cls, serialized: dict[str, Any]) -> 'PoolImageInfo':
+        pool_image_info = super().unserialize(serialized)
+
+        if serialized['created_at']:
+            pool_image_info.created_at = datetime.datetime.strptime(serialized['created_at'], RESOURCE_CTIME_FMT)
+
+        return pool_image_info
+
+    @property
+    def age(self) -> datetime.timedelta:
+        if self.created_at is None:
+            return datetime.timedelta()
+
+        return datetime.datetime.utcnow() - self.created_at
 
 
 class FlavorKeyGetterType(Protocol):

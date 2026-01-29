@@ -722,6 +722,8 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
                             boot=FlavorBoot(),
                             ssh=PoolImageSSHInfo(),
                             supports_kickstart=False,
+                            # azure image list command doesn't show creation date
+                            created_at=None,
                         )
                     )
                 except KeyError as exc:

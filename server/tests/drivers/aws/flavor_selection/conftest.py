@@ -29,6 +29,7 @@ def fixture_image() -> AWSPoolImageInfo:
         ena_support=False,
         boot_mode=None,
         supports_kickstart=False,
+        created_at=None,
     )
 
 

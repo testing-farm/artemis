@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import dataclasses
+import datetime
 import re
 import threading
 from functools import cached_property
@@ -57,6 +58,8 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
 
 DEFAULT_DISK_SIZE: SizeType = UNITS('20 GiB')
 
+GCP_DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S.%f%z'
+
 
 @dataclasses.dataclass
 class GCPPoolData(PoolData):
@@ -89,6 +92,17 @@ class GCPDriver(PoolDriver):
             compute_v1.InstancesClient, compute_v1.InstancesClient.from_service_account_info(self._service_account_info)
         )
 
+    @classmethod
+    def timestamp_to_datetime(cls, timestamp: str) -> Result[datetime.datetime, Failure]:
+        try:
+            return Ok(datetime.datetime.strptime(timestamp, GCP_DATETIME_FORMAT))
+        except Exception as exc:
+            return Error(
+                Failure.from_exc(
+                    'failed to parse timestamp', exc, timestamp=timestamp, strptime_format=GCP_DATETIME_FORMAT
+                )
+            )
+
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
         capabilities.supported_architectures = ['x86_64']
         capabilities.supports_snapshots = False
@@ -115,6 +129,17 @@ class GCPDriver(PoolDriver):
             return Error(Failure.from_exc('The given imagename was not found.', exc, imagename=image_name))
 
         ssh_info = PoolImageSSHInfo(username='artemis')
+        ctime = self.timestamp_to_datetime(image_description.creation_timestamp)
+        if ctime.is_error:
+            return Error(
+                Failure.from_failure(
+                    'Could not parse image create timestamp',
+                    ctime.unwrap_error(),
+                    image=image_description.self_link,
+                    strptime_format=GCP_DATETIME_FORMAT,
+                )
+            )
+
         image_info = PoolImageInfo(
             name=image_description.name,
             id=image_description.self_link,
@@ -122,6 +147,9 @@ class GCPDriver(PoolDriver):
             boot=FlavorBoot(),
             ssh=ssh_info,
             supports_kickstart=False,
+            # Not tested, but relevant creation date field should be creation_timestamp in RFC3339 format
+            # https://docs.cloud.google.com/python/docs/reference/compute/latest/google.cloud.compute_v1.types.Image
+            created_at=ctime.unwrap(),
         )
 
         return Ok(image_info)

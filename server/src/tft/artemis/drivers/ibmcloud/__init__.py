@@ -218,6 +218,17 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor], Gener
     flavor_info_class = IBMCloudFlavor
     pool_data_class = IBMCloudPoolData
 
+    @classmethod
+    def timestamp_to_datetime(cls, timestamp: str) -> Result[datetime.datetime, Failure]:
+        try:
+            return Ok(datetime.datetime.strptime(timestamp, IBMCLOUD_DATETIME_FORMAT))
+        except Exception as exc:
+            return Error(
+                Failure.from_exc(
+                    'failed to parse timestamp', exc, timestamp=timestamp, strptime_format=IBMCLOUD_DATETIME_FORMAT
+                )
+            )
+
     def tag_instance(
         self,
         logger: gluetool.log.ContextAdapter,
