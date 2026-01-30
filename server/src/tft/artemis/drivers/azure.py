@@ -14,7 +14,7 @@ import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 from gluetool.utils import normalize_bool_option
 from returns.pipeline import is_successful
-from returns.result import Result as _Result, Success as _Ok
+from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
 
 from tft.artemis.drivers.aws import awscli_error_cause_extractor
@@ -111,6 +111,10 @@ class APIImageType(TypedDict):
     sku: str
     urn: str
     version: str
+
+
+#: A type of Azure instance size description as provided by the output of ``vm list-sizes`` command.
+BackendFlavor = dict[str, Any]
 
 
 @dataclasses.dataclass
@@ -273,7 +277,7 @@ class AzureSession:
         return self._run_cmd(logger, options, json_format=json_format, commandname=commandname)
 
 
-class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
+class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, BackendFlavor]):
     drivername = 'azure'
 
     image_info_class = AzurePoolImageInfo
@@ -295,6 +299,18 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
     @property
     def use_public_ip(self) -> bool:
         return normalize_bool_option(self.pool_config.get('use-public-ip', False))
+
+    def _query_backend_flavors(self, logger: gluetool.log.ContextAdapter) -> _Result[list[BackendFlavor], Failure]:
+        list_flavors_cmd = ['vm', 'list-sizes', '--location', self.pool_config['default-location']]
+        with AzureSession(logger, self) as session:
+            r_flavors_list = session.run_az(logger, list_flavors_cmd, commandname='az.vm-flavors-list')
+
+            if r_flavors_list.is_error:
+                return _Error(
+                    Failure.from_failure('failed to fetch flavors information', r_flavors_list.unwrap_error())
+                )
+
+        return _Ok(cast(list[dict[str, Any]], r_flavors_list.unwrap()))
 
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> _Result[PoolCapabilities, Failure]:
         capabilities.supports_hostnames = False
@@ -583,18 +599,6 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
         #     "resourceDiskSizeInMB": int
         # }
 
-        def _fetch(logger: gluetool.log.ContextAdapter) -> Result[list[dict[str, Any]], Failure]:
-            list_flavors_cmd = ['vm', 'list-sizes', '--location', self.pool_config['default-location']]
-            with AzureSession(logger, self) as session:
-                r_flavors_list = session.run_az(logger, list_flavors_cmd, commandname='az.vm-flavors-list')
-
-                if r_flavors_list.is_error:
-                    return Error(
-                        Failure.from_failure('failed to fetch flavors information', r_flavors_list.unwrap_error())
-                    )
-
-            return Ok(cast(list[dict[str, Any]], r_flavors_list.unwrap()))
-
         def _constructor(
             logger: gluetool.log.ContextAdapter, raw_flavor: dict[str, Any]
         ) -> Iterator[Result[Flavor, Failure]]:
@@ -619,7 +623,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
             )
 
         return self.do_fetch_pool_flavor_info(
-            self.logger, _fetch, lambda raw_flavor: cast(str, raw_flavor['name']), _constructor
+            self.logger, self._query_backend_flavors, lambda raw_flavor: cast(str, raw_flavor['name']), _constructor
         )
 
     def list_images(

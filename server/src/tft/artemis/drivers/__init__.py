@@ -85,6 +85,12 @@ from ..script import hook_engine
 T = TypeVar('T')
 FlavorT = TypeVar('FlavorT', bound=Flavor)
 
+#: Represents a type of backend flavor representation. It may be a data type based on JSON CLI output, or classes
+#: provided by 3rd party backend library, but in every case its structure is not defined by Artemis.
+#:
+#: Backend counterpart of our :py:class:`tft.artemis.environment.Flavor`.
+BackendFlavorT = TypeVar('BackendFlavorT')
+
 Tags = dict[str, str]
 
 
@@ -2487,7 +2493,7 @@ class PoolDriver(gluetool.log.LoggerMixin, abc.ABC):
     def do_fetch_pool_flavor_info(
         self,
         logger: gluetool.log.ContextAdapter,
-        fetch: Callable[[gluetool.log.ContextAdapter], Result[list[T], Failure]],
+        fetch: Callable[[gluetool.log.ContextAdapter], _Result[list[T], Failure]],
         name_getter: Callable[[T], str],
         constructor: Callable[[gluetool.log.ContextAdapter, T], Iterator[Result[Flavor, Failure]]],
     ) -> Result[list[Flavor], Failure]:
@@ -2514,8 +2520,8 @@ class PoolDriver(gluetool.log.LoggerMixin, abc.ABC):
 
         r_raw_flavors = fetch(logger)
 
-        if r_raw_flavors.is_error:
-            return Error(r_raw_flavors.unwrap_error())
+        if not is_successful(r_raw_flavors):
+            return Error(r_raw_flavors.failure())
 
         raw_flavors = r_raw_flavors.unwrap()
 
@@ -2705,13 +2711,23 @@ class FlavorFilter(Protocol, Generic[FlavorT]):
         pass
 
 
-class FlavorBasedPoolDriver(PoolDriver, Generic[PoolImageInfoT, FlavorT]):
+class FlavorBasedPoolDriver(PoolDriver, abc.ABC, Generic[PoolImageInfoT, FlavorT, BackendFlavorT]):
     """
     A base class for drivers spawning guests from "images" and "flavors".
 
     Drivers of this type work with images and flavors, and the class provides implementation of shared concepts and
     behavior of such drivers.
     """
+
+    @abc.abstractmethod
+    def _query_backend_flavors(self, logger: gluetool.log.ContextAdapter) -> _Result[list[BackendFlavorT], Failure]:
+        """
+        Fetch flavor info from the backed infrastructure.
+
+        :returns: list of raw flavor info descriptions.
+        """
+
+        raise NotImplementedError
 
     def _filter_flavors_image_arch(
         self,

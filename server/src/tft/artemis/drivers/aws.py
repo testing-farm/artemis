@@ -27,7 +27,7 @@ from gluetool.result import Error, Ok, Result
 from gluetool.utils import normalize_bool_option
 from jinja2 import Template
 from returns.pipeline import is_successful
-from returns.result import Result as _Result, Success as _Ok
+from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS, Operator
 from typing_extensions import Literal, TypedDict
 
@@ -176,6 +176,10 @@ ConfigImageFilter = TypedDict(
     {'name-wildcard': str, 'name-regex': str, 'creation-date-regex': str, 'owner': str, 'max-age': int},
     total=False,
 )
+
+
+#: A type of AWS instance type description as provided by the output of ``ec2 describe-instance-types``.
+BackendFlavor = dict[str, str]
 
 
 AWS_VM_HYPERVISORS = ('nitro', 'xen')
@@ -1489,7 +1493,7 @@ _AWS_BOOT_MODE_MATRIX = [
 ]
 
 
-class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
+class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor, BackendFlavor]):
     drivername = 'aws'
 
     image_info_class = AWSPoolImageInfo
@@ -1538,6 +1542,16 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
                     'failed to parse timestamp', exc, timestamp=timestamp, strptime_format=AWS_DATETIME_FORMAT
                 )
             )
+
+    def _query_backend_flavors(self, logger: gluetool.log.ContextAdapter) -> _Result[list[BackendFlavor], Failure]:
+        r_raw_flavors = self._aws_command(
+            ['ec2', 'describe-instance-types'], key='InstanceTypes', commandname='aws.ec2-describe-instance-types'
+        )
+
+        if r_raw_flavors.is_error:
+            return _Error(r_raw_flavors.unwrap_error())
+
+        return _Ok(cast(list[dict[str, Any]], r_raw_flavors.unwrap()))
 
     # ignore[override]: mismatch with PoolImageInfoT in the parent, will be resolved with later patches focusing on
     # the deduplication.
@@ -2848,16 +2862,6 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
 
         capabilities = r_capabilities.unwrap()
 
-        def _fetch(logger: gluetool.log.ContextAdapter) -> Result[list[dict[str, Any]], Failure]:
-            r_raw_flavors = self._aws_command(
-                ['ec2', 'describe-instance-types'], key='InstanceTypes', commandname='aws.ec2-describe-instance-types'
-            )
-
-            if r_raw_flavors.is_error:
-                return Error(r_raw_flavors.unwrap_error())
-
-            return Ok(cast(list[dict[str, Any]], r_raw_flavors.unwrap()))
-
         # Here we covert instance types retrieved from API into flavors. We take a look at architectures
         # supported by instance type, and create distinct flavors for each architecture. That way, we can
         # have pools supporting more than one architecture, and let Artemis match flavors and requestes
@@ -2917,7 +2921,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
                 )
 
         return self.do_fetch_pool_flavor_info(
-            self.logger, _fetch, lambda raw_flavor: cast(str, raw_flavor['InstanceType']), _constructor
+            self.logger, self._query_backend_flavors, lambda raw_flavor: raw_flavor['InstanceType'], _constructor
         )
 
     def get_cached_pool_flavor_info(self, flavorname: str) -> Result[Optional[Flavor], Failure]:

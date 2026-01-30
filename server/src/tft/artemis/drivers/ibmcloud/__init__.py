@@ -18,6 +18,7 @@ from returns.pipeline import is_successful
 
 from tft.artemis.drivers import (
     KNOB_INSTANCES_PER_REQUEST_LIMIT,
+    BackendFlavorT,
     CLISessionPermanentDir,
     ConsoleUrlData,
     FlavorBasedPoolDriver,
@@ -217,7 +218,11 @@ class IBMCloudSession(CLISessionPermanentDir):
         return Ok(None)
 
 
-class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor], abc.ABC, Generic[IBMCloudInstanceT]):
+class IBMCloudDriver(
+    FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor, BackendFlavorT],
+    abc.ABC,
+    Generic[IBMCloudInstanceT, BackendFlavorT],
+):
     drivername = 'abstract-ibmcloud-driver'
 
     flavor_info_class = IBMCloudFlavor
