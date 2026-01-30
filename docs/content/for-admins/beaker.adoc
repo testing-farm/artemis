@@ -267,6 +267,59 @@ would be converted into the following lines:
 /distribution/reservesys:New:Running:/distribution/reservesys:Pass
 ....
 
+=== Console access
+
+Beaker driver provides console log access through stored console output. For details on console support across all drivers, see <<drivers.adoc#_console_support_details,"Console support details">>.
+
+[%header,cols="1,1,2"]
+|===
+|Log type
+|Content type
+|Description
+
+|`console:dump`
+|blob
+|Console output stored by Beaker
+
+|`console:dump`
+|URL
+|URL pointing to Beaker's stored console output
+
+|`sys.log:dump`
+|URL
+|URL pointing to system log stored by Beaker
+
+|`anaconda.log:dump`
+|blob
+|Anaconda installer log
+
+|`storage.log:dump`
+|blob
+|Storage configuration log from installation
+
+|`program.log:dump`
+|blob
+|Program execution log from installation
+
+|`packaging.log:dump`
+|blob
+|Package installation log
+
+|`ks.cfg:dump`
+|blob
+|Kickstart configuration file used for installation
+
+|===
+
+==== Interactive console via conserver
+
+Beaker provides interactive console access via conserver. This is available directly through Beaker, external to Artemis. Users can connect to conserver directly to access the live console of their provisioned machines.
+
+[NOTE]
+====
+Interactive console via conserver is not exposed through Artemis API. Users need to connect to conserver directly using the appropriate Beaker credentials and machine hostname.
+====
+
 === Installation method
 
 With the help of `installation-method-map` key, it is possible to specify a custom installation method in the case of need. The key holds a mapping between regular expressions, matching compose/distro, and corresponding methods. If the compose/distro of a request matches one of the patterns, its method is added to Beaker job XML.
