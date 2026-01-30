@@ -166,7 +166,7 @@ class IBMCloudPowerPoolImageInfo(PoolImageInfo):
     href: str
 
 
-class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
+class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance, None]):
     drivername = 'ibmcloud-power'
 
     image_info_class = IBMCloudPowerPoolImageInfo
@@ -181,6 +181,9 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
         pool_config: dict[str, Any],
     ) -> None:
         super().__init__(logger, poolname, pool_config)
+
+    def _list_flavors_raw(self, logger: gluetool.log.ContextAdapter) -> _Result[list[None], Failure]:
+        return _Ok([])
 
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> _Result[PoolCapabilities, Failure]:
         capabilities.supports_hostnames = False

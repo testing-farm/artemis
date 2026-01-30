@@ -1,6 +1,7 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
+import abc
 import contextlib
 import dataclasses
 import datetime
@@ -84,6 +85,7 @@ from ..script import hook_engine
 
 T = TypeVar('T')
 FlavorT = TypeVar('FlavorT', bound=Flavor)
+RawFlavorT = TypeVar('RawFlavorT')
 
 Tags = dict[str, str]
 
@@ -2483,7 +2485,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
     def do_fetch_pool_flavor_info(
         self,
         logger: gluetool.log.ContextAdapter,
-        fetch: Callable[[gluetool.log.ContextAdapter], Result[list[T], Failure]],
+        fetch: Callable[[gluetool.log.ContextAdapter], _Result[list[T], Failure]],
         name_getter: Callable[[T], str],
         constructor: Callable[[gluetool.log.ContextAdapter, T], Iterator[Result[Flavor, Failure]]],
     ) -> Result[list[Flavor], Failure]:
@@ -2510,8 +2512,8 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         r_raw_flavors = fetch(logger)
 
-        if r_raw_flavors.is_error:
-            return Error(r_raw_flavors.unwrap_error())
+        if not is_successful(r_raw_flavors):
+            return Error(r_raw_flavors.failure())
 
         raw_flavors = r_raw_flavors.unwrap()
 
@@ -2701,13 +2703,23 @@ class FlavorFilter(Protocol, Generic[FlavorT]):
         pass
 
 
-class FlavorBasedPoolDriver(PoolDriver, Generic[PoolImageInfoT, FlavorT]):
+class FlavorBasedPoolDriver(PoolDriver, Generic[PoolImageInfoT, FlavorT, RawFlavorT]):
     """
     A base class for drivers spawning guests from "images" and "flavors".
 
     Drivers of this type work with images and flavors, and the class provides implementation of shared concepts and
     behavior of such drivers.
     """
+
+    @abc.abstractmethod
+    def _list_flavors_raw(self, logger: gluetool.log.ContextAdapter) -> _Result[list[RawFlavorT], Failure]:
+        """
+        Fetch flavor info from the backed infrastructure.
+
+        :returns: list of raw flavor info descriptions.
+        """
+
+        raise NotImplementedError
 
     def _filter_flavors_image_arch(
         self,

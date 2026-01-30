@@ -12,6 +12,7 @@ from typing import Any, Optional, TypedDict, cast
 import gluetool.log
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
+from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
 
 from tft.artemis.drivers import PoolDriver, PoolImageInfo
@@ -122,6 +123,8 @@ ConfigImageFilter = TypedDict(
     total=False,
 )
 
+ApiFlavorInfo = dict[str, Any]
+
 
 @dataclasses.dataclass(repr=False)
 class IBMCloudVPCPoolImageInfo(PoolImageInfo):
@@ -137,7 +140,7 @@ class IBMCloudVPCPoolImageInfo(PoolImageInfo):
     user_data_format: str
 
 
-class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
+class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance, ApiFlavorInfo]):
     drivername = 'ibmcloud-vpc'
 
     image_info_class = IBMCloudVPCPoolImageInfo
@@ -153,6 +156,21 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
         pool_config: dict[str, Any],
     ) -> None:
         super().__init__(logger, poolname, pool_config)
+
+    def _list_flavors_raw(self, logger: gluetool.log.ContextAdapter) -> _Result[list[ApiFlavorInfo], Failure]:
+        with IBMCloudSession(logger, self) as session:
+            r_flavors_list = session.run(
+                logger,
+                ['is', 'instance-profiles', '--output', 'json'],
+                commandname='ibmcloud.is-instance-profiles',
+            )
+
+            if r_flavors_list.is_error:
+                return _Error(
+                    Failure.from_failure('failed to fetch flavors information', r_flavors_list.unwrap_error())
+                )
+
+        return _Ok(cast(list[dict[str, Any]], r_flavors_list.unwrap()))
 
     def fetch_pool_image_info(self) -> Result[list[PoolImageInfo], Failure]:
         def _fetch_images(filters: Optional[ConfigImageFilter] = None) -> Result[list[PoolImageInfo], Failure]:
@@ -267,21 +285,6 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
     def fetch_pool_flavor_info(self) -> Result[list[Flavor], Failure]:
         # See https://cloud.ibm.com/docs/vpc?topic=vpc-vs-profiles&interface=cli for more info
 
-        def _fetch(logger: gluetool.log.ContextAdapter) -> Result[list[dict[str, Any]], Failure]:
-            with IBMCloudSession(self.logger, self) as session:
-                r_flavors_list = session.run(
-                    self.logger,
-                    ['is', 'instance-profiles', '--output', 'json'],
-                    commandname='ibmcloud.is-instance-profiles',
-                )
-
-                if r_flavors_list.is_error:
-                    return Error(
-                        Failure.from_failure('failed to fetch flavors information', r_flavors_list.unwrap_error())
-                    )
-
-            return Ok(cast(list[dict[str, Any]], r_flavors_list.unwrap()))
-
         def _constructor(
             logger: gluetool.log.ContextAdapter, raw_flavor: dict[str, Any]
         ) -> Iterator[Result[Flavor, Failure]]:
@@ -326,7 +329,7 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
             )
 
         return self.do_fetch_pool_flavor_info(
-            self.logger, _fetch, lambda raw_flavor: cast(str, raw_flavor['name']), _constructor
+            self.logger, self._list_flavors_raw, lambda raw_flavor: cast(str, raw_flavor['name']), _constructor
         )
 
     def fetch_pool_resources_metrics(

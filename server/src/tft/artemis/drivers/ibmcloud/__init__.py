@@ -24,6 +24,7 @@ from tft.artemis.drivers import (
     PoolResourcesIDs,
     ProvisioningProgress,
     ProvisioningState,
+    RawFlavorT,
     Tags,
     create_tempfile,
 )
@@ -212,7 +213,9 @@ class IBMCloudSession(CLISessionPermanentDir):
         return Ok(None)
 
 
-class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor], Generic[IBMCloudInstanceT]):
+class IBMCloudDriver(
+    FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor, RawFlavorT], Generic[IBMCloudInstanceT, RawFlavorT]
+):
     drivername = 'abstract-ibmcloud-driver'
 
     flavor_info_class = IBMCloudFlavor
