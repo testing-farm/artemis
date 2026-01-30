@@ -25,6 +25,7 @@ from ..knobs import Knob
 from ..metrics import PoolResourcesMetrics, PoolResourcesUsage
 from . import (
     CanAcquire,
+    ConfigImageFilter,
     PoolCapabilities,
     PoolData,
     PoolDriver,
@@ -148,8 +149,6 @@ class GCPDriver(PoolDriver):
             boot=FlavorBoot(),
             ssh=ssh_info,
             supports_kickstart=False,
-            # Not tested, but relevant creation date field should be creation_timestamp in RFC3339 format
-            # https://docs.cloud.google.com/python/docs/reference/compute/latest/google.cloud.compute_v1.types.Image
             created_at=ctime.unwrap(),
         )
 
@@ -384,6 +383,57 @@ class GCPDriver(PoolDriver):
         except google.api_core.exceptions.NotFound as exc:
             return Error(Failure.from_exc('Failed to query information about the freshly created instance', exc))
         return Ok(created_instance)
+
+    def list_images(
+        self, logger: gluetool.log.ContextAdapter, filters: Optional[ConfigImageFilter] = None
+    ) -> Result[list[PoolImageInfo], Failure]:
+        """
+        This method will issue a cloud guest list command and return a list of pool image info objects for this
+        particular cloud.
+        Filters argument contains optional filtering options to be applied on the cloud side.
+        """
+        image_project = self.pool_config['image-project']
+
+        images_client = compute_v1.ImagesClient.from_service_account_info(self._service_account_info)
+        request_list_images = compute_v1.ListImagesRequest(project=image_project)
+
+        def _from_image(image: compute_v1.types.compute.Image) -> Result[PoolImageInfo, Failure]:
+            try:
+                created_at = self.timestamp_to_datetime(image.creation_timestamp)
+                if created_at.is_error:
+                    return Error(
+                        Failure.from_failure(
+                            'Could not parse image create timestamp', created_at.unwrap_error(), image=image.self_link
+                        )
+                    )
+                ssh_info = PoolImageSSHInfo(username='artemis')
+
+                return Ok(
+                    PoolImageInfo(
+                        name=image.name,
+                        id=image.self_link,
+                        arch=image.architecture,
+                        boot=FlavorBoot(),
+                        ssh=ssh_info,
+                        supports_kickstart=False,
+                        created_at=created_at.unwrap(),
+                    )
+                )
+            except KeyError as exc:
+                return Error(Failure.from_exc('malformed image description', exc, image_info=image))
+
+        res = []
+        for image in images_client.list(request_list_images):
+            r_image = _from_image(image)
+            if r_image.is_error:
+                return Error(
+                    Failure.from_failure(
+                        'Failed converting image data to a PoolImageInfo object', r_image.unwrap_error()
+                    )
+                )
+            res.append(r_image.unwrap())
+
+        return Ok(res)
 
     def acquire_guest(
         self,

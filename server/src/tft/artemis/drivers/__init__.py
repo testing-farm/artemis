@@ -217,6 +217,18 @@ ConfigImageSpecType = TypedDict(
 )
 
 
+ConfigImageFilter = TypedDict(
+    'ConfigImageFilter',
+    {
+        'name-regex': str,
+        'arch-regex': str,
+        'max-age': int,
+        'creation-date-regex': str,
+    },
+    total=False,
+)
+
+
 #: pools[].capabilities.disable-guest-logs
 ConfigCapabilitiesDisableGuestLogType = TypedDict(
     'ConfigCapabilitiesDisableGuestLogType', {'log-name': str, 'content-type': str}
@@ -1605,6 +1617,16 @@ class PoolDriver(gluetool.log.LoggerMixin):
             understandable by this particular driver only.
         """
 
+        raise NotImplementedError
+
+    def list_images(
+        self, logger: gluetool.log.ContextAdapter, filters: Optional[ConfigImageFilter] = None
+    ) -> Result[list[PoolImageInfo], Failure]:
+        """
+        This method will issue a cloud guest list command and return a list of pool image info objects for this
+        particular cloud.
+        Filters argument contains optional filtering options to be applied on the cloud side.
+        """
         raise NotImplementedError
 
     def can_acquire(

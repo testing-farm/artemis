@@ -9,7 +9,7 @@ import re
 import sys
 from collections.abc import Iterator
 from re import Pattern
-from typing import Any, Optional, Union, cast
+from typing import Any, Optional, TypedDict, Union, cast
 
 import glanceclient
 import gluetool.log
@@ -95,6 +95,15 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
     envvar='ARTEMIS_OPENSTACK_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE',
     cast_from_str=str,
     default='{{ os.compose }}',
+)
+
+ConfigImageFilter = TypedDict(
+    'ConfigImageFilter',
+    {
+        # NOTE(ivasilev) Should be renamed to name-regex as part of unification in the next patch
+        'image-regex': str,
+    },
+    total=False,
 )
 
 
@@ -850,6 +859,54 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
             resources.limits.networks[network_name] = PoolNetworkResources(addresses=int(network['Total IPs']))
 
         return Ok(resources)
+
+    def list_images(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        filters: Optional[ConfigImageFilter] = None,  # type: ignore[override]
+    ) -> Result[list[PoolImageInfo], Failure]:
+        """
+        This method will issue a cloud guest list command and return a list of pool image info objects for this
+        particular cloud.
+        Filters argument contains optional filtering options to be applied on the cloud side.
+        """
+        r_glance = self._get_glance()
+        if r_glance.is_error:
+            return Error(r_glance.unwrap_error())
+
+        r_raw_images = safe_call(r_glance.unwrap().images.list)
+        if r_raw_images.is_error:
+            return Error(Failure.from_failure('Failed to list images', r_raw_images.unwrap_error()))
+
+        def _from_raw_image(image: dict[str, Any]) -> Result[PoolImageInfo, Failure]:
+            try:
+                return Ok(
+                    PoolImageInfo(
+                        name=image['name'],
+                        id=image['id'],
+                        arch=None,
+                        boot=FlavorBoot(method=[image.get('hw_firmware_type', 'bios')]),
+                        ssh=PoolImageSSHInfo(),
+                        supports_kickstart=False,
+                        # openstack image list command doesn't show creation date
+                        created_at=None,
+                    )
+                )
+            except KeyError as exc:
+                return Error(Failure.from_exc('malformed image description', exc, image=image['id']))
+
+        res = []
+        for image_raw in cast(list[dict[str, Any]], r_raw_images.unwrap()):
+            r_image = _from_raw_image(image_raw)
+            if r_image.is_error:
+                return Error(
+                    Failure.from_failure(
+                        'Failed converting image data to a PoolImageInfo object', r_image.unwrap_error()
+                    )
+                )
+            res.append(r_image.unwrap())
+
+        return Ok(res)
 
     def fetch_pool_image_info(self) -> Result[list[PoolImageInfo], Failure]:
         r_glance = self._get_glance()

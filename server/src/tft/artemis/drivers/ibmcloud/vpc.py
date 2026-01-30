@@ -329,6 +329,77 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
             self.logger, _fetch, lambda raw_flavor: cast(str, raw_flavor['name']), _constructor
         )
 
+    def list_images(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        filters: Optional[ConfigImageFilter] = None,  # type: ignore[override]
+    ) -> Result[list[PoolImageInfo], Failure]:
+        """
+        This method will issue a cloud guest list command and return a list of pool image info objects for this
+        particular cloud.
+        Filters argument contains optional filtering options to be applied on the cloud side.
+        """
+        resource_group = self.pool_config.get('resource-group', 'Default')
+
+        list_images_cmd = ['is', 'images', '--output', 'json', '--resource-group-name', resource_group]
+        filters = filters or {}
+        if 'visibility' in filters:
+            list_images_cmd.extend(['--visibility', filters['visibility']])
+        if 'owner-type' in filters:
+            list_images_cmd.extend(['--owner-type', filters['owner-type']])
+        if 'status' in filters:
+            list_images_cmd.extend(['--status', filters['status']])
+        if 'user-data-format' in filters:
+            list_images_cmd.extend(['--user-data-format', filters['user-data-format']])
+
+        raw_images: list[APIImageType] = []
+        with IBMCloudSession(logger, self) as session:
+            r_images_list = session.run(logger, list_images_cmd, commandname='ibmcloud.vm-image-list')
+
+            if r_images_list.is_error:
+                return Error(Failure.from_failure('failed to fetch image information', r_images_list.unwrap_error()))
+            raw_images = cast(list[APIImageType], r_images_list.unwrap())
+
+        def _from_raw_image(image: APIImageType) -> Result[PoolImageInfo, Failure]:
+            try:
+                created_at = self.timestamp_to_datetime(image['created_at'])
+                if created_at.is_error:
+                    return Error(
+                        Failure.from_failure(
+                            'Could not parse image create timestamp', created_at.unwrap_error(), image=image['id']
+                        )
+                    )
+                return Ok(
+                    IBMCloudVPCPoolImageInfo(
+                        crn=image['crn'],
+                        id=image['id'],
+                        name=image['name'],
+                        status=image['status'],
+                        visibility=image['visibility'],
+                        user_data_format=image['user_data_format'],
+                        arch=image['operating_system']['architecture'],
+                        boot=FlavorBoot(),
+                        ssh=PoolImageSSHInfo(),
+                        supports_kickstart=False,
+                        created_at=created_at.unwrap(),
+                    )
+                )
+            except KeyError as exc:
+                return Error(Failure.from_exc('malformed image description', exc, image_info=image))
+
+        res = []
+        for image_raw in raw_images:
+            r_image = _from_raw_image(image_raw)
+            if r_image.is_error:
+                return Error(
+                    Failure.from_failure(
+                        'Failed converting image data to a PoolImageInfo object', r_image.unwrap_error()
+                    )
+                )
+            res.append(r_image.unwrap())
+
+        return Ok(res)
+
     def fetch_pool_resources_metrics(
         self, logger: gluetool.log.ContextAdapter
     ) -> Result[PoolResourcesMetrics, Failure]:
