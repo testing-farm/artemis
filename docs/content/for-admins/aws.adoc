@@ -120,3 +120,26 @@ By default, Artemis will expose the private IP address of the instance. In case 
 ....
 use-public-ip: true
 ....
+
+=== Console access
+
+AWS driver supports both interactive console (URL) and console log (blob) access. For details on console support across all drivers, see <<drivers.adoc#_console_support_details,"Console support details">>.
+
+==== Interactive console
+
+Interactive console uses AWS EC2 Instance Connect. The console URL template can be customized:
+
+.Environment variable
+....
+ARTEMIS_AWS_LOGS_CONSOLE_INTERACTIVE_URL
+....
+
+.Default value
+....
+https://console.aws.amazon.com/ec2/v2/connect/ec2-user/{instance_id}?connection-type=isc&serial-port=0
+....
+
+[NOTE]
+====
+Interactive console is only available on instances with ENA (Elastic Network Adapter) support. When a guest requests `console:interactive` with URL content type, flavors without ENA support are automatically filtered out.
+====
