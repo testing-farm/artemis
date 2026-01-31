@@ -441,35 +441,6 @@ class TokenResetResponse:
     token: str
 
 
-@dataclasses.dataclass
-class GuestLogBlobResponse:
-    ctime: datetime.datetime
-    content: str
-
-
-@dataclasses.dataclass
-class GuestLogResponse:
-    state: artemis_db.GuestLogState
-    contenttype: artemis_db.GuestLogContentType
-
-    url: Optional[str]
-    blobs: list[GuestLogBlobResponse]
-
-    updated: Optional[datetime.datetime]
-    expires: Optional[datetime.datetime]
-
-    @classmethod
-    def from_db(cls, log: artemis_db.GuestLog) -> 'GuestLogResponse':
-        return cls(
-            state=artemis_db.GuestLogState(log.state),
-            contenttype=artemis_db.GuestLogContentType(log.contenttype),
-            url=log.url,
-            blobs=[GuestLogBlobResponse(ctime=blob.ctime, content=blob.content) for blob in log.blobs],
-            updated=log.updated,
-            expires=log.expires,
-        )
-
-
 class PreprovisioningRequest(BaseModel):
     count: int
     guest: GuestRequest

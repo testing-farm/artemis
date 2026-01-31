@@ -1,15 +1,14 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
-import importlib
 import json
 import os
 import platform
 import re
 import shutil
 import sys
-from collections.abc import Sequence
-from typing import Any, NoReturn, Optional, cast
+from collections.abc import Iterator, Sequence
+from typing import Any, NoReturn, Optional
 
 import fastapi
 import gluetool.log
@@ -30,9 +29,9 @@ from ..knobs import (
     Knob,
 )
 from ..script import hook_engine
-from . import environment
 from .middleware import MIDDLEWARE, ErrorHandlerMiddleware, ProfileMiddleware, TracingMiddleware
-from .routers import define_openapi_schema
+from .routers import APIMilestone, define_openapi_schema
+from .routers.latest import APIMilestone as LATEST_API_MILESTONE  # noqa: N814
 
 KNOB_API_ENGINE: Knob[str] = Knob(
     'api.engine',
@@ -157,29 +156,16 @@ except Exception as exc:
     sys.exit(1)
 
 
-def generate_redirects(
-    app: fastapi.FastAPI, api_version: str, routes: list[fastapi.routing.APIRoute], redirects: list[str]
-) -> None:
-    async def _redirect_endpoint_current(request: fastapi.Request) -> RedirectResponse:
-        to_url = request.url.path.replace('current', api_version, 1)
-        return RedirectResponse(to_url, status_code=308)
+def _collect_milestones() -> Iterator[APIMilestone]:
+    milestone = LATEST_API_MILESTONE
 
-    async def _redirect_endpoint_toplevel(request: fastapi.Request) -> RedirectResponse:
-        to_url = f'/{api_version}{request.url.path}'
-        return RedirectResponse(to_url, status_code=308)
+    while milestone:
+        yield milestone
 
-    api_version_prefix = f'/{api_version}'
+        milestone = milestone._PREVIOUS
 
-    for redirect in redirects:
-        for route in routes:
-            url_rest = route.path.lstrip(api_version_prefix).rstrip('/')
 
-            if redirect == 'toplevel':
-                app.add_api_route(f'/{url_rest}', endpoint=_redirect_endpoint_toplevel, methods=list(route.methods))
-            elif redirect == 'current':
-                app.add_api_route(
-                    f'/{redirect}/{url_rest}', endpoint=_redirect_endpoint_current, methods=list(route.methods)
-                )
+API_MILESTONES: list[APIMilestone] = list(_collect_milestones())
 
 
 def _create_app(
@@ -190,26 +176,43 @@ def _create_app(
         dependencies=dependencies or [],
     )
 
-    # TBD All api versions that are compatible should be taken from environment.API_MILESTONES
-    for api_version, _ in environment.API_MILESTONES:
+    def _attach_milestone(milestone: APIMilestone) -> FastAPI:
         # Each api version will be a separate application that will be mounted. This way we'll get separate docs for
         # each version
         subapi = FastAPI(docs_url='/_docs', openapi_url='/_schema')
-        api_module_name = api_version.replace('.', '_')
-        api_module = importlib.import_module(f'.routers.{api_module_name}', __name__)
-        api_module.register_routes(subapi)
-        app.mount(f'/{api_version}', subapi)
 
-        # add possible redirects are added here
-        generate_redirects(
-            app,
-            api_version,
-            cast(list[fastapi.routing.APIRoute], subapi.routes),
-            environment.get_redirects(api_version),
-        )
+        milestone.register_routes(subapi)
+
+        app.mount(f'/{milestone.version}', subapi)
+
+        return subapi
+
+    def _attach_redirects(milestone: APIMilestone, subapi: FastAPI) -> None:
+        async def _redirect_endpoint_current(request: fastapi.Request) -> RedirectResponse:
+            to_url = request.url.path.replace('current', milestone.version, 1)
+            return RedirectResponse(to_url, status_code=308)
+
+        async def _redirect_endpoint_toplevel(request: fastapi.Request) -> RedirectResponse:
+            to_url = f'/{milestone.version}{request.url.path}'
+            return RedirectResponse(to_url, status_code=308)
+
+        api_version_prefix = f'/{milestone.version}'
+
+        for route in subapi.routes:
+            url_rest = route.path.lstrip(api_version_prefix).rstrip('/')
+
+            app.add_api_route(f'/{url_rest}', endpoint=_redirect_endpoint_toplevel, methods=list(route.methods))
+            app.add_api_route(f'/current/{url_rest}', endpoint=_redirect_endpoint_current, methods=list(route.methods))
+
+    latest_subapi = _attach_milestone(LATEST_API_MILESTONE)
+    _attach_redirects(LATEST_API_MILESTONE, latest_subapi)
+
+    for milestone in API_MILESTONES[1:]:
+        _attach_milestone(milestone)
 
     # This should be called after all possible redirects have been generated
     define_openapi_schema(app)
+
     return app
 
 

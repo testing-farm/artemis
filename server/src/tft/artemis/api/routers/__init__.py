@@ -9,7 +9,7 @@ import json
 import os
 import uuid
 from collections.abc import Generator
-from typing import Annotated, Any, Callable, Optional, TypeVar, Union, cast
+from typing import TYPE_CHECKING, Annotated, Any, Callable, Optional, TypeVar, Union, cast
 
 import fastapi
 import fastapi.openapi
@@ -54,9 +54,6 @@ from ..models import (
     CreateUserRequest,
     EventSearchParameters,
     GuestEvent,
-    GuestLogResponse,
-    GuestRequest,
-    GuestResponse,
     GuestShelfResponse,
     KnobResponse,
     KnobUpdateRequest,
@@ -65,8 +62,9 @@ from ..models import (
     TokenTypes,
     UserResponse,
 )
-from ..models.v0_0_69 import GuestLogResponse_v0_0_69
-from ..models.v0_0_72 import GuestRequest_v0_0_72, GuestResponse_v0_0_72
+
+if TYPE_CHECKING:
+    from ..routers.v0_0_67 import GuestLogResponsePayload, GuestRequestRequestPayload, GuestRequestResponsePayload
 
 P = ParamSpec('P')
 ResponseT = TypeVar('ResponseT')
@@ -111,9 +109,21 @@ def with_tracing(fn: PathHandler[P, ResponseT]) -> PathHandler[P, ResponseT]:
     return _with_tracing
 
 
-GuestLogResponseType = TypeVar('GuestLogResponseType', GuestLogResponse, GuestLogResponse_v0_0_69)
-GuestResponseType = TypeVar('GuestResponseType', GuestResponse, GuestResponse_v0_0_72)
-GuestRequestType = TypeVar('GuestRequestType', GuestRequest, GuestRequest_v0_0_72)
+class APIMilestone:
+    _VERSION: tuple[int, int, int] = (0, 0, 0)
+    _PREVIOUS: Optional['APIMilestone'] = None
+
+    @functools.cached_property
+    def version(self) -> str:
+        return f'v{".".join(self._VERSION)}'
+
+    @classmethod
+    def register_routes(cls, app: fastapi.FastAPI) -> None:
+        for name in dir(cls):
+            if not name.startswith('router_'):
+                continue
+
+            app.include_router(getattr(cls, name))
 
 
 class GuestRequestManager:
@@ -124,8 +134,8 @@ class GuestRequestManager:
     def get_guest_requests(
         self,
         logger: gluetool.log.ContextAdapter,
-        response_model: type[GuestResponseType] = GuestResponse,  # type: ignore[assignment]
-    ) -> list[GuestResponseType]:
+        response_model: type['GuestRequestResponsePayload'],  # type: ignore[assignment]
+    ) -> list['GuestRequestResponsePayload']:
         with get_session(logger, self.db, read_only=True) as (session, _):
             # Include deferred `mtime` field, query guests and fields in one step.
             r_guests = (
@@ -141,12 +151,12 @@ class GuestRequestManager:
 
     def create(
         self,
-        guest_request: GuestRequestType,
+        guest_request: 'GuestRequestRequestPayload',
         ownername: str,
         logger: gluetool.log.ContextAdapter,
         environment_schema: JSONSchemaType,
-        response_model: type[GuestResponseType] = GuestResponse,  # type: ignore[assignment]
-    ) -> GuestResponseType:
+        response_model: type['GuestRequestResponsePayload'],
+    ) -> 'GuestRequestResponsePayload':
         from ...tasks import get_guest_logger
         from ...tasks.guest_shelf_lookup import guest_shelf_lookup
 
@@ -246,8 +256,8 @@ class GuestRequestManager:
         self,
         logger: gluetool.log.ContextAdapter,
         guestname: str,
-        response_model: type[GuestResponseType] = GuestResponse,  # type: ignore[assignment]
-    ) -> Optional[GuestResponseType]:
+        response_model: type['GuestRequestResponsePayload'],
+    ) -> Optional['GuestRequestResponsePayload']:
         with get_session(logger, self.db, read_only=True) as (session, _):
             r_guest_request_record = (
                 artemis_db.SafeQuery.from_session(session, artemis_db.GuestRequest)
@@ -421,11 +431,11 @@ def acquire_guest_console_url(
 def _validate_guest_request(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
-    guest_request: 'GuestRequestType',
+    guest_request: 'GuestRequestRequestPayload',
     ownername: str,
     environment_schema: JSONSchemaType,
     failure_details: FailureDetailsType,
-) -> 'GuestRequestType':
+) -> 'GuestRequestRequestPayload':
     SESSION.set(session)
 
     guest_request.environment = _validate_environment(
@@ -580,8 +590,8 @@ def get_guest_requests(
     logger: gluetool.log.ContextAdapter,
     manager: GuestRequestManager,
     request: Request,
-    response_model: type[GuestResponseType] = GuestResponse,  # type: ignore[assignment]
-) -> list[GuestResponseType]:
+    response_model: type['GuestRequestResponsePayload'],
+) -> list['GuestRequestResponsePayload']:
     return manager.get_guest_requests(logger, response_model=response_model)
 
 
@@ -591,8 +601,8 @@ def get_guest_request(
     guestname: str,
     manager: GuestRequestManager,
     request: Request,
-    response_model: type[GuestResponseType] = GuestResponse,  # type: ignore[assignment]
-) -> GuestResponseType:
+    response_model: type['GuestRequestResponsePayload'],
+) -> 'GuestRequestResponsePayload':
     guest_response = manager.get_by_guestname(logger, guestname, response_model=response_model)
 
     if guest_response is None:
@@ -1388,8 +1398,8 @@ def get_guest_request_log(
     contenttype: str,
     manager: GuestRequestManager,
     logger: gluetool.log.ContextAdapter,
-    guest_log_response_model: type[GuestLogResponseType] = GuestLogResponse,  # type: ignore[assignment]
-) -> GuestLogResponseType:
+    guest_log_response_model: type['GuestLogResponsePayload'],
+) -> 'GuestLogResponsePayload':
     from ...tasks import get_guest_logger
 
     failure_details = {'guestname': guestname}
@@ -1501,13 +1511,15 @@ def get_about(request: Request) -> AboutResponse:
     Some docs.
     """
 
+    from .. import API_MILESTONES
+
     return AboutResponse(
         package_version=__VERSION__,
         image_digest=os.getenv('ARTEMIS_IMAGE_DIGEST'),
         image_url=os.getenv('ARTEMIS_IMAGE_URL'),
         artemis_deployment=KNOB_DEPLOYMENT.value,
         artemis_deployment_environment=KNOB_DEPLOYMENT_ENVIRONMENT.value,
-        api_versions=[version for version, _ in global_env.API_MILESTONES],
+        api_versions=[milestone.version for milestone in API_MILESTONES],
     )
 
 
@@ -1525,13 +1537,13 @@ def define_openapi_schema(app: fastapi.FastAPI) -> dict[str, str]:
 
 def create_guest_request(
     api_version: str,
-    guest_request: GuestRequestType,
+    guest_request: 'GuestRequestRequestPayload',
     manager: GuestRequestManager,
     request: Request,
     auth: AuthContext,
     logger: gluetool.log.ContextAdapter,
-    response_model: type[GuestResponseType] = GuestResponse,  # type: ignore[assignment]
-) -> GuestResponseType:
+    response_model: type['GuestRequestResponsePayload'],
+) -> 'GuestRequestResponsePayload':
     # TODO: drop is_authenticated when things become mandatory: bare fact the authentication is enabled
     # and we got so far means user must be authenticated.
     if auth.is_authentication_enabled and auth.is_authenticated:

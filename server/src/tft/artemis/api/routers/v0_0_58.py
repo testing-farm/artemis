@@ -22,6 +22,7 @@ from ..models import (
     PreprovisioningRequest,
 )
 from . import (
+    APIMilestone,
     GuestEventManager,
     GuestRequestManager,
     GuestShelfManager,
@@ -211,3 +212,7 @@ def register_routes(app: fastapi.FastAPI) -> None:
     app.include_router(router_shelves)
     app.include_router(router_users)
     app.include_router(router_default)
+
+
+class ShelvesAPI(APIMilestone):
+    router_shelves = router_shelves

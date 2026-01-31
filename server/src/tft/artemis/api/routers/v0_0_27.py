@@ -20,6 +20,7 @@ from ..models import (
     GuestResponse,
 )
 from . import (
+    APIMilestone,
     CacheManager,
     GuestEventManager,
     GuestRequestManager,
@@ -174,3 +175,7 @@ def register_routes(app: fastapi.FastAPI) -> None:
     app.include_router(router__cache)
     app.include_router(router_users)
     app.include_router(router_default)
+
+
+class CacheAPI(APIMilestone):
+    router_cache = router__cache

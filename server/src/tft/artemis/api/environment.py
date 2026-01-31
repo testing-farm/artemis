@@ -23,38 +23,6 @@ ENVIRONMENT_SCHEMAS: dict[str, JSONSchemaType] = {}
 #: API versions. Based on this list, routers for proper endpoints will be added to the application with appropriate
 #: redirects if specified.
 API_MILESTONES: list[tuple[str, list[str]]] = [
-    # NEW: cpu.vendor and cpu.vendor-name HW requirements
-    (
-        'v0.0.84',
-        [
-            # For lazy clients who don't care about the version, our most current API version should add
-            # `/current` redirected to itself.
-            'current',
-            # For clients that did not switch to versioned API yet, keep top-level endpoints.
-            # TODO: this one's supposed to disappear once everyone switches to versioned API endpoints
-            'toplevel',
-        ],
-    ),
-    # NEW: beaker.panic-watchdog HW requirement
-    # NEW: iommu HW requirements
-    # NEW: system.model-name HW requirement
-    # NEW: device HW requirements
-    ('v0.0.83', []),
-    # NEW: guest reboot
-    # NEW: cpu.stepping HW requirement
-    ('v0.0.74', []),
-    # NEW: beaker HW requirement
-    ('v0.0.73', []),
-    # NEW: allow passing security group rules for guest creation
-    ('v0.0.72', []),
-    # NEW: guest log API adds multiple blobs
-    # NEW: dropped boot.method enum
-    ('v0.0.70', []),
-    # NEW: zcrypt HW requirement
-    # NEW: disk.model-name HW requirement
-    ('v0.0.69', []),
-    # NEW: fixed virtualization.hypervisor enum
-    ('v0.0.67', []),
     # NEW: fixed virtualization.hypervisor enum
     ('v0.0.58', []),
     # NEW: added user defined watchdog delays
@@ -93,12 +61,7 @@ API_MILESTONES: list[tuple[str, list[str]]] = [
     ('v0.0.20', []),
     # NEW: environment.hw opens
     ('v0.0.19', []),
-    # NEW: /guest/$GUESTNAME/console/url
-    ('v0.0.18', []),
-    ('v0.0.17', []),
 ]
-
-CURRENT_MILESTONE_VERSION = API_MILESTONES[0][0]
 
 #: Protects our metrics tree when updating & rendering to user.
 METRICS_LOCK = threading.Lock()
@@ -131,15 +94,3 @@ def get_environment_schemas() -> Result[dict[str, JSONSchemaType], Failure]:
         ENVIRONMENT_SCHEMAS.update(environment_schemas)
 
     return Ok(ENVIRONMENT_SCHEMAS)
-
-
-def get_redirects(version: str) -> list[str]:
-    _, redirects = next(
-        (
-            (milestone_version, redirects)
-            for milestone_version, redirects in API_MILESTONES
-            if milestone_version == version
-        ),
-        (None, []),
-    )
-    return redirects

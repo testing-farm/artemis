@@ -19,15 +19,7 @@ from ..models import (
     TokenResetResponse,
     UserResponse,
 )
-from . import (
-    CacheManager,
-    KnobManager,
-    StatusManager,
-    UserManager,
-    get_about,
-    get_metrics,
-    with_tracing,
-)
+from . import APIMilestone, CacheManager, KnobManager, StatusManager, UserManager, get_about, get_metrics, with_tracing
 
 router_knobs = APIRouter(
     prefix='/knobs', tags=['knobs'], responses={status.HTTP_404_NOT_FOUND: {'description': 'Not found'}}
@@ -164,3 +156,19 @@ def get_workers_traffic(
     request: Request,
 ) -> Response:
     return StatusManager.entry_workers_traffic(manager=manager, logger=logger, cache=cache)
+
+
+class KnobsAPI(APIMilestone):
+    router_knobs = router_knobs
+
+
+class StatusAPI(APIMilestone):
+    router_status = router__status
+
+
+class UsersAPI(APIMilestone):
+    router_users = router_users
+
+
+class DefaultAPI(APIMilestone):
+    router_default = router_default

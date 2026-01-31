@@ -18,7 +18,7 @@ import tft.artemis.api
 import tft.artemis.api.middleware
 import tft.artemis.db
 from tft.artemis import __VERSION__
-from tft.artemis.api.environment import CURRENT_MILESTONE_VERSION
+from tft.artemis.api import LATEST_API_MILESTONE
 from tft.artemis.api.middleware import AuthorizationMiddleware, rewrite_request_path
 from tft.artemis.api.models import AuthContext, _add_to_headers
 from tft.artemis.environment import Environment, HWRequirements, Kickstart, OsRequirements
@@ -63,7 +63,7 @@ def test_api_bootstrap(api_server: fastapi.applications.FastAPI) -> None:
 
 
 def test_api_about(api_client: fastapi.testclient.TestClient) -> None:
-    response = api_client.request('GET', f'/{CURRENT_MILESTONE_VERSION}/about')
+    response = api_client.request('GET', f'/{LATEST_API_MILESTONE.version}/about')
 
     assert response.status_code == 200
     assert response.json() == {
@@ -72,7 +72,7 @@ def test_api_about(api_client: fastapi.testclient.TestClient) -> None:
         'image_url': None,
         'artemis_deployment': 'undefined-deployment',
         'artemis_deployment_environment': 'undefined-deployment-environment',
-        'api_versions': [version for version, _ in tft.artemis.api.environment.API_MILESTONES],
+        'api_versions': [milestone.version for milestone in tft.artemis.api.API_MILESTONES],
     }
 
 
@@ -80,12 +80,12 @@ def test_api_redirects(api_client: fastapi.testclient.TestClient) -> None:
     # /current should be redirected to the current milestone version
     response = api_client.request('GET', '/current/about', allow_redirects=False)
     assert response.status_code == 308
-    assert response.headers['location'] == f'/{CURRENT_MILESTONE_VERSION}/about'
+    assert response.headers['location'] == f'/{LATEST_API_MILESTONE.version}/about'
 
     # same applies to legacy top-level endpoints, return redirects to the current version
     response = api_client.request('GET', '/about', allow_redirects=False)
     assert response.status_code == 308
-    assert response.headers['location'] == f'/{CURRENT_MILESTONE_VERSION}/about'
+    assert response.headers['location'] == f'/{LATEST_API_MILESTONE.version}/about'
 
     # supported versions should include no redirects
     response = api_client.request('GET', '/v0.0.18/about', allow_redirects=False)
@@ -101,7 +101,7 @@ def test_api_redirects(api_client: fastapi.testclient.TestClient) -> None:
 def test_metrics(
     api_client: fastapi.testclient.TestClient, db: tft.artemis.db.DB, logger: gluetool.log.ContextAdapter, redis: None
 ) -> None:
-    response = api_client.request('GET', f'/{CURRENT_MILESTONE_VERSION}/metrics')
+    response = api_client.request('GET', f'/{LATEST_API_MILESTONE.version}/metrics')
 
     assert response.status_code == 200
 

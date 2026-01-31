@@ -3,11 +3,6 @@
 
 # flake8: noqa: FS003 f-string missing prefix
 
-# # NEW: HW requirements
-
-# NOTE(ivasilev) There is plenty of code duplication, basically v0.0.19 is the same as v0.0.18 with the only difference
-# in guest create method. Any ideas how to make it more efficient?
-
 from typing import Annotated
 
 import fastapi
