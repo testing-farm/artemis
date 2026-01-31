@@ -5,7 +5,7 @@
 Add pool tags table
 
 Revision ID: 63866e38fe0b
-Revises: d4a6a1fb98fe
+Revises: b9963fb2b987
 Create Date: 2025-10-30 10:13:00.013173
 
 """
@@ -15,7 +15,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = '63866e38fe0b'
-down_revision = 'd4a6a1fb98fe'
+down_revision = 'b9963fb2b987'
 branch_labels = None
 depends_on = None
 
