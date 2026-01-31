@@ -20,7 +20,7 @@ from tmt.hardware import UNITS
 
 from .. import Failure, log_dict_yaml
 from ..db import GuestRequest
-from ..environment import UNITS, Flavor, FlavorBoot, SizeType
+from ..environment import Flavor, FlavorBoot, SizeType
 from ..knobs import Knob
 from ..metrics import PoolResourcesMetrics, PoolResourcesUsage
 from . import (
