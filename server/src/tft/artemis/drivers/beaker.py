@@ -52,6 +52,7 @@ from ..metrics import PoolMetrics, PoolResourcesMetrics, PoolResourcesUsage, Res
 from . import (
     CanAcquire,
     CLIOutput,
+    ConfigImageFilter,
     GuestLogUpdateProgress,
     PoolCapabilities,
     PoolData,
@@ -1381,6 +1382,18 @@ class BeakerDriver(PoolDriver):
             self.inc_costs(logger, ResourceType.VIRTUAL_MACHINE, resource_ids.ctime)
 
         return Ok(ReleasePoolResourcesState.RELEASED)
+
+    def list_images(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        filters: Optional[ConfigImageFilter] = None,
+    ) -> Result[list[PoolImageInfo], Failure]:
+        """
+        This method will issue a cloud guest list command and return a list of pool image info objects for this
+        particular cloud.
+        Filters argument contains optional filtering options to be applied on the cloud side.
+        """
+        return Ok([])
 
     def image_name_to_image_info(
         self, logger: gluetool.log.ContextAdapter, imagename: str
