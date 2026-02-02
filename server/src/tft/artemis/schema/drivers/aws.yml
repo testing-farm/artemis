@@ -51,6 +51,9 @@ properties:
         name-wildcard:
           type: string
 
+        arch-regex:
+          type: string
+
         name-regex:
           type: string
 
