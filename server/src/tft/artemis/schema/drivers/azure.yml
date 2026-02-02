@@ -18,8 +18,17 @@ properties:
     items:
       type: object
       properties:
+        arch-regex:
+          type: string
+
         name-regex:
           type: string
+
+        creation-date-regex:
+          type: string
+
+        max-age:
+          type: integer
 
         offer:
           type: string
