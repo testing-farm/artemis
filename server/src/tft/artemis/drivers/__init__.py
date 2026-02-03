@@ -2394,6 +2394,9 @@ class PoolDriver(gluetool.log.LoggerMixin):
                 if arch_pattern and image.arch and not arch_pattern.match(image.arch):
                     continue
 
+                # NOTE(ivasilev) If some images have no creation date specified (for ex. cloud provides no information,
+                # like is the case of azure or openstack) they will be selected regardless of max-age / creation-date
+                # filters
                 if (
                     creation_date_pattern is not None
                     and image.created_at
