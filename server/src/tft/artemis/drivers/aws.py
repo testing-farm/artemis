@@ -3133,7 +3133,15 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
         )
 
         if r_output.is_error:
-            return Error(Failure.from_failure('failed to fetch console output', r_output.unwrap_error()))
+            # Try once again without `--latest` which is supported with Nitro only. We do not track which which flavor
+            # or hypervisor we're using.
+            r_output = self._aws_command(
+                ['ec2', 'get-console-output', '--instance-id', pool_data.instance_id],
+                commandname='aws.ec2-get-console-output',
+            )
+
+            if r_output.is_error:
+                return Error(Failure.from_failure('failed to fetch console output', r_output.unwrap_error()))
 
         output = cast(dict[str, str], r_output.unwrap())
 
