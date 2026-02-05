@@ -715,6 +715,32 @@ def process_output_to_str(output: gluetool.utils.ProcessOutput, stream: str = 's
 _DEFAULT_FAILURE_LOG_LABEL = 'failure'
 
 
+def _sentry_stringify(
+    v: Union[str, sentry_sdk.utils.AnnotatedValue, list[str], list[Union[sentry_sdk.utils.AnnotatedValue, str]], None],
+) -> Iterator[str]:
+    """
+    Convert weird string-ish objects into strings we can use as part of serialized frames in Sentry.
+
+    Sentry SDK uses several types to carry lines of code, deal with all of them.
+    """
+
+    if v is None:
+        yield ''
+
+    elif isinstance(v, str):
+        yield v
+
+    elif isinstance(v, sentry_sdk.utils.AnnotatedValue):
+        yield str(v.value)
+
+    elif isinstance(v, list):
+        for s in v:
+            yield (s.value or '') if isinstance(s, sentry_sdk.utils.AnnotatedValue) else s
+
+    else:
+        yield str(v)
+
+
 class Failure:
     """
     Bundles exception related info.
@@ -961,7 +987,7 @@ class Failure:
         return event_details
 
     @classmethod
-    def _serialize_traceback(
+    def _serialize_sentry_traceback(
         cls,
         message: str,
         frames: _traceback.StackSummary,
@@ -970,29 +996,6 @@ class Failure:
         Based on Sentry's stack trace serialization, this helper takes care of serializing
         a traceback saved by ``Failure`` instance itself, i.e. when there was no exception.
         """
-
-        # Convert weird string-ish objects into strings we can use as part of serialized frames.
-        # Sentry SDK uses several types to carry lines of code, deal with all of them.
-        def _stringify(
-            v: Union[
-                str, sentry_sdk.utils.AnnotatedValue, list[str], list[Union[sentry_sdk.utils.AnnotatedValue, str]], None
-            ],
-        ) -> Iterator[str]:
-            if v is None:
-                yield ''
-
-            elif isinstance(v, str):
-                yield v
-
-            elif isinstance(v, sentry_sdk.utils.AnnotatedValue):
-                yield str(v.value)
-
-            elif isinstance(v, list):
-                for s in v:
-                    yield (s.value or '') if isinstance(s, sentry_sdk.utils.AnnotatedValue) else s
-
-            else:
-                yield str(v)
 
         result = []
         for frame in frames:
@@ -1017,9 +1020,9 @@ class Failure:
                 # Pre/post context is supposed to be a list of lines, the context line a string.
                 frame_result.update(
                     {
-                        'pre_context': list(_stringify(pre_context)),
-                        'context_line': '\n'.join(_stringify(context_line)),
-                        'post_context': list(_stringify(post_context)),
+                        'pre_context': list(_sentry_stringify(pre_context)),
+                        'context_line': '\n'.join(_sentry_stringify(context_line)),
+                        'post_context': list(_sentry_stringify(post_context)),
                     }
                 )
 
@@ -1054,6 +1057,64 @@ class Failure:
         }
 
         return contexts
+
+    def get_sentry_cause_details(self, index: int) -> Iterator[dict[str, Any]]:
+        """
+        Turn the tree of causes of this failure into mappings, suitable for visualisation in Sentry.
+
+        Unlike :py:meth:`get_sentry_details`, this method does not need to fit into objects expected by Sentry
+        as we are generating content in one of such objects.
+
+        :yields: mappings, each describing causes of this failure. First the immediate cause, then its cause, and so
+            on until reaching the end of the sequence. Each mapping contains only a single key, ``cause.{index}``,
+            with ``index`` being incremented for each cause, and the value is a simplified description of the given
+            cause. These mappings can be then composed into one final mapping, with keys ``cause.0``, ``cause.1``,
+            until ``cause.N`` for hte last cause.
+        """
+
+        cause = self.caused_by
+
+        if not cause:
+            return
+
+        cause_details = cause.details.copy()
+
+        cause_tags = Sentry.get_default_tags()
+        cause_info = {
+            'message': cause.message,
+            'recoverable': cause.recoverable,
+            'fail_guest_request': cause.fail_guest_request,
+            'tags': cause_tags,
+        }
+
+        if 'scrubbed_command' in cause_details:
+            cause_info['scrubbed_command'] = gluetool.utils.format_command_line([cause_details.pop('scrubbed_command')])
+
+        if 'command_output' in cause_details:
+            command_output = cause_details.pop('command_output')
+
+            cause_info['stdout'] = process_output_to_str(command_output, stream='stdout')
+            cause_info['stderr'] = process_output_to_str(command_output, stream='stderr')
+
+        if 'task_call' in cause_details:
+            cause_info['task_call'] = cause_details.pop('task_call').serialize()
+
+        if 'guestname' in cause_details:
+            cause_tags['guestname'] = cause_details.pop('guestname')
+
+        if 'poolname' in cause_details:
+            cause_tags['poolname'] = cause_details.pop('poolname')
+
+        if cause.traceback:
+            cause_info['traceback'] = [
+                frame_formatted.strip() for frame_formatted in _traceback.format_list(cause.traceback)
+            ]
+
+        cause_info['details'] = cause_details
+
+        yield {f'caused_by.{index}': cause_info}
+
+        yield from cause.get_sentry_cause_details(index + 1)
 
     def get_sentry_details(self) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
         """
@@ -1097,7 +1158,7 @@ class Failure:
             event.update(
                 {
                     'level': 'error',
-                    'exception': {'values': [Failure._serialize_traceback(self.message, self.traceback)]},
+                    'exception': {'values': [Failure._serialize_sentry_traceback(self.message, self.traceback)]},
                 }
             )
 
@@ -1113,10 +1174,8 @@ class Failure:
             {key: value for key, value in self.details.items() if key.startswith(('api_request_', 'api_response_'))}
         )
 
-        if self.caused_by:
-            caused_by_data, caused_by_tags, caused_by_extra = self.caused_by.get_sentry_details()
-
-            extra['caused_by'] = {'data': caused_by_data, 'tags': caused_by_tags, 'extra': caused_by_extra}
+        for caused_by_details in self.get_sentry_cause_details(0):
+            extra.update(caused_by_details)
 
         return event, tags, extra
 
