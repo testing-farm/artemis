@@ -20,7 +20,7 @@ from tmt.hardware import UNITS
 
 from tft.artemis.drivers.aws import awscli_error_cause_extractor
 
-from .. import Failure, JSONType, SerializableContainer, render_template
+from .. import Failure, JSONType, render_template
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, SnapshotRequest
 from ..environment import (
     Flavor,
@@ -49,6 +49,7 @@ from . import (
     ProvisioningProgress,
     ProvisioningState,
     ReleasePoolResourcesState,
+    Resource,
     SerializedPoolResourcesIDs,
     create_tempfile,
     guest_log_updater,
@@ -115,7 +116,7 @@ ConfigImageFilter = TypedDict(
 
 
 @dataclasses.dataclass
-class AzureInstance(SerializableContainer):
+class AzureInstance(Resource):
     id: str
     vm_id: str
     name: str
@@ -310,6 +311,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
     image_info_class = AzurePoolImageInfo
     flavor_info_class = AzureFlavor
     pool_data_class = AzurePoolData
+    pool_resources_ids_class = AzurePoolResourcesIDs
 
     datetime_format = AZURE_DATETIME_FORMAT
 
@@ -1024,7 +1026,6 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
 
             return Ok(res)
 
-    # NOTE(ivasilev) Should be part of the framework, copy-paste
     def _get_instance_name(self, guest_request: GuestRequest) -> Result[str, Failure]:
         r_instance_name_template = KNOB_INSTANCE_NAME_TEMPLATE.get_value(entityname=self.poolname)
         if r_instance_name_template.is_error:
@@ -1039,6 +1040,61 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
             return Error(Failure('Could not render instance_name template'))
 
         return Ok(r_rendered.unwrap())
+
+    def create_guest(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        instance_name: str,
+    ) -> Result[AzureInstance, Failure]:
+        r_image_flavor_pairs = self._collect_image_flavor_pairs(logger, session, guest_request)
+
+        if r_image_flavor_pairs.is_error:
+            return Error(r_image_flavor_pairs.unwrap_error())
+
+        can_acquire, pairs = r_image_flavor_pairs.unwrap()
+
+        if not can_acquire.can_acquire:
+            assert can_acquire.reason is not None
+
+            return Error(Failure(can_acquire.reason.message))
+
+        image, flavor = pairs[0]
+
+        self.log_acquisition_attempt(logger, session, guest_request, flavor=flavor, image=image)
+
+        r_post_install_script = self.generate_post_install_script(guest_request)
+        if r_post_install_script.is_error:
+            return Error(
+                Failure.from_failure('Could not generate post-install script', r_post_install_script.unwrap_error())
+            )
+
+        post_install_script = r_post_install_script.unwrap()
+        if post_install_script:
+            with create_tempfile(file_contents=post_install_script) as user_data_file:
+                r_output: Result[AzureInstance, Failure] = self.create_instance(
+                    logger=logger,
+                    guest_request=guest_request,
+                    flavor=flavor,
+                    image=image,
+                    instance_name=instance_name,
+                    user_data_file=user_data_file,
+                )
+        else:
+            r_output = self.create_instance(
+                logger=logger, guest_request=guest_request, flavor=flavor, image=image, instance_name=instance_name
+            )
+
+        if r_output.is_error:
+            return Error(r_output.unwrap_error())
+
+        created = r_output.unwrap()
+
+        if not created.id:
+            return Error(Failure('Instance id not found'))
+
+        return Ok(created)
 
     # NOTE(ivasilev) Should be part of the framework, copy-paste
     def acquire_guest(
