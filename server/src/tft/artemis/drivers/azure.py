@@ -36,7 +36,6 @@ from ..environment import (
 from ..knobs import Knob
 from ..metrics import PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from . import (
-    KNOB_INSTANCES_PER_REQUEST_LIMIT,
     CanAcquire,
     FlavorBasedPoolDriver,
     GuestLogUpdateProgress,
@@ -50,6 +49,7 @@ from . import (
     ProvisioningState,
     ReleasePoolResourcesState,
     Resource,
+    ResourceManager,
     SerializedPoolResourcesIDs,
     create_tempfile,
     guest_log_updater,
@@ -115,28 +115,6 @@ ConfigImageFilter = TypedDict(
 )
 
 
-@dataclasses.dataclass
-class AzureInstance(Resource):
-    id: str
-    vm_id: str
-    name: str
-    status: str
-    created_at: datetime.datetime
-    resource_group: str
-
-    @functools.cached_property
-    def is_pending(self) -> bool:
-        return self.status == 'building'
-
-    @functools.cached_property
-    def is_ready(self) -> bool:
-        return self.status == 'active'
-
-    @functools.cached_property
-    def is_error(self) -> bool:
-        return self.status == 'failed'
-
-
 class APIImageType(TypedDict):
     name: Optional[str]
     architecture: str
@@ -163,6 +141,31 @@ class AzurePoolResourcesIDs(PoolResourcesIDs):
     assorted_resource_ids: Optional[list[dict[str, str]]] = None
     resource_group: Optional[str] = None
     boot_log_container: Optional[str] = None
+
+
+@dataclasses.dataclass
+class AzureInstance(Resource):
+    id: str
+    vm_id: str
+    name: str
+    status: str
+    created_at: datetime.datetime
+    resource_group: str
+
+    @functools.cached_property
+    def is_pending(self) -> bool:
+        return self.status == 'building'
+
+    @functools.cached_property
+    def is_ready(self) -> bool:
+        return self.status == 'active'
+
+    @functools.cached_property
+    def is_error(self) -> bool:
+        return self.status == 'failed'
+
+    def to_pool_resource_ids(self) -> AzurePoolResourcesIDs:
+        return AzurePoolResourcesIDs(instance_id=self.vm_id)
 
 
 @dataclasses.dataclass(repr=False)
@@ -311,7 +314,6 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
     image_info_class = AzurePoolImageInfo
     flavor_info_class = AzureFlavor
     pool_data_class = AzurePoolData
-    pool_resources_ids_class = AzurePoolResourcesIDs
 
     datetime_format = AZURE_DATETIME_FORMAT
 
@@ -324,6 +326,15 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
         pool_config: dict[str, Any],
     ) -> None:
         super().__init__(logger, poolname, pool_config)
+        # XXX FIXME Will be moved to base driver class constructor once verified!
+        self.instance_resource_manager = ResourceManager(
+            logger=logger,
+            driver=self,
+            resource_type='instance',
+            resource_list_func=self.list_instances_by_guest_request,
+            resource_create_func=self.create_guest,
+            resource_identifier_func=self.get_instance_name,
+        )
 
     @property
     def use_public_ip(self) -> bool:
@@ -966,7 +977,6 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
 
             return Ok(res)
 
-    # NOTE(ivasilev) Should be part of the framework, copy-paste
     def list_instances_by_guest_request(
         self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
     ) -> Result[list[AzureInstance], Failure]:
@@ -979,7 +989,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
             return Error(Failure.from_failure('failed to list instances', r_instances_list.unwrap_error()))
 
         # Let's get expected name to match against
-        r_expected_name = self._get_instance_name(guest_request)
+        r_expected_name = self.get_instance_name(guest_request)
         if r_expected_name.is_error:
             return Error(Failure.from_failure('failed to get expected instance name', r_expected_name.unwrap_error()))
         expected_name = r_expected_name.unwrap()
@@ -1026,7 +1036,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
 
             return Ok(res)
 
-    def _get_instance_name(self, guest_request: GuestRequest) -> Result[str, Failure]:
+    def get_instance_name(self, guest_request: GuestRequest) -> Result[str, Failure]:
         r_instance_name_template = KNOB_INSTANCE_NAME_TEMPLATE.get_value(entityname=self.poolname)
         if r_instance_name_template.is_error:
             return Error(Failure('Could not get instance_name template'))
@@ -1096,164 +1106,36 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
 
         return Ok(created)
 
-    # NOTE(ivasilev) Should be part of the framework, copy-paste
     def acquire_guest(
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
     ) -> Result[ProvisioningProgress, Failure]:
-        r_image_flavor_pairs = self._collect_image_flavor_pairs(logger, session, guest_request)
-
-        if r_image_flavor_pairs.is_error:
-            return Error(r_image_flavor_pairs.unwrap_error())
-
-        can_acquire, pairs = r_image_flavor_pairs.unwrap()
-
-        if not can_acquire.can_acquire:
-            assert can_acquire.reason is not None
-
-            return Error(Failure(can_acquire.reason.message))
-
-        image, flavor = pairs[0]
-
-        self.log_acquisition_attempt(logger, session, guest_request, flavor=flavor, image=image)
-
-        # Get expected instance name from template
-        r_instance_name = self._get_instance_name(guest_request)
-        if r_instance_name.is_error:
-            return Error(Failure.from_failure('Could not get instance name', r_instance_name.unwrap_error()))
-        instance_name = r_instance_name.unwrap()
-
-        # Let's first check that there is no instance tied to this guest_request already. If there is one, then let's
-        # use already allocated resources to continue with the provisioning instead of requesting new ones and leaving
-        # old instance untracked.
-        r_existing_instances: Result[list[AzureInstance], Failure] = self.list_instances_by_guest_request(
-            logger, guest_request
+        r_instance = cast(
+            Result[AzureInstance, Failure], self.instance_resource_manager.get_resource(logger, guest_request, session)
         )
-
-        if r_existing_instances.is_error:
-            return Error(Failure.from_failure('Listing guests failed', r_existing_instances.unwrap_error()))
-
-        # Try to reuse already allocated instances
-        existing_instances = r_existing_instances.unwrap()
-
-        if existing_instances:
-            # Let's check state first - if the guest is already broken it is of no use to us, while instances in build
-            # or active state can be reused.
-
-            pending_instances = [
-                instance for instance in existing_instances if instance.is_pending or instance.is_ready
-            ]
-            error_instances = [instance for instance in existing_instances if instance.is_error]
-            leftover_instances = pending_instances[1:] + error_instances
-
-            # Schedule cleanup of resources we won't use
-            for leftover in leftover_instances:
-                self.dispatch_resource_cleanup(
-                    logger,
-                    session,
-                    AzurePoolResourcesIDs(instance_id=leftover.id),
-                    guest_request=guest_request,
+        if r_instance.is_error:
+            return Ok(
+                ProvisioningProgress(
+                    state=ProvisioningState.CANCEL,
+                    pool_data=AzurePoolData(),
+                    pool_failures=[r_instance.unwrap_error()],
                 )
-
-            if pending_instances:
-                # At least one reusable instance has been found
-                # Instances are sorted by provisioning time, let's take the first provisioned one.
-                instance_to_use = pending_instances[0]
-
-                if len(pending_instances) > 1:
-                    Failure(
-                        'Multiple reusable instances found for a guest request',
-                        guestname=guest_request.guestname,
-                        poolname=self.poolname,
-                        instance_ids=[instance.name for instance in pending_instances],
-                        chosen_instance=instance_to_use.name,
-                    ).handle(logger)
-
-                return Ok(
-                    ProvisioningProgress(
-                        state=ProvisioningState.PENDING,
-                        pool_data=AzurePoolData(
-                            instance_id=instance_to_use.id,
-                            instance_name=instance_to_use.name,
-                            vm_id=instance_to_use.vm_id,
-                            resource_group=instance_to_use.resource_group,
-                        ),
-                        ssh_info=image.ssh,
-                    )
-                )
-            # If we ended up here this means all preallocated resources are in unusable state. At the same time we may
-            # not be able to use the expected artemis-GUESTNAME naming as ibmcloud won't allow two instances with the
-            # same name. So let's generate a postfix, append it to the expected name, this way the instance will be
-            # tracked in a list_instances call among related to this guest request.
-            # To avoid going into eternal loop the iterations will be limited by instances_per_request_limit knob,
-            # and once exhausted a definitive cancel state will be returned so that request could be given another
-            # chance by a different pool.
-            claimed_names = {leftover.name for leftover in leftover_instances}
-
-            if instance_name in claimed_names:
-                r_max_instances_limit = KNOB_INSTANCES_PER_REQUEST_LIMIT.get_value(entityname=self.poolname)
-                if r_max_instances_limit.is_error:
-                    return Error(Failure('Could not get max instances per request limit'))
-
-                # Can't use the expected instance_name because there is a leftover resource with this name. Let's try
-                # to pick up a new one
-                for postfix in range(1, r_max_instances_limit.unwrap()):
-                    instance_name = f'{instance_name}-{postfix}'
-                    if instance_name not in claimed_names:
-                        break
-                else:
-                    # seems that all allowed names are already claimed by leftover instances, which means something
-                    # is wrong -> can't continue
-                    return Ok(
-                        ProvisioningProgress(
-                            state=ProvisioningState.CANCEL,
-                            pool_data=AzurePoolData(),
-                            pool_failures=[Failure('Too many leftover instances')],
-                        )
-                    )
-
-        r_post_install_script = self.generate_post_install_script(guest_request)
-        if r_post_install_script.is_error:
-            return Error(
-                Failure.from_failure('Could not generate post-install script', r_post_install_script.unwrap_error())
             )
 
-        post_install_script = r_post_install_script.unwrap()
-        if post_install_script:
-            with create_tempfile(file_contents=post_install_script) as user_data_file:
-                r_output: Result[AzureInstance, Failure] = self.create_instance(
-                    logger=logger,
-                    guest_request=guest_request,
-                    flavor=flavor,
-                    image=image,
-                    instance_name=instance_name,
-                    user_data_file=user_data_file,
-                )
-        else:
-            r_output = self.create_instance(
-                logger=logger, guest_request=guest_request, flavor=flavor, image=image, instance_name=instance_name
-            )
-
-        if r_output.is_error:
-            return Error(r_output.unwrap_error())
-
-        created = r_output.unwrap()
-
-        if not created.id:
-            return Error(Failure('Instance id not found'))
-
+        instance = r_instance.unwrap()
         return Ok(
             ProvisioningProgress(
                 state=ProvisioningState.PENDING,
                 pool_data=AzurePoolData(
-                    instance_id=created.id,
-                    instance_name=created.name,
-                    vm_id=created.vm_id,
-                    resource_group=created.resource_group,
+                    instance_id=instance.id,
+                    instance_name=instance.name,
+                    vm_id=instance.vm_id,
+                    resource_group=instance.resource_group,
                 ),
-                ssh_info=image.ssh,
+                # XXX FIXME How to better pass ssh_info? Do we need to bake it into AzureInstance?
+                ssh_info=None,
             )
         )
 

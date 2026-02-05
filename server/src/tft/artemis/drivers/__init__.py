@@ -1348,6 +1348,9 @@ class Resource:
         raise NotImplementedError
 
 
+ResourceT = TypeVar('ResourceT', bound=Resource)
+
+
 class PoolDriver(gluetool.log.LoggerMixin):
     drivername: str
 
@@ -1356,7 +1359,6 @@ class PoolDriver(gluetool.log.LoggerMixin):
     image_info_class: type[PoolImageInfo] = PoolImageInfo
     flavor_info_class: type[Flavor] = Flavor
     pool_data_class: type[PoolData] = PoolData
-    pool_resources_ids_class: type[PoolResourcesIDs] = PoolResourcesIDs
     pool_error_causes_enum: type[PoolErrorCauses]
     cli_error_cause_extractor: Optional[PoolErrorCauseExtractor] = None
 
@@ -3644,14 +3646,14 @@ class ResourceCreateFunction(Protocol):
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         unique_identifier: str,
-    ) -> Result[Resource, Failure]:
+    ) -> Result[ResourceT, Failure]:
         pass
 
 
 class ResourceListFunction(Protocol):
     def __call__(
         self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
-    ) -> Result[list[Resource], Failure]:
+    ) -> Result[list[ResourceT], Failure]:
         pass
 
 
@@ -3677,15 +3679,17 @@ class ResourceManager(gluetool.log.LoggerMixin):
         self.resource_listing_func = resource_list_func
         self.resource_identifier_func = resource_identifier_func
 
-    def get_preallocated_resource(
-        self, guest_request: GuestRequest, session: sqlalchemy.orm.session.Session
-    ) -> Result[Resource, Failure]:
+    def get_resource(
+        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest, session: sqlalchemy.orm.session.Session
+    ) -> Result[ResourceT, Failure]:
         r_resource_name = self.resource_identifier_func(guest_request)
         if r_resource_name.is_error:
             return Error(Failure.from_failure('Could not get resource name', r_resource_name.unwrap_error()))
         resource_name = r_resource_name.unwrap()
 
-        r_existing_resources = self.resource_listing_func(self.logger, guest_request)
+        r_existing_resources = cast(
+            Result[list[ResourceT], Failure], self.resource_listing_func(self.logger, guest_request)
+        )
         if r_existing_resources.is_error:
             return Error(
                 Failure.from_failure(
