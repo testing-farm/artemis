@@ -7,6 +7,23 @@ properties:
   capabilities:
     type: object
 
+  image-filters:
+    type: array
+    items:
+      type: object
+      properties:
+        arch-regex:
+          type: string
+
+        name-regex:
+          type: string
+
+        creation-date-regex:
+          type: string
+
+        max-age:
+          type: integer
+
   project:
     description: Project under which should the VM instances be spawned.
     type: string

@@ -25,6 +25,15 @@ properties:
     items:
       type: object
       properties:
+        arch-regex:
+          type: string
+
+        creation-date-regex:
+          type: string
+
+        max-age:
+          type: integer
+
         name-regex:
           type: string
 

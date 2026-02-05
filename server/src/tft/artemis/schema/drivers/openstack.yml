@@ -33,8 +33,22 @@ properties:
   flavor-regex:
     type: string
 
-  image-regex:
-    type: string
+  image-filters:
+    type: array
+    items:
+      type: object
+      properties:
+        arch-regex:
+          type: string
+
+        name-regex:
+          type: string
+
+        creation-date-regex:
+          type: string
+
+        max-age:
+          type: integer
 
   ip-version:
     type: string
