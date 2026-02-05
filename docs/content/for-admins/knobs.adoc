@@ -624,6 +624,22 @@ until cancelled and reprovisioned.
 
 5+|A pattern for needle to match in environment to image mapping file.
 
+|`azure.mapping.instance-name.template`
+|`str`
+|`ARTEMIS_AZURE_INSTANCE_NAME_TEMPLATE`
+|`artemis-{{ GUESTNAME }}`
+|no
+
+
+|`azure.mapping.instance-name.template:$entityname`
+|
+|`ARTEMIS_AZURE_INSTANCE_NAME_TEMPLATE_$entityname`
+|
+|
+
+
+5+|A pattern for artemis guest name
+
 |`azure.mapping.resource-group-name.template`
 |`str`
 |`ARTEMIS_AZURE_RESOURCE_GROUP_NAME_TEMPLATE`

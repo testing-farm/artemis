@@ -1458,6 +1458,17 @@ class PoolDriver(gluetool.log.LoggerMixin):
     def is_enabled(self, session: sqlalchemy.orm.session.Session) -> Result[bool, Failure]:
         return KNOB_POOL_ENABLED.get_value(session=session, entityname=self.poolname)
 
+    @classmethod
+    def timestamp_to_datetime(cls, timestamp: str) -> Result[datetime.datetime, Failure]:
+        try:
+            return Ok(datetime.datetime.strptime(timestamp, cls.datetime_format))
+        except Exception as exc:
+            return Error(
+                Failure.from_exc(
+                    'failed to parse timestamp', exc, timestamp=timestamp, strptime_format=cls.datetime_format
+                )
+            )
+
     @property
     def ssh_options(self) -> list[str]:
         return gluetool.utils.normalize_multistring_option(self.pool_config.get('ssh-options', []))

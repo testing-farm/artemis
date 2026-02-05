@@ -3,6 +3,7 @@
 
 import dataclasses
 import datetime
+import functools
 import os
 import tempfile
 from collections.abc import Iterator
@@ -19,7 +20,7 @@ from tmt.hardware import UNITS
 
 from tft.artemis.drivers.aws import awscli_error_cause_extractor
 
-from .. import Failure, JSONType, render_template
+from .. import Failure, JSONType, SerializableContainer, render_template
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, SnapshotRequest
 from ..environment import (
     Flavor,
@@ -35,6 +36,7 @@ from ..environment import (
 from ..knobs import Knob
 from ..metrics import PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from . import (
+    KNOB_INSTANCES_PER_REQUEST_LIMIT,
     CanAcquire,
     FlavorBasedPoolDriver,
     GuestLogUpdateProgress,
@@ -52,6 +54,16 @@ from . import (
     guest_log_updater,
     run_cli_tool,
     vm_info_to_ip,
+)
+
+KNOB_INSTANCE_NAME_TEMPLATE: Knob[str] = Knob(
+    'azure.mapping.instance-name.template',
+    'A pattern for artemis guest name',
+    has_db=False,
+    per_entity=True,
+    envvar='ARTEMIS_AZURE_INSTANCE_NAME_TEMPLATE',
+    cast_from_str=str,
+    default='artemis-{{ GUESTNAME }}',
 )
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
@@ -94,12 +106,34 @@ AZURE_RESOURCE_TYPE: dict[str, ResourceType] = {
     'Microsoft.Network/networkSecurityGroups': ResourceType.SECURITY_GROUP,
 }
 
-AZURE_DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S%z'
+AZURE_DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S.%f%z'
 
 
 ConfigImageFilter = TypedDict(
     'ConfigImageFilter', {'name-regex': str, 'offer': str, 'publisher': str, 'sku': str}, total=False
 )
+
+
+@dataclasses.dataclass
+class AzureInstance(SerializableContainer):
+    id: str
+    vm_id: str
+    name: str
+    status: str
+    created_at: datetime.datetime
+    resource_group: str
+
+    @functools.cached_property
+    def is_pending(self) -> bool:
+        return self.status == 'building'
+
+    @functools.cached_property
+    def is_ready(self) -> bool:
+        return self.status == 'active'
+
+    @functools.cached_property
+    def is_error(self) -> bool:
+        return self.status == 'failed'
 
 
 class APIImageType(TypedDict):
@@ -740,143 +774,48 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
 
         return Ok(res)
 
-    def acquire_guest(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
-    ) -> Result[ProvisioningProgress, Failure]:
-        r_image_flavor_pairs = self._collect_image_flavor_pairs(logger, session, guest_request)
+    def create_instance(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest,
+        flavor: Flavor,
+        image: PoolImageInfo,
+        instance_name: str,
+        user_data_file: Optional[str] = None,
+        tags: Optional[dict[str, str]] = None,
+    ) -> Result[AzureInstance, Failure]:
+        """This method will issue a cloud instance create request"""
+        """
+        The actual call to the azure cli guest create command is happening here.
+        If custom_data_filename is an empty string then the guest vm is booted with no user-data.
+        If pool config doesn't have a fixed guest_resource_group defined, then a new vm will be created under a
+        distinct resource_group so that a cleanup later will be smooth and easy. If there is a fixed
+        guest_resource_group then the cleanup will be bulky and old-fashioned and will be dependent on the guest
+        tags.
+        """
+        from ..tasks import _get_master_key
 
-        if r_image_flavor_pairs.is_error:
-            return Error(r_image_flavor_pairs.unwrap_error())
+        r_ssh_key = _get_master_key()
 
-        can_acquire, pairs = r_image_flavor_pairs.unwrap()
+        if r_ssh_key.is_error:
+            return Error(Failure.from_failure('could not obtain artemis ssh key', r_ssh_key.unwrap_error()))
 
-        if not can_acquire.can_acquire:
-            assert can_acquire.reason is not None
+        ssh_key = r_ssh_key.unwrap()
 
-            return Error(Failure(can_acquire.reason.message))
+        # According to `az` documentation, `--tags` accepts `space-separated tags`, but that's not really true.
+        # Space-separated, yes, but not passed as one value after `--tags` option:
+        #
+        # NO:  --tags "foo=bar baz=79"
+        # NO:  '--tags foo=bar baz=79'
+        # YES: --tags foo=bar baz=79
+        #
+        # As you can see, `baz=79` in the valid example is not a space-separated bit of a `--tags` argument,
+        # but rather a stand-alone command-line item that is consumed by `--tags`.
 
-        image, flavor = pairs[0]
+        tags_options = []
 
-        self.log_acquisition_attempt(logger, session, guest_request, flavor=flavor, image=image)
-
-        r_base_tags = self.get_guest_tags(logger, session, guest_request)
-
-        if r_base_tags.is_error:
-            return Error(r_base_tags.unwrap_error())
-
-        tags = {
-            **r_base_tags.unwrap(),
-        }
-
-        # This tag links our VM and its resources, which comes handy when we want to remove everything
-        # leaving no leaks.
-        tags['uid'] = tags['ArtemisGuestLabel']
-
-        r_output = None
-
-        def _create(resource_group: str, custom_data_filename: Optional[str] = None) -> Result[JSONType, Failure]:
-            """
-            The actual call to the azure cli guest create command is happening here.
-            If custom_data_filename is an empty string then the guest vm is booted with no user-data.
-            If pool config doesn't have a fixed guest_resource_group defined, then a new vm will be created under a
-            distinct resource_group so that a cleanup later will be smooth and easy. If there is a fixed
-            guest_resource_group then the cleanup will be bulky and old-fashioned and will be dependent on the guest
-            tags.
-            """
-            from ..tasks import _get_master_key
-
-            r_ssh_key = _get_master_key()
-
-            if r_ssh_key.is_error:
-                return Error(Failure.from_failure('could not obtain artemis ssh key', r_ssh_key.unwrap_error()))
-
-            ssh_key = r_ssh_key.unwrap()
-
-            # According to `az` documentation, `--tags` accepts `space-separated tags`, but that's not really true.
-            # Space-separated, yes, but not passed as one value after `--tags` option:
-            #
-            # NO:  --tags "foo=bar baz=79"
-            # NO:  '--tags foo=bar baz=79'
-            # YES: --tags foo=bar baz=79
-            #
-            # As you can see, `baz=79` in the valid example is not a space-separated bit of a `--tags` argument,
-            # but rather a stand-alone command-line item that is consumed by `--tags`.
-
-            tags_options = []
-
-            if tags:
-                tags_options = ['--tags'] + [f'{tag}={value}' for tag, value in tags.items()]
-
-            with AzureSession(logger, self) as session:
-                if resource_group != self.pool_config.get('guest-resource-group'):
-                    # First let's create a resource group for this vm
-                    r_create_resource_group = session.run_az(
-                        logger,
-                        [
-                            'group',
-                            'create',
-                            '--location',
-                            self.pool_config['default-location'],
-                            '--name',
-                            resource_group,
-                            *tags_options,
-                        ],
-                        commandname='az.vm-create',
-                    )
-
-                    if r_create_resource_group.is_error:
-                        return Error(
-                            Failure.from_failure(
-                                'failed to create resource group', r_create_resource_group.unwrap_error()
-                            )
-                        )
-
-                az_vm_create_options = [
-                    'vm',
-                    'create',
-                    '--resource-group',
-                    resource_group,
-                    '--image',
-                    image.id,
-                    '--name',
-                    tags['ArtemisGuestLabel'],
-                    '--size',
-                    flavor.name,
-                    *tags_options,
-                ]
-
-                if custom_data_filename:
-                    az_vm_create_options += ['--custom-data', custom_data_filename]
-
-                # If pool config has storage for boot of diagnostics specified -> let's try creating a storage, azure
-                # will indeed fail gracefully if it already exists
-                if self.pool_config.get('boot-log-storage'):
-                    r_create_storage = session.run_az(
-                        logger,
-                        [
-                            'storage',
-                            'account',
-                            'create',
-                            '--resource-group',
-                            self.pool_config['default-resource-group'],
-                            '--name',
-                            self.pool_config['boot-log-storage'],
-                        ],
-                        commandname='az.storage-account-create',
-                    )
-
-                    if r_create_storage.is_error:
-                        return Error(
-                            Failure.from_failure('failed to create a storage account', r_create_storage.unwrap_error())
-                        )
-
-                    az_vm_create_options += ['--boot-diagnostics-storage', self.pool_config['boot-log-storage']]
-
-                with create_tempfile(file_contents=ssh_key.public) as ssh_key_filepath:
-                    az_vm_create_options += ['--ssh-key-values', ssh_key_filepath]
-
-                    # Resource group / boot log storage pre-created, ssh_key passed -> time to create a vm
-                    return session.run_az(logger, az_vm_create_options, commandname='az.vm-create')
+        if tags:
+            tags_options = ['--tags'] + [f'{tag}={value}' for tag, value in tags.items()]
 
         # Let's figure out a resource group for guest. If one is defined in pool config - we should be using it,
         # otherwise let's create a new one specifically for this vm to make cleanup fast and easy.
@@ -900,6 +839,325 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
         else:
             resource_group = self.pool_config['guest-resource-group']
 
+        with AzureSession(logger, self) as session:
+            if resource_group != self.pool_config.get('guest-resource-group'):
+                # First let's create a resource group for this vm
+                r_create_resource_group = session.run_az(
+                    logger,
+                    [
+                        'group',
+                        'create',
+                        '--location',
+                        self.pool_config['default-location'],
+                        '--name',
+                        resource_group,
+                        *tags_options,
+                    ],
+                    commandname='az.vm-create',
+                )
+
+                if r_create_resource_group.is_error:
+                    return Error(
+                        Failure.from_failure('failed to create resource group', r_create_resource_group.unwrap_error())
+                    )
+
+            az_vm_create_options = [
+                'vm',
+                'create',
+                '--resource-group',
+                resource_group,
+                '--image',
+                image.id,
+                '--name',
+                instance_name,
+                '--size',
+                flavor.name,
+                *tags_options,
+            ]
+
+            if user_data_file:
+                az_vm_create_options += ['--custom-data', user_data_file]
+
+            # If pool config has storage for boot of diagnostics specified -> let's try creating a storage, azure
+            # will indeed fail gracefully if it already exists
+            if self.pool_config.get('boot-log-storage'):
+                r_create_storage = session.run_az(
+                    logger,
+                    [
+                        'storage',
+                        'account',
+                        'create',
+                        '--resource-group',
+                        self.pool_config['default-resource-group'],
+                        '--name',
+                        self.pool_config['boot-log-storage'],
+                    ],
+                    commandname='az.storage-account-create',
+                )
+
+                if r_create_storage.is_error:
+                    return Error(
+                        Failure.from_failure('failed to create a storage account', r_create_storage.unwrap_error())
+                    )
+
+                az_vm_create_options += ['--boot-diagnostics-storage', self.pool_config['boot-log-storage']]
+
+            with create_tempfile(file_contents=ssh_key.public) as ssh_key_filepath:
+                az_vm_create_options += ['--ssh-key-values', ssh_key_filepath]
+
+                # Resource group / boot log storage pre-created, ssh_key passed -> time to create a vm
+                r_create_vm = session.run_az(logger, az_vm_create_options, commandname='az.vm-create')
+                if r_create_vm.is_error:
+                    return Error(
+                        Failure.from_failure(
+                            'Instance creation failed', r_create_vm.unwrap_error(), instance_name=instance_name
+                        )
+                    )
+
+                created = cast(dict[str, Any], r_create_vm.unwrap())
+
+                # result of instance create does not show much, let's call instance show to get all information
+                r_show_instance = self._show_instance_raw(logger, created['id'])
+                if r_show_instance.is_error:
+                    return Error(
+                        Failure.from_failure(
+                            'Failed to fetch instance details',
+                            r_show_instance.unwrap_error(),
+                            instance_id=created['id'],
+                        )
+                    )
+                instance = r_show_instance.unwrap()
+
+                created_at = self.timestamp_to_datetime(instance['timeCreated'])
+                if created_at.is_error:
+                    return Error(
+                        Failure.from_failure(
+                            'Could not parse instance timestamp',
+                            created_at.unwrap_error(),
+                            instance=instance['vmId'],
+                        )
+                    )
+                return Ok(
+                    AzureInstance(
+                        name=instance_name,
+                        id=instance['id'],
+                        resource_group=instance['resourceGroup'],
+                        vm_id=instance['vmId'],
+                        created_at=created_at.unwrap(),
+                        status=instance['provisioningState'].lower(),
+                    )
+                )
+
+    def _show_instance_raw(
+        self, logger: gluetool.log.ContextAdapter, instance_id: str
+    ) -> Result[dict[str, Any], Failure]:
+        """Issue a cloud guest show command and return a dictionary representing the instance"""
+        with AzureSession(logger, self) as session:
+            r_instance_info = session.run_az(logger, ['vm', 'show', '--id', instance_id], commandname='az.vm-show')
+
+            if r_instance_info.is_error:
+                return Error(
+                    Failure.from_failure('failed to fetch instance information', r_instance_info.unwrap_error())
+                )
+
+            res = cast(dict[str, Any], r_instance_info.unwrap())
+
+            return Ok(res)
+
+    # NOTE(ivasilev) Should be part of the framework, copy-paste
+    def list_instances_by_guest_request(
+        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
+    ) -> Result[list[AzureInstance], Failure]:
+        """
+        This method will list all allocated instances that correspond to the given guest request.
+        Order is newest -> oldest by time of creation.
+        """
+        r_instances_list = self.list_instances(logger)
+        if r_instances_list.is_error:
+            return Error(Failure.from_failure('failed to list instances', r_instances_list.unwrap_error()))
+
+        # Let's get expected name to match against
+        r_expected_name = self._get_instance_name(guest_request)
+        if r_expected_name.is_error:
+            return Error(Failure.from_failure('failed to get expected instance name', r_expected_name.unwrap_error()))
+        expected_name = r_expected_name.unwrap()
+
+        res = [instance for instance in r_instances_list.unwrap() if instance.name.startswith(expected_name)]
+
+        # Now order result ourselves by creation date in case ibmcloud API changes, oldest come first
+        try:
+            res = sorted(res, key=lambda x: x.created_at)
+        except ValueError:
+            return Error(Failure('Double check time format, could not convert time data'))
+
+        return Ok(res)
+
+    def list_instances(self, logger: gluetool.log.ContextAdapter) -> Result[list[AzureInstance], Failure]:
+        with AzureSession(logger, self) as session:
+            r_instances_list = session.run_az(logger, ['vm', 'list'], commandname='az.vm-list')
+
+            if r_instances_list.is_error:
+                return Error(Failure.from_failure('failed to list instances', r_instances_list.unwrap_error()))
+
+            res = []
+            for instance in cast(list[dict[str, str]], r_instances_list.unwrap()):
+                created_at = self.timestamp_to_datetime(instance['timeCreated'])
+                if created_at.is_error:
+                    return Error(
+                        Failure.from_failure(
+                            'Could not parse instance timestamp',
+                            created_at.unwrap_error(),
+                            instance=instance['vmId'],
+                        )
+                    )
+
+                res.append(
+                    AzureInstance(
+                        id=instance['id'],
+                        vm_id=instance['vmId'],
+                        name=instance['name'],
+                        resource_group=instance['resourceGroup'],
+                        created_at=created_at.unwrap(),
+                        status=instance['provisioningState'].lower(),
+                    )
+                )
+
+            return Ok(res)
+
+    # NOTE(ivasilev) Should be part of the framework, copy-paste
+    def _get_instance_name(self, guest_request: GuestRequest) -> Result[str, Failure]:
+        r_instance_name_template = KNOB_INSTANCE_NAME_TEMPLATE.get_value(entityname=self.poolname)
+        if r_instance_name_template.is_error:
+            return Error(Failure('Could not get instance_name template'))
+
+        r_rendered = render_template(
+            r_instance_name_template.unwrap(),
+            GUESTNAME=guest_request.guestname,
+            ENVIRONMENT=guest_request.environment,
+        )
+        if not is_successful(r_rendered):
+            return Error(Failure('Could not render instance_name template'))
+
+        return Ok(r_rendered.unwrap())
+
+    # NOTE(ivasilev) Should be part of the framework, copy-paste
+    def acquire_guest(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+    ) -> Result[ProvisioningProgress, Failure]:
+        r_image_flavor_pairs = self._collect_image_flavor_pairs(logger, session, guest_request)
+
+        if r_image_flavor_pairs.is_error:
+            return Error(r_image_flavor_pairs.unwrap_error())
+
+        can_acquire, pairs = r_image_flavor_pairs.unwrap()
+
+        if not can_acquire.can_acquire:
+            assert can_acquire.reason is not None
+
+            return Error(Failure(can_acquire.reason.message))
+
+        image, flavor = pairs[0]
+
+        self.log_acquisition_attempt(logger, session, guest_request, flavor=flavor, image=image)
+
+        # Get expected instance name from template
+        r_instance_name = self._get_instance_name(guest_request)
+        if r_instance_name.is_error:
+            return Error(Failure.from_failure('Could not get instance name', r_instance_name.unwrap_error()))
+        instance_name = r_instance_name.unwrap()
+
+        # Let's first check that there is no instance tied to this guest_request already. If there is one, then let's
+        # use already allocated resources to continue with the provisioning instead of requesting new ones and leaving
+        # old instance untracked.
+        r_existing_instances: Result[list[AzureInstance], Failure] = self.list_instances_by_guest_request(
+            logger, guest_request
+        )
+
+        if r_existing_instances.is_error:
+            return Error(Failure.from_failure('Listing guests failed', r_existing_instances.unwrap_error()))
+
+        # Try to reuse already allocated instances
+        existing_instances = r_existing_instances.unwrap()
+
+        if existing_instances:
+            # Let's check state first - if the guest is already broken it is of no use to us, while instances in build
+            # or active state can be reused.
+
+            pending_instances = [
+                instance for instance in existing_instances if instance.is_pending or instance.is_ready
+            ]
+            error_instances = [instance for instance in existing_instances if instance.is_error]
+            leftover_instances = pending_instances[1:] + error_instances
+
+            # Schedule cleanup of resources we won't use
+            for leftover in leftover_instances:
+                self.dispatch_resource_cleanup(
+                    logger,
+                    session,
+                    AzurePoolResourcesIDs(instance_id=leftover.id),
+                    guest_request=guest_request,
+                )
+
+            if pending_instances:
+                # At least one reusable instance has been found
+                # Instances are sorted by provisioning time, let's take the first provisioned one.
+                instance_to_use = pending_instances[0]
+
+                if len(pending_instances) > 1:
+                    Failure(
+                        'Multiple reusable instances found for a guest request',
+                        guestname=guest_request.guestname,
+                        poolname=self.poolname,
+                        instance_ids=[instance.name for instance in pending_instances],
+                        chosen_instance=instance_to_use.name,
+                    ).handle(logger)
+
+                return Ok(
+                    ProvisioningProgress(
+                        state=ProvisioningState.PENDING,
+                        pool_data=AzurePoolData(
+                            instance_id=instance_to_use.id,
+                            instance_name=instance_to_use.name,
+                            vm_id=instance_to_use.vm_id,
+                            resource_group=instance_to_use.resource_group,
+                        ),
+                        ssh_info=image.ssh,
+                    )
+                )
+            # If we ended up here this means all preallocated resources are in unusable state. At the same time we may
+            # not be able to use the expected artemis-GUESTNAME naming as ibmcloud won't allow two instances with the
+            # same name. So let's generate a postfix, append it to the expected name, this way the instance will be
+            # tracked in a list_instances call among related to this guest request.
+            # To avoid going into eternal loop the iterations will be limited by instances_per_request_limit knob,
+            # and once exhausted a definitive cancel state will be returned so that request could be given another
+            # chance by a different pool.
+            claimed_names = {leftover.name for leftover in leftover_instances}
+
+            if instance_name in claimed_names:
+                r_max_instances_limit = KNOB_INSTANCES_PER_REQUEST_LIMIT.get_value(entityname=self.poolname)
+                if r_max_instances_limit.is_error:
+                    return Error(Failure('Could not get max instances per request limit'))
+
+                # Can't use the expected instance_name because there is a leftover resource with this name. Let's try
+                # to pick up a new one
+                for postfix in range(1, r_max_instances_limit.unwrap()):
+                    instance_name = f'{instance_name}-{postfix}'
+                    if instance_name not in claimed_names:
+                        break
+                else:
+                    # seems that all allowed names are already claimed by leftover instances, which means something
+                    # is wrong -> can't continue
+                    return Ok(
+                        ProvisioningProgress(
+                            state=ProvisioningState.CANCEL,
+                            pool_data=AzurePoolData(),
+                            pool_failures=[Failure('Too many leftover instances')],
+                        )
+                    )
+
         r_post_install_script = self.generate_post_install_script(guest_request)
         if r_post_install_script.is_error:
             return Error(
@@ -908,49 +1166,36 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
 
         post_install_script = r_post_install_script.unwrap()
         if post_install_script:
-            with create_tempfile(file_contents=post_install_script) as custom_data_filename:
-                r_output = _create(resource_group, custom_data_filename)
+            with create_tempfile(file_contents=post_install_script) as user_data_file:
+                r_output: Result[AzureInstance, Failure] = self.create_instance(
+                    logger=logger,
+                    guest_request=guest_request,
+                    flavor=flavor,
+                    image=image,
+                    instance_name=instance_name,
+                    user_data_file=user_data_file,
+                )
         else:
-            r_output = _create(resource_group)
+            r_output = self.create_instance(
+                logger=logger, guest_request=guest_request, flavor=flavor, image=image, instance_name=instance_name
+            )
 
         if r_output.is_error:
             return Error(r_output.unwrap_error())
 
-        output = cast(dict[str, Any], r_output.unwrap())
-        if not output['id']:
+        created = r_output.unwrap()
+
+        if not created.id:
             return Error(Failure('Instance id not found'))
 
-        status = output['powerState'].lower()
-
-        logger.info(f'acquired instance status {output["id"]}:{status}')
-
-        # In order to populate vmId that will be used to retrieve console logs we'll need a vm show. The vmID will
-        # be there right after guest create finishes so there is no need to populate in during guest update
-        with AzureSession(logger, self) as azure_session:
-            r_vm_show = azure_session.run_az(
-                logger,
-                [
-                    'vm',
-                    'show',
-                    '--id',
-                    output['id'],
-                ],
-                commandname='vm-show',
-            )
-        if r_vm_show.is_error:
-            return Error(r_vm_show.unwrap_error())
-
-        vm_info = cast(dict[str, Any], r_vm_show.unwrap())
-
-        # There is no chance that the guest will be ready in this step
         return Ok(
             ProvisioningProgress(
                 state=ProvisioningState.PENDING,
                 pool_data=AzurePoolData(
-                    instance_id=output['id'],
-                    instance_name=tags['ArtemisGuestLabel'],
-                    vm_id=vm_info['vmId'],
-                    resource_group=resource_group,
+                    instance_id=created.id,
+                    instance_name=created.name,
+                    vm_id=created.vm_id,
+                    resource_group=created.resource_group,
                 ),
                 ssh_info=image.ssh,
             )
