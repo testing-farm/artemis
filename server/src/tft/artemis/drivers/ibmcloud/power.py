@@ -93,6 +93,9 @@ class IBMCloudPowerInstance(IBMCloudInstance):
     def is_error(self) -> bool:
         return self.status == 'error'
 
+    def to_pool_resource_ids(self) -> IBMCloudPoolResourcesIDs:
+        return IBMCloudPoolResourcesIDs(instance_id=self.id)
+
 
 class APIImageType(TypedDict):
     name: str
@@ -432,7 +435,7 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
 
         return Ok(resources)
 
-    def create_instance(
+    def create_instance(  # type: ignore[override]
         self,
         logger: gluetool.log.ContextAdapter,
         flavor: Flavor,
@@ -494,11 +497,6 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
                     image=image,
                 )
             )
-
-    def acquire_guest(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
-    ) -> Result[ProvisioningProgress, Failure]:
-        return self.do_acquire_guest(logger, session, guest_request)
 
     def update_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
@@ -591,7 +589,8 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
 
             return Ok(res)
 
-    def list_instances(self, logger: gluetool.log.ContextAdapter) -> Result[list[IBMCloudPowerInstance], Failure]:
+    def list_instances_raw(self, logger: gluetool.log.ContextAdapter) -> Result[list[dict[str, Any]], Failure]:
+        """Issue a list server cloud command and return data as list of dicts"""
         with IBMCloudPowerSession(logger, self) as session:
             r_instances_list = session.run(
                 logger, ['pi', 'instance', 'list', '--json'], commandname='ibmcloud.pi.vm-list'
@@ -600,34 +599,62 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
             if r_instances_list.is_error:
                 return Error(Failure.from_failure('failed to list instances', r_instances_list.unwrap_error()))
 
-            res = []
-            for instance in cast(dict[str, Any], r_instances_list.unwrap())['pvmInstances']:
-                created_at = self.timestamp_to_datetime(instance['creationDate'])
-                if created_at.is_error:
-                    return Error(
-                        Failure.from_failure(
-                            'Could not parse instance timestamp',
-                            created_at.unwrap_error(),
-                            instance=instance['id'],
-                        )
-                    )
+            return Ok(cast(list[dict[str, Any]], cast(dict[str, Any], r_instances_list.unwrap())['pvmInstances']))
 
-                # fetch image details to get necessary image bits as ssh_data
-                image = self.show_image(logger, instance['id'])
-                if image.is_error:
-                    return Error(Failure.from_failure('Could not get image details', image.unwrap_error()))
+    def list_instances(
+        self, logger: gluetool.log.ContextAdapter, name_filter: Optional[str] = None
+    ) -> Result[list[IBMCloudPowerInstance], Failure]:
+        r_instances_list = self.list_instances_raw(logger)
+        if r_instances_list.is_error:
+            return Error(Failure.from_failure('failed to list instances', r_instances_list.unwrap_error()))
 
-                res.append(
-                    IBMCloudPowerInstance(
-                        id=instance['id'],
-                        name=instance['name'],
-                        created_at=created_at.unwrap(),
-                        status=instance['status'],
-                        image=image.unwrap(),
+        res = []
+        for instance in r_instances_list.unwrap():
+            if name_filter and not instance['name'].startswith(name_filter):
+                continue
+
+            created_at = self.timestamp_to_datetime(instance['creationDate'])
+            if created_at.is_error:
+                return Error(
+                    Failure.from_failure(
+                        'Could not parse instance timestamp',
+                        created_at.unwrap_error(),
+                        instance=instance['id'],
                     )
                 )
 
-            return Ok(res)
+            # Great, but list instances does not have any information about image.. So will need to issue a
+            # show instance call followed by show image.
+            r_show_instance = self._show_instance(logger, instance['id'])
+
+            if r_show_instance.is_error:
+                return Error(
+                    Failure.from_failure(
+                        'Could not get instance details',
+                        r_show_instance.unwrap_error(),
+                        instance_id=instance['id'],
+                    )
+                )
+
+            instance_details = r_show_instance.unwrap()
+
+            # Technically if images were cached by ID: image instead of name: image we could avoid the get image cloud
+            # call..
+            image = self.show_image(logger, instance_details['imageID'])
+            if image.is_error:
+                return Error(Failure.from_failure('Could not get image details', image.unwrap_error()))
+
+            res.append(
+                IBMCloudPowerInstance(
+                    id=instance['id'],
+                    name=instance['name'],
+                    created_at=created_at.unwrap(),
+                    status=instance['status'],
+                    image=image.unwrap(),
+                )
+            )
+
+        return Ok(res)
 
     def release_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest

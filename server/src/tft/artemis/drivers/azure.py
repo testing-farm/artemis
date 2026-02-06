@@ -173,7 +173,7 @@ class AzureInstance(Resource):
 
     @functools.cached_property
     def is_ready(self) -> bool:
-        return self.status == 'active'
+        return self.status == 'succeeded'
 
     @functools.cached_property
     def is_error(self) -> bool:
@@ -834,7 +834,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
 
         return Ok(res)
 
-    def create_instance(
+    def create_instance(  # type: ignore[override]
         self,
         logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest,
@@ -1037,18 +1037,17 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
         This method will list all allocated instances that correspond to the given guest request.
         Order is newest -> oldest by time of creation.
         """
-        r_instances_list = self.list_instances(logger)
-        if r_instances_list.is_error:
-            return Error(Failure.from_failure('failed to list instances', r_instances_list.unwrap_error()))
-
         # Let's get expected name to match against
         r_expected_name = self.get_instance_name(guest_request)
         if r_expected_name.is_error:
             return Error(Failure.from_failure('failed to get expected instance name', r_expected_name.unwrap_error()))
         expected_name = r_expected_name.unwrap()
 
-        res = [instance for instance in r_instances_list.unwrap() if instance.name.startswith(expected_name)]
+        r_instances_list = self.list_instances(logger, name_filter=expected_name)
+        if r_instances_list.is_error:
+            return Error(Failure.from_failure('failed to list instances', r_instances_list.unwrap_error()))
 
+        res = r_instances_list.unwrap()
         # Now order result ourselves by creation date in case ibmcloud API changes, oldest come first
         try:
             res = sorted(res, key=lambda x: x.created_at)
@@ -1057,7 +1056,9 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
 
         return Ok(res)
 
-    def list_instances(self, logger: gluetool.log.ContextAdapter) -> Result[list[AzureInstance], Failure]:
+    def list_instances(
+        self, logger: gluetool.log.ContextAdapter, name_filter: Optional[str]
+    ) -> Result[list[AzureInstance], Failure]:
         with AzureSession(logger, self) as session:
             r_instances_list = session.run_az(logger, ['vm', 'list'], commandname='az.vm-list')
 
@@ -1066,6 +1067,9 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
 
             res = []
             for instance in cast(list[dict[str, Any]], r_instances_list.unwrap()):
+                if name_filter and not instance['name'].startswith(name_filter):
+                    continue
+
                 created_at = self.timestamp_to_datetime(instance['timeCreated'])
                 if created_at.is_error:
                     return Error(
@@ -1111,61 +1115,6 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
             return Error(Failure('Could not render instance_name template'))
 
         return Ok(r_rendered.unwrap())
-
-    def create_guest(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        instance_name: str,
-    ) -> Result[AzureInstance, Failure]:
-        r_image_flavor_pairs = self._collect_image_flavor_pairs(logger, session, guest_request)
-
-        if r_image_flavor_pairs.is_error:
-            return Error(r_image_flavor_pairs.unwrap_error())
-
-        can_acquire, pairs = r_image_flavor_pairs.unwrap()
-
-        if not can_acquire.can_acquire:
-            assert can_acquire.reason is not None
-
-            return Error(Failure(can_acquire.reason.message))
-
-        image, flavor = pairs[0]
-
-        self.log_acquisition_attempt(logger, session, guest_request, flavor=flavor, image=image)
-
-        r_post_install_script = self.generate_post_install_script(guest_request)
-        if r_post_install_script.is_error:
-            return Error(
-                Failure.from_failure('Could not generate post-install script', r_post_install_script.unwrap_error())
-            )
-
-        post_install_script = r_post_install_script.unwrap()
-        if post_install_script:
-            with create_tempfile(file_contents=post_install_script) as user_data_file:
-                r_output: Result[AzureInstance, Failure] = self.create_instance(
-                    logger=logger,
-                    guest_request=guest_request,
-                    flavor=flavor,
-                    image=image,
-                    instance_name=instance_name,
-                    user_data_file=user_data_file,
-                )
-        else:
-            r_output = self.create_instance(
-                logger=logger, guest_request=guest_request, flavor=flavor, image=image, instance_name=instance_name
-            )
-
-        if r_output.is_error:
-            return Error(r_output.unwrap_error())
-
-        created = r_output.unwrap()
-
-        if not created.id:
-            return Error(Failure('Instance id not found'))
-
-        return Ok(created)
 
     def acquire_guest(
         self,

@@ -89,6 +89,9 @@ class IBMCloudVPCInstance(IBMCloudInstance):
     def is_error(self) -> bool:
         return self.status == 'failed'
 
+    def to_pool_resource_ids(self) -> IBMCloudPoolResourcesIDs:
+        return IBMCloudPoolResourcesIDs(instance_id=self.id)
+
 
 class IBMCloudVPCErrorCauses(PoolErrorCauses):
     NONE = 'none'
@@ -412,7 +415,9 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
 
         return Ok(resources)
 
-    def list_instances(self, logger: gluetool.log.ContextAdapter) -> Result[list[IBMCloudVPCInstance], Failure]:
+    def list_instances(
+        self, logger: gluetool.log.ContextAdapter, name_filter: Optional[str] = None
+    ) -> Result[list[IBMCloudVPCInstance], Failure]:
         with IBMCloudSession(logger, self) as session:
             r_instances_list = session.run(logger, ['is', 'instances', '--json'], commandname='ibmcloud.is.vm-list')
 
@@ -421,6 +426,9 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
 
             res = []
             for instance in cast(list[dict[str, Any]], r_instances_list.unwrap()):
+                if name_filter and not instance['name'].startswith(name_filter):
+                    continue
+
                 created_at = self.timestamp_to_datetime(instance['created_at'])
                 if created_at.is_error:
                     return Error(
@@ -432,7 +440,7 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
                     )
 
                 # fetch image details to get necessary image bits as ssh_data
-                image = self.show_image(logger, instance['id'])
+                image = self.show_image(logger, instance['image']['id'])
                 if image.is_error:
                     return Error(Failure.from_failure('Could not get image details', image.unwrap_error()))
 
@@ -448,12 +456,7 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
 
             return Ok(res)
 
-    def acquire_guest(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
-    ) -> Result[ProvisioningProgress, Failure]:
-        return self.do_acquire_guest(logger, session, guest_request)
-
-    def create_instance(
+    def create_instance(  # type: ignore[override]
         self,
         logger: gluetool.log.ContextAdapter,
         flavor: Flavor,

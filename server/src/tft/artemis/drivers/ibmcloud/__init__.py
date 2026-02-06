@@ -16,17 +16,16 @@ from gluetool.result import Error, Ok, Result
 from returns.pipeline import is_successful
 
 from tft.artemis.drivers import (
-    KNOB_INSTANCES_PER_REQUEST_LIMIT,
     CLISessionPermanentDir,
     FlavorBasedPoolDriver,
+    Instance,
     PoolData,
     PoolImageInfo,
     PoolResourcesIDs,
     ProvisioningProgress,
     ProvisioningState,
-    Resource,
+    ResourceManager,
     Tags,
-    create_tempfile,
 )
 
 from ... import Failure, render_template
@@ -58,13 +57,9 @@ IBMCLOUD_DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S.%fZ'
 
 
 @dataclasses.dataclass
-class IBMCloudInstance(Resource):
-    id: str
-    name: str
+class IBMCloudInstance(Instance):
     status: str
     created_at: datetime.datetime
-
-    image: PoolImageInfo
 
     def __post_init__(self) -> None:
         self.status = self.status.lower()
@@ -223,6 +218,22 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor], Gener
 
     datetime_format = IBMCLOUD_DATETIME_FORMAT
 
+    def __init__(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        poolname: str,
+        pool_config: dict[str, Any],
+    ) -> None:
+        super().__init__(logger, poolname, pool_config)
+        self.instance_resource_manager = ResourceManager(
+            logger=logger,
+            driver=self,
+            resource_type='instance',
+            resource_list_func=self.list_instances_by_guest_request,
+            resource_create_func=self.create_guest,
+            resource_identifier_func=self.get_instance_name,
+        )
+
     @classmethod
     def timestamp_to_datetime(cls, timestamp: str) -> Result[datetime.datetime, Failure]:
         try:
@@ -291,7 +302,7 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor], Gener
 
         return Ok(tags['items'][0].get('tags', []))
 
-    def _get_instance_name(self, guest_request: GuestRequest) -> Result[str, Failure]:
+    def get_instance_name(self, guest_request: GuestRequest) -> Result[str, Failure]:
         r_instance_name_template = KNOB_INSTANCE_NAME_TEMPLATE.get_value(entityname=self.poolname)
         if r_instance_name_template.is_error:
             return Error(Failure('Could not get instance_name template'))
@@ -306,6 +317,31 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor], Gener
 
         return Ok(r_rendered.unwrap())
 
+    def acquire_guest(
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
+    ) -> Result[ProvisioningProgress, Failure]:
+        r_instance = cast(
+            Result[IBMCloudInstance, Failure],
+            self.instance_resource_manager.get_resource(logger, guest_request, session),
+        )
+        if r_instance.is_error:
+            return Ok(
+                ProvisioningProgress(
+                    state=ProvisioningState.CANCEL,
+                    pool_data=IBMCloudPoolData(),
+                    pool_failures=[r_instance.unwrap_error()],
+                )
+            )
+
+        instance = r_instance.unwrap()
+        return Ok(
+            ProvisioningProgress(
+                state=ProvisioningState.PENDING,
+                pool_data=IBMCloudPoolData(instance_id=instance.id, instance_name=instance.name),
+                ssh_info=instance.image.ssh,
+            )
+        )
+
     def list_instances_by_guest_request(
         self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
     ) -> Result[list[IBMCloudInstanceT], Failure]:
@@ -313,17 +349,17 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor], Gener
         This method will list all allocated instances that correspond to the given guest request.
         Order is newest -> oldest by time of creation.
         """
-        r_instances_list = self.list_instances(logger)
-        if r_instances_list.is_error:
-            return Error(Failure.from_failure('failed to list instances', r_instances_list.unwrap_error()))
-
         # Let's get expected name to match against
-        r_expected_name = self._get_instance_name(guest_request)
+        r_expected_name = self.get_instance_name(guest_request)
         if r_expected_name.is_error:
             return Error(Failure.from_failure('failed to get expected instance name', r_expected_name.unwrap_error()))
         expected_name = r_expected_name.unwrap()
 
-        res = [instance for instance in r_instances_list.unwrap() if instance.name.startswith(expected_name)]
+        r_instances_list = self.list_instances(logger, name_filter=expected_name)
+        if r_instances_list.is_error:
+            return Error(Failure.from_failure('failed to list instances', r_instances_list.unwrap_error()))
+
+        res = r_instances_list.unwrap()
 
         # Now order result ourselves by creation date in case ibmcloud API changes, oldest come first
         try:
@@ -333,159 +369,12 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor], Gener
 
         return Ok(res)
 
-    def do_acquire_guest(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-    ) -> Result[ProvisioningProgress, Failure]:
-        r_image_flavor_pairs = self._collect_image_flavor_pairs(logger, session, guest_request)
-
-        if r_image_flavor_pairs.is_error:
-            return Error(r_image_flavor_pairs.unwrap_error())
-
-        can_acquire, pairs = r_image_flavor_pairs.unwrap()
-
-        if not can_acquire.can_acquire:
-            assert can_acquire.reason is not None
-
-            return Error(Failure(can_acquire.reason.message))
-
-        image, flavor = pairs[0]
-
-        self.log_acquisition_attempt(logger, session, guest_request, flavor=flavor, image=image)
-
-        # Get expected instance name from template
-        r_instance_name = self._get_instance_name(guest_request)
-        if r_instance_name.is_error:
-            return Error(Failure.from_failure('Could not get instance name', r_instance_name.unwrap_error()))
-        instance_name = r_instance_name.unwrap()
-
-        # Let's first check that there is no instance tied to this guest_request already. If there is one, then let's
-        # use already allocated resources to continue with the provisioning instead of requesting new ones and leaving
-        # old instance untracked.
-        r_existing_instances: Result[list[IBMCloudInstanceT], Failure] = self.list_instances_by_guest_request(
-            logger, guest_request
-        )
-
-        if r_existing_instances.is_error:
-            return Error(Failure.from_failure('Listing guests failed', r_existing_instances.unwrap_error()))
-
-        # Try to reuse already allocated instances
-        existing_instances = r_existing_instances.unwrap()
-
-        if existing_instances:
-            # Let's check state first - if the guest is already broken it is of no use to us, while instances in build
-            # or active state can be reused.
-
-            pending_instances = [
-                instance for instance in existing_instances if instance.is_pending or instance.is_ready
-            ]
-            error_instances = [instance for instance in existing_instances if instance.is_error]
-            leftover_instances = pending_instances[1:] + error_instances
-
-            # Schedule cleanup of resources we won't use
-            for leftover in leftover_instances:
-                self.dispatch_resource_cleanup(
-                    logger,
-                    session,
-                    IBMCloudPoolResourcesIDs(instance_id=leftover.id),
-                    guest_request=guest_request,
-                )
-
-            if pending_instances:
-                # At least one reusable instance has been found
-                # Instances are sorted by provisioning time, let's take the first provisioned one.
-                instance_to_use = pending_instances[0]
-
-                if len(pending_instances) > 1:
-                    Failure(
-                        'Multiple reusable instances found for a guest request',
-                        guestname=guest_request.guestname,
-                        poolname=self.poolname,
-                        instance_ids=[instance.name for instance in pending_instances],
-                        chosen_instance=instance_to_use.name,
-                    ).handle(logger)
-
-                return Ok(
-                    ProvisioningProgress(
-                        state=ProvisioningState.PENDING,
-                        pool_data=IBMCloudPoolData(instance_id=instance_to_use.id, instance_name=instance_to_use.name),
-                        ssh_info=image.ssh,
-                    )
-                )
-            # If we ended up here this means all preallocated resources are in unusable state. At the same time we may
-            # not be able to use the expected artemis-GUESTNAME naming as ibmcloud won't allow two instances with the
-            # same name. So let's generate a postfix, append it to the expected name, this way the instance will be
-            # tracked in a list_instances call among related to this guest request.
-            # To avoid going into eternal loop the iterations will be limited by instances_per_request_limit knob,
-            # and once exhausted a definitive cancel state will be returned so that request could be given another
-            # chance by a different pool.
-            claimed_names = {leftover.name for leftover in leftover_instances}
-
-            if instance_name in claimed_names:
-                r_max_instances_limit = KNOB_INSTANCES_PER_REQUEST_LIMIT.get_value(entityname=self.poolname)
-                if r_max_instances_limit.is_error:
-                    return Error(Failure('Could not get max instances per request limit'))
-
-                # Can't use the expected instance_name because there is a leftover resource with this name. Let's try
-                # to pick up a new one
-                for postfix in range(1, r_max_instances_limit.unwrap()):
-                    instance_name = f'{instance_name}-{postfix}'
-                    if instance_name not in claimed_names:
-                        break
-                else:
-                    # seems that all allowed names are already claimed by leftover instances, which means something
-                    # is wrong -> can't continue
-                    return Ok(
-                        ProvisioningProgress(
-                            state=ProvisioningState.CANCEL,
-                            pool_data=IBMCloudPoolData(),
-                            pool_failures=[Failure('Too many leftover instances')],
-                        )
-                    )
-
-        r_post_install_script = self.generate_post_install_script(guest_request)
-        if r_post_install_script.is_error:
-            return Error(
-                Failure.from_failure('Could not generate post-install script', r_post_install_script.unwrap_error())
-            )
-
-        post_install_script = r_post_install_script.unwrap()
-        if post_install_script:
-            with create_tempfile(file_contents=post_install_script) as user_data_file:
-                r_output: Result[IBMCloudInstanceT, Failure] = self.create_instance(
-                    logger=logger,
-                    flavor=flavor,
-                    image=image,
-                    instance_name=instance_name,
-                    user_data_file=user_data_file,
-                )
-        else:
-            r_output = self.create_instance(logger=logger, flavor=flavor, image=image, instance_name=instance_name)
-
-        if r_output.is_error:
-            return Error(r_output.unwrap_error())
-
-        created = r_output.unwrap()
-
-        if not created.id:
-            return Error(Failure('Instance id not found'))
-
-        return Ok(
-            ProvisioningProgress(
-                state=ProvisioningState.PENDING,
-                pool_data=IBMCloudPoolData(instance_id=created.id, instance_name=created.name),
-                ssh_info=image.ssh,
-            )
-        )
-
     def _show_instance(self, logger: gluetool.log.ContextAdapter, instance_id: str) -> Result[Any, Failure]:
         """This method will show a single instance details."""
 
         raise NotImplementedError
 
-    def create_instance(
+    def create_instance(  # type: ignore[override]
         self,
         logger: gluetool.log.ContextAdapter,
         flavor: Flavor,
@@ -497,7 +386,9 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor], Gener
 
         raise NotImplementedError
 
-    def list_instances(self, logger: gluetool.log.ContextAdapter) -> Result[list[IBMCloudInstanceT], Failure]:
+    def list_instances(
+        self, logger: gluetool.log.ContextAdapter, name_filter: Optional[str] = None
+    ) -> Result[list[IBMCloudInstanceT], Failure]:
         """This method will issue a cloud guest list command and return a list of raw instances data"""
 
         raise NotImplementedError
