@@ -3738,7 +3738,7 @@ class ResourceManager(gluetool.log.LoggerMixin):
             # same name. So let's generate a postfix, append it to the expected name, this way the resource will be
             # tracked in a list_resources call among related to this guest request.
             # To avoid going into eternal loop the iterations will be limited by resources_per_request_limit knob,
-            # and once exhausted a definitive cancel state will be returned so that request could be given another
+            # and once exhausted a definitive error will be returned so that request could be given another
             # chance by a different pool.
             claimed_names = {leftover.name for leftover in leftover_resources}
 

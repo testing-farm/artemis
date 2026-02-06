@@ -5,6 +5,7 @@ import dataclasses
 import datetime
 import functools
 import os
+import re
 import tempfile
 from collections.abc import Iterator
 from typing import Any, Optional, TypedDict, Union, cast
@@ -108,6 +109,9 @@ AZURE_RESOURCE_TYPE: dict[str, ResourceType] = {
 }
 
 AZURE_DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S.%f%z'
+AZURE_ID_PATTERN = re.compile(
+    r'/Publishers/([\w.-]+)/ArtifactTypes/VMImage/Offers/([\w.-]+)/Skus/([\w.-]+)/Versions/([\d.]+)'
+)
 
 
 ConfigImageFilter = TypedDict(
@@ -143,6 +147,15 @@ class AzurePoolResourcesIDs(PoolResourcesIDs):
     boot_log_container: Optional[str] = None
 
 
+@dataclasses.dataclass(repr=False)
+class AzurePoolImageInfo(PoolImageInfo):
+    offer: str
+    publisher: str
+    sku: str
+    urn: str
+    version: str
+
+
 @dataclasses.dataclass
 class AzureInstance(Resource):
     id: str
@@ -151,6 +164,8 @@ class AzureInstance(Resource):
     status: str
     created_at: datetime.datetime
     resource_group: str
+
+    image: AzurePoolImageInfo
 
     @functools.cached_property
     def is_pending(self) -> bool:
@@ -166,15 +181,6 @@ class AzureInstance(Resource):
 
     def to_pool_resource_ids(self) -> AzurePoolResourcesIDs:
         return AzurePoolResourcesIDs(instance_id=self.vm_id)
-
-
-@dataclasses.dataclass(repr=False)
-class AzurePoolImageInfo(PoolImageInfo):
-    offer: str
-    publisher: str
-    sku: str
-    urn: str
-    version: str
 
 
 @dataclasses.dataclass(repr=False)
@@ -723,6 +729,47 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
             self.logger, _fetch, lambda raw_flavor: cast(str, raw_flavor['name']), _constructor
         )
 
+    def show_image(self, logger: gluetool.log.ContextAdapter, image_urn: str) -> Result[AzurePoolImageInfo, Failure]:
+        with AzureSession(logger, self) as session:
+            r_image_show = session.run_az(
+                logger, ['vm', 'image', 'show', '--urn', image_urn], commandname='az.vm-image-show'
+            )
+            if r_image_show.is_error:
+                return Error(
+                    Failure.from_failure('failed to fetch image details', r_image_show.unwrap_error(), image=image_urn)
+                )
+            image = cast(dict[str, Any], r_image_show.unwrap())
+            try:
+                # NOTE(ivasilev) azure image show does not show urn in the image fields.
+                # will be getting values from id string and forming urn
+                # ourselves as PUBLISHER:OFFER:SKU:VERSION
+                match = re.search(AZURE_ID_PATTERN, image['id'])
+                if not match:
+                    return Error(
+                        Failure('Could not construct urn from image id', image_id=image['id'], pattern=AZURE_ID_PATTERN)
+                    )
+                publisher, offer, sku, version = match.groups()
+
+                return Ok(
+                    AzurePoolImageInfo(
+                        name=image_urn,
+                        id=image_urn,
+                        urn=image_urn,
+                        offer=offer,
+                        publisher=publisher,
+                        sku=sku,
+                        version=version,
+                        arch=_azure_arch_to_arch(image['architecture']),
+                        boot=FlavorBoot(),
+                        ssh=PoolImageSSHInfo(),
+                        supports_kickstart=False,
+                        # azure image list command doesn't show creation date
+                        created_at=None,
+                    )
+                )
+            except KeyError as exc:
+                return Error(Failure.from_exc('malformed image description', exc, image_info=image))
+
     def list_images(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -791,8 +838,8 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
         self,
         logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest,
-        flavor: Flavor,
-        image: PoolImageInfo,
+        flavor: AzureFlavor,
+        image: AzurePoolImageInfo,
         instance_name: str,
         user_data_file: Optional[str] = None,
         tags: Optional[dict[str, str]] = None,
@@ -950,6 +997,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
                             instance=instance['vmId'],
                         )
                     )
+
                 return Ok(
                     AzureInstance(
                         name=instance_name,
@@ -958,8 +1006,13 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
                         vm_id=instance['vmId'],
                         created_at=created_at.unwrap(),
                         status=instance['provisioningState'].lower(),
+                        image=image,
                     )
                 )
+
+    def _image_reference_to_urn(self, image_ref: dict[str, str]) -> str:
+        # constructing urn from dict data as PUBLISHER:OFFER:SKU:VERSION
+        return f'{image_ref["publisher"]}:{image_ref["offer"]}:{image_ref["sku"]}:{image_ref["version"]}'
 
     def _show_instance_raw(
         self, logger: gluetool.log.ContextAdapter, instance_id: str
@@ -1012,7 +1065,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
                 return Error(Failure.from_failure('failed to list instances', r_instances_list.unwrap_error()))
 
             res = []
-            for instance in cast(list[dict[str, str]], r_instances_list.unwrap()):
+            for instance in cast(list[dict[str, Any]], r_instances_list.unwrap()):
                 created_at = self.timestamp_to_datetime(instance['timeCreated'])
                 if created_at.is_error:
                     return Error(
@@ -1023,6 +1076,13 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
                         )
                     )
 
+                # fetch image details to get necessary image bits as ssh_data
+                image = self.show_image(
+                    logger, self._image_reference_to_urn(instance['storageProfile']['imageReference'])
+                )
+                if image.is_error:
+                    return Error(Failure.from_failure('Could not get image details', image.unwrap_error()))
+
                 res.append(
                     AzureInstance(
                         id=instance['id'],
@@ -1031,6 +1091,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
                         resource_group=instance['resourceGroup'],
                         created_at=created_at.unwrap(),
                         status=instance['provisioningState'].lower(),
+                        image=image.unwrap(),
                     )
                 )
 
@@ -1134,8 +1195,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
                     vm_id=instance.vm_id,
                     resource_group=instance.resource_group,
                 ),
-                # XXX FIXME How to better pass ssh_info? Do we need to bake it into AzureInstance?
-                ssh_info=None,
+                ssh_info=instance.image.ssh,
             )
         )
 
