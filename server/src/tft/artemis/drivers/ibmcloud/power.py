@@ -190,6 +190,48 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
 
         return _Ok(capabilities)
 
+    def show_image(
+        self, logger: gluetool.log.ContextAdapter, image_id: str
+    ) -> Result[IBMCloudPowerPoolImageInfo, Failure]:
+        with IBMCloudPowerSession(logger, self) as session:
+            r_image_show = session.run(
+                logger, ['pi', 'image', 'get', image_id, '--json'], commandname='ibmcloud.pi-image-get'
+            )
+
+            if r_image_show.is_error:
+                return Error(Failure.from_failure('failed to fetch image information', r_image_show.unwrap_error()))
+
+            image = cast(APIImageType, r_image_show.unwrap())
+            created_at = self.timestamp_to_datetime(image['creationDate'])
+            if created_at.is_error:
+                return Error(
+                    Failure.from_failure(
+                        'Could not parse image create timestamp', created_at.unwrap_error(), image=image['imageID']
+                    )
+                )
+
+            return Ok(
+                IBMCloudPowerPoolImageInfo(
+                    # href is NOT present in image get command ..
+                    href=image.get('href', ''),
+                    id=image['imageID'],
+                    name=image['name'],
+                    arch=self._image_reference_to_arch(image),
+                    boot=FlavorBoot(),
+                    ssh=PoolImageSSHInfo(),
+                    supports_kickstart=False,
+                    created_at=created_at.unwrap(),
+                )
+            )
+
+    def _image_reference_to_arch(self, image: APIImageType) -> str:
+        arch = cast(str, image['specifications']['architecture'])
+        # NOTE(ivasilev) ppc64 needs special treatment, as IBM had this brilliant idea to put both
+        # ppc64 and ppc64le as `ppc64` and differentiate upon the value of `endianness` field..
+        if arch == 'ppc64':
+            return 'ppc64le' if image['specifications']['endianness'] == 'little-endian' else 'ppc64'
+        return arch
+
     def list_images(
         self, logger: gluetool.log.ContextAdapter, filters: Optional[ConfigImageFilter] = None
     ) -> Result[list[PoolImageInfo], Failure]:
@@ -214,12 +256,6 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
 
         def _from_raw_image(image: APIImageType) -> Result[PoolImageInfo, Failure]:
             try:
-                arch = image['specifications']['architecture']
-                # NOTE(ivasilev) ppc64 needs special treatment, as IBM had this brilliant idea to put both
-                # ppc64 and ppc64le as `ppc64` and differentiate upon the value of `endianness` field..
-                if arch == 'ppc64':
-                    arch = 'ppc64le' if image['specifications']['endianness'] == 'little-endian' else 'ppc64'
-
                 created_at = self.timestamp_to_datetime(image['creationDate'])
                 if created_at.is_error:
                     return Error(
@@ -233,7 +269,7 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
                         href=image['href'],
                         id=image['imageID'],
                         name=image['name'],
-                        arch=arch,
+                        arch=self._image_reference_to_arch(image),
                         boot=FlavorBoot(),
                         ssh=PoolImageSSHInfo(),
                         supports_kickstart=False,
@@ -455,6 +491,7 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
                     name=instance['serverName'],
                     status=instance['status'],
                     created_at=created_at.unwrap(),
+                    image=image,
                 )
             )
 
@@ -575,12 +612,18 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
                         )
                     )
 
+                # fetch image details to get necessary image bits as ssh_data
+                image = self.show_image(logger, instance['id'])
+                if image.is_error:
+                    return Error(Failure.from_failure('Could not get image details', image.unwrap_error()))
+
                 res.append(
                     IBMCloudPowerInstance(
                         id=instance['id'],
                         name=instance['name'],
                         created_at=created_at.unwrap(),
                         status=instance['status'],
+                        image=image.unwrap(),
                     )
                 )
 

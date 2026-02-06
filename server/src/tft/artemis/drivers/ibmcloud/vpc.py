@@ -217,6 +217,43 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
             self.logger, _fetch, lambda raw_flavor: cast(str, raw_flavor['name']), _constructor
         )
 
+    def show_image(
+        self, logger: gluetool.log.ContextAdapter, image_id: str
+    ) -> Result[IBMCloudVPCPoolImageInfo, Failure]:
+        with IBMCloudSession(logger, self) as session:
+            r_image_show = session.run(logger, ['is', 'image', image_id, '--json'], commandname='ibmcloud.is-image-get')
+
+            if r_image_show.is_error:
+                return Error(Failure.from_failure('failed to fetch image information', r_image_show.unwrap_error()))
+
+            image = cast(dict[str, Any], r_image_show.unwrap())
+
+            try:
+                created_at = self.timestamp_to_datetime(image['created_at'])
+                if created_at.is_error:
+                    return Error(
+                        Failure.from_failure(
+                            'Could not parse image create timestamp', created_at.unwrap_error(), image=image['id']
+                        )
+                    )
+                return Ok(
+                    IBMCloudVPCPoolImageInfo(
+                        crn=image['crn'],
+                        id=image['id'],
+                        name=image['name'],
+                        status=image['status'],
+                        visibility=image['visibility'],
+                        user_data_format=image['user_data_format'],
+                        arch=image['operating_system']['architecture'],
+                        boot=FlavorBoot(),
+                        ssh=PoolImageSSHInfo(),
+                        supports_kickstart=False,
+                        created_at=created_at.unwrap(),
+                    )
+                )
+            except KeyError as exc:
+                return Error(Failure.from_exc('malformed image description', exc, image_info=image))
+
     def list_images(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -394,12 +431,18 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
                         )
                     )
 
+                # fetch image details to get necessary image bits as ssh_data
+                image = self.show_image(logger, instance['id'])
+                if image.is_error:
+                    return Error(Failure.from_failure('Could not get image details', image.unwrap_error()))
+
                 res.append(
                     IBMCloudVPCInstance(
                         id=instance['id'],
                         name=instance['name'],
                         created_at=created_at.unwrap(),
                         status=instance['status'],
+                        image=image.unwrap(),
                     )
                 )
 
@@ -493,6 +536,7 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
                     name=instance['name'],
                     status=instance['status'],
                     created_at=created_at.unwrap(),
+                    image=image,
                 )
             )
 

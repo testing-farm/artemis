@@ -24,11 +24,12 @@ from tft.artemis.drivers import (
     PoolResourcesIDs,
     ProvisioningProgress,
     ProvisioningState,
+    Resource,
     Tags,
     create_tempfile,
 )
 
-from ... import Failure, SerializableContainer, render_template
+from ... import Failure, render_template
 from ...db import GuestRequest
 from ...environment import Flavor
 from ...knobs import Knob
@@ -57,11 +58,13 @@ IBMCLOUD_DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S.%fZ'
 
 
 @dataclasses.dataclass
-class IBMCloudInstance(SerializableContainer):
+class IBMCloudInstance(Resource):
     id: str
     name: str
     status: str
     created_at: datetime.datetime
+
+    image: PoolImageInfo
 
     def __post_init__(self) -> None:
         self.status = self.status.lower()

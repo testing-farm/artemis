@@ -1329,7 +1329,7 @@ def render_tags(logger: gluetool.log.ContextAdapter, tags: Tags, vars: dict[str,
 
 
 @dataclasses.dataclass
-class Resource:
+class Resource(SerializableContainer):
     name: str
 
     @functools.cached_property
