@@ -374,10 +374,12 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor], Gener
     def create_instance(  # type: ignore[override]
         self,
         logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest,
         flavor: Flavor,
         image: PoolImageInfo,
         instance_name: str,
         user_data_file: Optional[str] = None,
+        tags: Optional[dict[str, str]] = None,
     ) -> Result[IBMCloudInstanceT, Failure]:
         """This method will issue a cloud instance create request"""
 
