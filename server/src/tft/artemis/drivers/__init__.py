@@ -1,6 +1,7 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
+import abc
 import contextlib
 import dataclasses
 import datetime
@@ -1329,7 +1330,7 @@ def render_tags(logger: gluetool.log.ContextAdapter, tags: Tags, vars: dict[str,
 
 
 @dataclasses.dataclass
-class Resource(SerializableContainer):
+class Resource(SerializableContainer, abc.ABC):
     name: str
 
     @functools.cached_property
@@ -1344,6 +1345,7 @@ class Resource(SerializableContainer):
     def is_error(self) -> bool:
         return False
 
+    @abc.abstractmethod
     def to_pool_resource_ids(self) -> PoolResourcesIDs:
         raise NotImplementedError
 
@@ -3103,7 +3105,7 @@ class FlavorBasedPoolDriver(PoolDriver, Generic[PoolImageInfoT, FlavorT]):
         created = r_output.unwrap()
 
         if not created.id:
-            return Error(Failure('Instance id not found'))
+            return Error(Failure('Instance id not found', guestname=guest_request.guestname))
 
         return Ok(created)
 
@@ -3720,7 +3722,7 @@ class CLISessionPermanentDir:
         return self._run_cmd(logger, options, json_format, commandname=commandname)
 
 
-class ResourceCreateFunction(Protocol):
+class ResourceCreateCallback(Protocol, Generic[ResourceT]):
     def __call__(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -3731,46 +3733,44 @@ class ResourceCreateFunction(Protocol):
         pass
 
 
-class ResourceListFunction(Protocol):
+class ResourceListCallback(Protocol, Generic[ResourceT]):
     def __call__(
         self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
     ) -> Result[list[ResourceT], Failure]:
         pass
 
 
-class ResourceIdentifierFunction(Protocol):
+class ResourceIdentifierCallback(Protocol):
     def __call__(self, guest_request: GuestRequest) -> Result[str, Failure]:
         pass
 
 
-class ResourceManager(gluetool.log.LoggerMixin):
+class ResourceManager(Generic[ResourceT]):
     def __init__(
         self,
         logger: gluetool.log.ContextAdapter,
-        driver: PoolDriver,
+        pool: PoolDriver,
         resource_type: str,
-        resource_list_func: ResourceListFunction,
-        resource_create_func: ResourceCreateFunction,
-        resource_identifier_func: ResourceIdentifierFunction,
+        resource_list_callback: ResourceListCallback[ResourceT],
+        resource_create_callback: ResourceCreateCallback[ResourceT],
+        resource_identifier_callback: ResourceIdentifierCallback,
     ) -> None:
-        super().__init__(logger)
-        self.driver = driver
+        self.logger = logger
+        self.pool = pool
         self.resource_type = resource_type
-        self.resource_create_func = resource_create_func
-        self.resource_listing_func = resource_list_func
-        self.resource_identifier_func = resource_identifier_func
+        self.resource_create_callback = resource_create_callback
+        self.resource_list_callback = resource_list_callback
+        self.resource_identifier_callback = resource_identifier_callback
 
-    def get_resource(
+    def acquire(
         self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest, session: sqlalchemy.orm.session.Session
     ) -> Result[ResourceT, Failure]:
-        r_resource_name = self.resource_identifier_func(guest_request)
+        r_resource_name = self.resource_identifier_callback(guest_request)
         if r_resource_name.is_error:
             return Error(Failure.from_failure('Could not get resource name', r_resource_name.unwrap_error()))
         resource_name = r_resource_name.unwrap()
 
-        r_existing_resources = cast(
-            Result[list[ResourceT], Failure], self.resource_listing_func(self.logger, guest_request)
-        )
+        r_existing_resources = self.resource_list_callback(self.logger, guest_request)
         if r_existing_resources.is_error:
             return Error(
                 Failure.from_failure(
@@ -3791,7 +3791,7 @@ class ResourceManager(gluetool.log.LoggerMixin):
 
             # Schedule cleanup of resources we won't use
             for leftover in leftover_resources:
-                self.driver.dispatch_resource_cleanup(
+                self.pool.dispatch_resource_cleanup(
                     self.logger,
                     session,
                     leftover.to_pool_resource_ids(),
@@ -3807,7 +3807,7 @@ class ResourceManager(gluetool.log.LoggerMixin):
                     Failure(
                         'Multiple reusable resources found for a guest request',
                         guestname=guest_request.guestname,
-                        poolname=self.driver.poolname,
+                        poolname=self.pool.poolname,
                         resource_ids=[resource.name for resource in pending_resources],
                         chosen_resource=resource_to_use.name,
                     ).handle(self.logger)
@@ -3824,7 +3824,7 @@ class ResourceManager(gluetool.log.LoggerMixin):
             claimed_names = {leftover.name for leftover in leftover_resources}
 
             if resource_name in claimed_names:
-                r_max_resources_limit = KNOB_INSTANCES_PER_REQUEST_LIMIT.get_value(entityname=self.driver.poolname)
+                r_max_resources_limit = KNOB_INSTANCES_PER_REQUEST_LIMIT.get_value(entityname=self.pool.poolname)
                 if r_max_resources_limit.is_error:
                     return Error(Failure('Could not get max resources per request limit'))
 
@@ -3837,7 +3837,11 @@ class ResourceManager(gluetool.log.LoggerMixin):
                 else:
                     # seems that all allowed names are already claimed by leftover resources, which means something
                     # is wrong -> can't continue
-                    return Error(Failure('Too many leftover resources', resource_type=self.resource_type))
+                    return Error(
+                        Failure(
+                            'Too many leftover resources', resource_type=self.resource_type, pool=self.pool.poolname
+                        )
+                    )
 
         # If we reached here -> we identified the name of the resource to be created, let's create one!
-        return self.resource_create_func(self.logger, session, guest_request, resource_name)
+        return self.resource_create_callback(self.logger, session, guest_request, resource_name)

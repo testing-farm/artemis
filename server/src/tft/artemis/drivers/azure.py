@@ -180,6 +180,7 @@ class AzureInstance(Resource):
         return self.status == 'failed'
 
     def to_pool_resource_ids(self) -> AzurePoolResourcesIDs:
+        # XXX FIXME this should also contain release logic for boot container
         return AzurePoolResourcesIDs(instance_id=self.vm_id)
 
 
@@ -332,14 +333,13 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
         pool_config: dict[str, Any],
     ) -> None:
         super().__init__(logger, poolname, pool_config)
-        # XXX FIXME Will be moved to base driver class constructor once verified!
         self.instance_resource_manager = ResourceManager(
             logger=logger,
-            driver=self,
+            pool=self,
             resource_type='instance',
-            resource_list_func=self.list_instances_by_guest_request,
-            resource_create_func=self.create_guest,
-            resource_identifier_func=self.get_instance_name,
+            resource_list_callback=self.list_instances_by_guest_request,
+            resource_create_callback=self.create_guest,
+            resource_identifier_callback=self.get_instance_name,
         )
 
     @property
@@ -1122,9 +1122,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
     ) -> Result[ProvisioningProgress, Failure]:
-        r_instance = cast(
-            Result[AzureInstance, Failure], self.instance_resource_manager.get_resource(logger, guest_request, session)
-        )
+        r_instance = self.instance_resource_manager.acquire(logger, guest_request, session)
         if r_instance.is_error:
             return Ok(
                 ProvisioningProgress(

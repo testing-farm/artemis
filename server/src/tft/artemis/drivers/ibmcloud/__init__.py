@@ -227,11 +227,11 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor], Gener
         super().__init__(logger, poolname, pool_config)
         self.instance_resource_manager = ResourceManager(
             logger=logger,
-            driver=self,
+            pool=self,
             resource_type='instance',
-            resource_list_func=self.list_instances_by_guest_request,
-            resource_create_func=self.create_guest,
-            resource_identifier_func=self.get_instance_name,
+            resource_list_callback=self.list_instances_by_guest_request,
+            resource_create_callback=self.create_guest,
+            resource_identifier_callback=self.get_instance_name,
         )
 
     @classmethod
@@ -320,10 +320,7 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor], Gener
     def acquire_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
-        r_instance = cast(
-            Result[IBMCloudInstance, Failure],
-            self.instance_resource_manager.get_resource(logger, guest_request, session),
-        )
+        r_instance = self.instance_resource_manager.acquire(logger, guest_request, session)
         if r_instance.is_error:
             return Ok(
                 ProvisioningProgress(
