@@ -444,6 +444,7 @@ class Actor(Protocol):
 
     def message_with_options(
         self,
+        *,
         args: Optional[tuple[ActorArgumentType, ...]] = None,
         delay: Optional[int] = None,
         pipe_ignore: bool = False,
@@ -490,7 +491,7 @@ class TaskCall(SerializableContainer):
         """
 
         if self._named_args is None:
-            self._named_args = {name: arg for name, arg in zip(self.arg_names, self.args)}
+            self._named_args = dict(zip(self.arg_names, self.args))
 
         return self._named_args
 
@@ -501,7 +502,7 @@ class TaskCall(SerializableContainer):
         :param names: argument names to verify.
         """
 
-        return all([name in self.named_args for name in names])
+        return all(name in self.named_args for name in names)
 
     def extract_args(self, *names: str) -> list[ActorArgumentType]:
         """
@@ -664,7 +665,7 @@ class SuccessHandlerType(Protocol):
 
 
 class FailureHandlerType(Protocol):
-    def __call__(self, result: Result[Any, Failure], label: str, sentry: bool = True) -> DoerReturnType: ...
+    def __call__(self, result: Result[Any, Failure], label: str, *, sentry: bool = True) -> DoerReturnType: ...
 
 
 class MessageLogger(gluetool.log.ContextAdapter):
@@ -707,7 +708,7 @@ class TaskLogger(gluetool.log.ContextAdapter):
         self.error(f'failed:\n{stackprinter.format(failure.exception)}')
 
 
-def actor_control_value(actor_name: str, var_name: str, default: Any) -> Any:
+def actor_control_value(actor_name: str, var_name: str, default: Any) -> Any:  # noqa: ANN401
     var_value = os.getenv(f'ARTEMIS_ACTOR_{actor_name.upper()}_{var_name}', default)
 
     # We don't bother about milliseconds in backoff values. For a sake of simplicity
@@ -737,13 +738,13 @@ def actor_kwargs(
     # We want to support two ways how to specify priority: using names of our predefined priorities ("high"),
     # or by a number, for tweaks needed by maintainers ("101"). We get the maintainers' input, and try to
     # translate it to either enum member, or an integer.
-    priority_input: str = actor_control_value(actor_name, 'PRIORITY', priority.name)
+    priority_input: str = actor_control_value(actor_name, 'PRIORITY', default=priority.name)
 
     # Queues are easier: we have a list of predefined queues, but just like priorities, maintainers can specify
     # their own ones. There's no second-level test though, calling `str()` on queue name makes no sense since it's
     # already a string, and pretty much any string can be a queue name. We use `int()` on given priority because
     # priorities can be only integers.
-    queue_input: str = actor_control_value(actor_name, 'QUEUE', queue_name.name)
+    queue_input: str = actor_control_value(actor_name, 'QUEUE', default=queue_name.name)
 
     try:
         priority_actual = TaskPriority[priority_input.upper()].value
@@ -764,11 +765,15 @@ def actor_kwargs(
     kwargs = {
         'priority': priority_actual,
         'queue_name': queue_actual,
-        'max_retries': int(actor_control_value(actor_name, 'RETRIES', KNOB_ACTOR_DEFAULT_RETRIES_COUNT.value)),
-        'min_backoff': int(actor_control_value(actor_name, 'MIN_BACKOFF', KNOB_ACTOR_DEFAULT_MIN_BACKOFF.value)),
-        'max_backoff': int(actor_control_value(actor_name, 'MAX_BACKOFF', KNOB_ACTOR_DEFAULT_MAX_BACKOFF.value)),
+        'max_retries': int(actor_control_value(actor_name, 'RETRIES', default=KNOB_ACTOR_DEFAULT_RETRIES_COUNT.value)),
+        'min_backoff': int(
+            actor_control_value(actor_name, 'MIN_BACKOFF', default=KNOB_ACTOR_DEFAULT_MIN_BACKOFF.value)
+        ),
+        'max_backoff': int(
+            actor_control_value(actor_name, 'MAX_BACKOFF', default=KNOB_ACTOR_DEFAULT_MAX_BACKOFF.value)
+        ),
         'singleton_deadline': int(
-            actor_control_value(actor_name, 'SINGLETON_DEADLINE', KNOB_ACTOR_DEFAULT_SINGLETON_DEADLINE.value)
+            actor_control_value(actor_name, 'SINGLETON_DEADLINE', default=KNOB_ACTOR_DEFAULT_SINGLETON_DEADLINE.value)
         ),
     }
 
@@ -872,6 +877,7 @@ class task:  # noqa: N801
         self,
         priority: TaskPriority = TaskPriority.DEFAULT,
         queue_name: TaskQueue = TaskQueue.DEFAULT,
+        *,
         periodic: Optional[periodiq.CronSpec] = None,
         tail_handler: Optional['TailHandler'] = None,
         singleton: bool = False,
@@ -971,9 +977,11 @@ def run_doer_multithread(
         thread_context = contextvars.copy_context()
 
         def _thread_trampoline() -> DoerReturnType:
-            profile_actor = gluetool.utils.normalize_bool_option(actor_control_value(actor_name, 'PROFILE', False))
+            profile_actor = gluetool.utils.normalize_bool_option(
+                actor_control_value(actor_name, 'PROFILE', default=False)
+            )
             verbose_profile = gluetool.utils.normalize_bool_option(
-                actor_control_value(actor_name, 'VERBOSE_PROFILE', False)
+                actor_control_value(actor_name, 'VERBOSE_PROFILE', default=False)
             )
 
             if profile_actor:
@@ -1000,7 +1008,7 @@ def run_doer_multithread(
             logger.error('worker shutdown requested')
 
         else:
-            assert False, 'Unhandled interrupt exception'
+            raise TypeError('Unhandled interrupt exception') from None
 
         logger.debug('waiting for doer to finish')
 
@@ -1034,8 +1042,10 @@ def run_doer_singlethread(
 
     logger.debug(f'starting {fn.__name__} doer')
 
-    profile_actor = gluetool.utils.normalize_bool_option(actor_control_value(actor_name, 'PROFILE', False))
-    verbose_profile = gluetool.utils.normalize_bool_option(actor_control_value(actor_name, 'VERBOSE_PROFILE', False))
+    profile_actor = gluetool.utils.normalize_bool_option(actor_control_value(actor_name, 'PROFILE', default=False))
+    verbose_profile = gluetool.utils.normalize_bool_option(
+        actor_control_value(actor_name, 'VERBOSE_PROFILE', default=False)
+    )
 
     try:
         logger.debug(f'submitting task doer {fn.__name__}')
@@ -1084,6 +1094,7 @@ def _task_core(
     doer: DoerType,
     logger: TaskLogger,
     db: Optional[DB] = None,
+    *,
     session: Optional[sqlalchemy.orm.session.Session] = None,
     doer_args: Optional[tuple[ActorArgumentType, ...]] = None,
     doer_kwargs: Optional[dict[str, Any]] = None,
@@ -1104,8 +1115,8 @@ def _task_core(
 
     db = db or get_root_db()
 
-    doer_args = doer_args or tuple()
-    doer_kwargs = doer_kwargs or dict()
+    doer_args = doer_args or ()
+    doer_kwargs = doer_kwargs or {}
 
     doer_result: DoerReturnType = Error(Failure('undefined doer result'))
 
@@ -1223,6 +1234,7 @@ def task_core(
     doer: DoerType,
     logger: TaskLogger,
     db: Optional[DB] = None,
+    *,
     session: Optional[sqlalchemy.orm.session.Session] = None,
     doer_args: Optional[tuple[ActorArgumentType, ...]] = None,
     doer_kwargs: Optional[dict[str, Any]] = None,
@@ -1940,7 +1952,7 @@ class Workspace:
         if not self.result:
             self.result = RESCHEDULE
 
-    def _fail(self, failure: Failure, label: str, no_effect: bool = False) -> None:
+    def _fail(self, failure: Failure, label: str, *, no_effect: bool = False) -> None:
         failure.handle(self.logger, label=label, sentry=True, guestname=self.guestname, **self.spice_details)
 
         if self.guestname:
@@ -1956,14 +1968,14 @@ class Workspace:
             else:
                 self.result = IGNORE(Error(failure))
 
-    def fail(self, failure: Failure, label: str, no_effect: bool = False) -> None:
+    def fail(self, failure: Failure, label: str, *, no_effect: bool = False) -> None:
         with self.transaction():
             self._fail(failure, label, no_effect=no_effect)
 
-    def _error(self, error: Result[Any, Failure], label: str, no_effect: bool = False) -> None:
+    def _error(self, error: Result[Any, Failure], label: str, *, no_effect: bool = False) -> None:
         self._fail(error.unwrap_error(), label, no_effect=no_effect)
 
-    def _error_v2(self, error: _Result[Any, Failure], label: str, no_effect: bool = False) -> None:
+    def _error_v2(self, error: _Result[Any, Failure], label: str, *, no_effect: bool = False) -> None:
         self._fail(error.failure(), label, no_effect=no_effect)
 
     def update_guest_state(
@@ -2120,7 +2132,7 @@ class Workspace:
 
     def load_guest_events(self, eventname: Optional[str] = None) -> None:
         if self.result:
-            return
+            return None
 
         assert self.guestname
 

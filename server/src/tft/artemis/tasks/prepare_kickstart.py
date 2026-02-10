@@ -120,7 +120,7 @@ class Workspace(_Workspace):
             self.load_master_ssh_key()
 
             if self.result:
-                return
+                return None
 
             assert self.gr
             assert self.pool

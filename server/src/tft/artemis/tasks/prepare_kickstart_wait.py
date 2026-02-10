@@ -98,7 +98,7 @@ class Workspace(_Workspace):
             self.load_master_ssh_key()
 
             if self.result:
-                return
+                return None
 
             assert self.gr
             assert self.master_key
@@ -114,7 +114,7 @@ class Workspace(_Workspace):
 
             ssh_timeout = r_ssh_timeout.unwrap()
 
-            def _pull_log(log_type: AnacondaLogType, finished: bool = False) -> None:
+            def _pull_log(log_type: AnacondaLogType, *, finished: bool = False) -> None:
                 """
                 Pull the specified log from the system.
                 """
@@ -185,10 +185,10 @@ class Workspace(_Workspace):
                                 r_store_blob, f'failed to store the blob for the log {logname}', no_effect=True
                             )
 
-            def _pull_logs(finished: bool = False) -> Result[None, Failure]:
+            def _pull_logs(*, finished: bool = False) -> Result[None, Failure]:
                 try:
                     for log_type in AnacondaLogType:
-                        _pull_log(log_type, finished)
+                        _pull_log(log_type, finished=finished)
                 except Exception as exc:
                     return Error(Failure.from_exc('failed getting logs from the guest', exc))
 
@@ -262,7 +262,7 @@ class Workspace(_Workspace):
 
                 self.request_task(prepare_kickstart_wait, self.guestname, delay=r_delay.unwrap())
 
-                return
+                return None
 
             # A sanity check to verify the kickstart installation did happen.
             r_install = run_remote(

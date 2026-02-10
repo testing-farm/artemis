@@ -447,7 +447,7 @@ if hasattr(shlex, 'join'):
     # And there is no way to disable *that* report :/ See https://github.com/python/mypy/issues/8823
     # Trying to work around this with a bit of `getattr()` - we *know* the attribute exists, and the types
     # are a match, we just need to fool mypy a bit.
-    command_join = getattr(shlex, 'join')
+    command_join = shlex.join
 
 else:
 
@@ -704,7 +704,7 @@ class CanAcquire:
     reason: Optional[Failure] = None
 
     @classmethod
-    def cannot(cls, message: str, recoverable: bool = False) -> 'CanAcquire':
+    def cannot(cls, message: str, *, recoverable: bool = False) -> 'CanAcquire':
         return CanAcquire(can_acquire=False, reason=Failure(message, recoverable=recoverable))
 
 
@@ -800,7 +800,7 @@ class PoolResourcesIDs(SerializableContainer):
     ctime: Optional[datetime.datetime] = None
 
     def is_empty(self) -> bool:
-        return all([value is None for key, value in dataclasses.asdict(self).items() if key != 'ctime'])
+        return all(value is None for key, value in dataclasses.asdict(self).items() if key != 'ctime')
 
     def serialize(self) -> dict[str, Any]:
         serialized = super().serialize()
@@ -1043,7 +1043,7 @@ def _patch_flavors(
 
         else:
             # guarded by schema validation, we should always have `name` or `name-regex`
-            assert False, 'unreachable'
+            raise AssertionError('unreachable')
 
         if not target_flavors:
             return Error(Failure('unknown patched flavor', flavorname=flavorname))
@@ -1145,22 +1145,22 @@ class GuestLogBlob:
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_log: GuestLog,
+        *,
         overwrite: bool = False,
     ) -> Result[None, Failure]:
         if guest_log.blobs and overwrite:
             return guest_log.blobs[0].update(logger, session, content=self.content, content_hash=self.content_hash)
 
-        else:
-            return GuestLogBlobDB.create(
-                logger,
-                session,
-                guestname=guest_log.guestname,
-                logname=guest_log.logname,
-                contenttype=guest_log.contenttype,
-                ctime=self.ctime,
-                content=self.content,
-                content_hash=self.content_hash,
-            )
+        return GuestLogBlobDB.create(
+            logger,
+            session,
+            guestname=guest_log.guestname,
+            logname=guest_log.logname,
+            contenttype=guest_log.contenttype,
+            ctime=self.ctime,
+            content=self.content,
+            content_hash=self.content_hash,
+        )
 
     @classmethod
     def from_content(cls, content: str) -> 'GuestLogBlob':
@@ -1313,9 +1313,13 @@ def guest_log_updater(
 
 
 @rewrap_to_gluetool
-def render_tags(logger: gluetool.log.ContextAdapter, tags: Tags, vars: dict[str, Any]) -> _Result[Tags, Failure]:
+def render_tags(
+    logger: gluetool.log.ContextAdapter,
+    tags: Tags,
+    template_vars: dict[str, Any],
+) -> _Result[Tags, Failure]:
     for name, tag_template in tags.items():
-        r_rendered = render_template(tag_template, **vars)
+        r_rendered = render_template(tag_template, **template_vars)
 
         if not is_successful(r_rendered):
             return _Error(
@@ -1422,7 +1426,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
     @staticmethod
     def load_all(
-        logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, enabled_only: bool = True
+        logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, *, enabled_only: bool = True
     ) -> Result[list['PoolDriver'], Failure]:
         r_pools = SafeQuery.from_session(session, Pool).all()
 
@@ -1687,10 +1691,8 @@ class PoolDriver(gluetool.log.LoggerMixin):
                 return Ok(CanAcquire.cannot('SSH access is required to perform non-native kickstart installation'))
 
             if guest_request.environment.kickstart.metadata is not None and any(
-                [
-                    m.split('=')[0] not in ['auth', 'autopart_type', 'no_autopart', 'ignoredisk', 'lang', 'packages']
-                    for m in guest_request.environment.kickstart.metadata.split()
-                ]
+                m.split('=')[0] not in ['auth', 'autopart_type', 'no_autopart', 'ignoredisk', 'lang', 'packages']
+                for m in guest_request.environment.kickstart.metadata.split()
             ):
                 return Ok(CanAcquire.cannot('unsupported kickstart metadata option specified'))
 
@@ -1948,7 +1950,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
         raise NotImplementedError
 
     def update_snapshot(
-        self, guest_request: GuestRequest, snapshot_request: SnapshotRequest, start_again: bool = True
+        self, guest_request: GuestRequest, snapshot_request: SnapshotRequest, *, start_again: bool = True
     ) -> Result[ProvisioningProgress, Failure]:
         """
         Update progress of snapshot creation.
@@ -2500,7 +2502,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
                 target_images = [image for image in images.values() if image_name_pattern.match(image.name) is not None]
 
             else:
-                assert False, 'unreachable'
+                raise AssertionError('unreachable')
 
             if not target_images:
                 return Error(Failure('unknown patched image', imagename=imagename))
@@ -3100,7 +3102,9 @@ class FlavorBasedPoolDriver(PoolDriver, Generic[PoolImageInfoT, FlavorT]):
         return Ok(CanAcquire())
 
 
-def vm_info_to_ip(output: Any, key: str, regex: Optional[Pattern[str]] = None) -> Result[Optional[str], Failure]:
+def vm_info_to_ip(
+    output: dict[str, Any], key: str, regex: Optional[Pattern[str]] = None
+) -> Result[Optional[str], Failure]:
     if not output[key]:
         # It's ok! That means the instance is not ready yet. We need to wait a bit for ip address.
         return Ok(None)
@@ -3118,6 +3122,7 @@ def vm_info_to_ip(output: Any, key: str, regex: Optional[Pattern[str]] = None) -
 def run_cli_tool(
     logger: gluetool.log.ContextAdapter,
     command: list[str],
+    *,
     json_output: bool = False,
     command_scrubber: Optional[Callable[[list[str]], list[str]]] = None,
     allow_empty: bool = True,
@@ -3542,6 +3547,7 @@ class CLISessionPermanentDir:
         self,
         logger: gluetool.log.ContextAdapter,
         options: list[str],
+        *,
         json_format: bool = True,
         commandname: Optional[str] = None,
     ) -> Result[Union[JSONType, str], Failure]:
@@ -3595,10 +3601,11 @@ class CLISessionPermanentDir:
         self,
         logger: gluetool.log.ContextAdapter,
         options: list[str],
+        *,
         json_format: bool = True,
         commandname: Optional[str] = None,
     ) -> Result[Union[JSONType, str], Failure]:
         if self._login_result is not None and self._login_result.is_error:
             return Error(self._login_result.unwrap_error())
 
-        return self._run_cmd(logger, options, json_format, commandname=commandname)
+        return self._run_cmd(logger, options, json_format=json_format, commandname=commandname)

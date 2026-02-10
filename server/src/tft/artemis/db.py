@@ -44,7 +44,6 @@ from gluetool.result import Error, Ok, Result
 from sqlalchemy import JSON, Column, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, column_property, mapped_column, relationship
-from sqlalchemy.orm.query import Query as _Query
 from sqlalchemy.orm.session import sessionmaker
 from sqlalchemy.schema import ForeignKeyConstraint, Index, PrimaryKeyConstraint
 from sqlalchemy_utils import EncryptedType
@@ -54,7 +53,9 @@ from .guest import GuestState
 from .knobs import KNOB_LOGGING_DB_QUERIES, get_vault_password
 
 if TYPE_CHECKING:
-    from . import Failure
+    from sqlalchemy.orm.query import Query as _Query
+
+    from . import Failure  # noqa: TC004  # Avoid issues with circular imports
     from .drivers import PoolData, PoolDriver, SerializedPoolData
     from .environment import Environment
     from .security_group_rules import SecurityGroupRule, SecurityGroupRules
@@ -263,7 +264,7 @@ def stringify_query(session: sqlalchemy.orm.session.Session, query: sqlalchemy.s
 
 
 def assert_not_in_transaction(
-    logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, rollback: bool = True
+    logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, *, rollback: bool = True
 ) -> bool:
     if session._transaction is None:
         return True
@@ -1057,8 +1058,8 @@ class GuestRequest(Base):
         ssh_username: str,
         priorityname: Optional[str],
         user_data: Optional[UserDataType],
-        bypass_shelf_lookup: bool,
-        skip_prepare_verify_ssh: bool,
+        bypass_shelf_lookup: bool,  # noqa: FBT001
+        skip_prepare_verify_ssh: bool,  # noqa: FBT001
         post_install_script: Optional[str],
         log_types: list[tuple[str, GuestLogContentType]],
         watchdog_dispatch_delay: Optional[int],
@@ -1296,7 +1297,7 @@ class GuestRequest(Base):
         return [(cast(str, actorname), cast(list['ActorArgumentType'], args)) for actorname, args in on_ready]
 
     @classmethod
-    def to_yaml(cls, representer: ruamel.yaml.representer.Representer, guest_request: 'GuestRequest') -> Any:
+    def to_yaml(cls, representer: ruamel.yaml.representer.Representer, guest_request: 'GuestRequest') -> Any:  # noqa: ANN401
         return representer.represent_dict(guest_request.serialize())
 
 
@@ -1639,7 +1640,12 @@ def _log_db_statement(statement: str) -> None:
 
 @sqlalchemy.event.listens_for(sqlalchemy.engine.Engine, 'before_cursor_execute')
 def before_cursor_execute(
-    conn: sqlalchemy.engine.Connection, cursor: Any, statement: Any, parameters: Any, context: Any, executemany: Any
+    conn: sqlalchemy.engine.Connection,
+    cursor: sqlalchemy.engine.interfaces.DBAPICursor,
+    statement: str,
+    parameters: Any,  # noqa: ANN401  # Actual type sqlalchemy.engine.interfaces._DBAPIAnyExecuteParams
+    context: Optional[sqlalchemy.engine.ExecutionContext],
+    executemany: bool,  # noqa: FBT001
 ) -> None:
     _log_db_statement(statement)
 
@@ -1648,7 +1654,12 @@ def before_cursor_execute(
 
 @sqlalchemy.event.listens_for(sqlalchemy.engine.Engine, 'after_cursor_execute')
 def after_cursor_execute(
-    conn: sqlalchemy.engine.Connection, cursor: Any, statement: Any, parameters: Any, context: Any, executemany: Any
+    conn: sqlalchemy.engine.Connection,
+    cursor: sqlalchemy.engine.interfaces.DBAPICursor,
+    statement: str,
+    parameters: Any,  # noqa: ANN401  # Actual type sqlalchemy.engine.interfaces._DBAPIAnyExecuteParams
+    context: Optional[sqlalchemy.engine.ExecutionContext],
+    executemany: bool,  # noqa: FBT001
 ) -> None:
     from .knobs import KNOB_LOGGING_DB_SLOW_QUERIES, KNOB_LOGGING_DB_SLOW_QUERY_THRESHOLD
 
@@ -1823,7 +1834,7 @@ class DB:
 
     @contextmanager
     def get_session(
-        self, logger: gluetool.log.ContextAdapter, read_only: bool = False
+        self, logger: gluetool.log.ContextAdapter, *, read_only: bool = False
     ) -> Iterator[sqlalchemy.orm.session.Session]:
         """
         Create new DB session.
@@ -1881,7 +1892,7 @@ class DB:
 
     @contextmanager
     def transaction(
-        self, logger: gluetool.log.ContextAdapter, read_only: bool = False
+        self, logger: gluetool.log.ContextAdapter, *, read_only: bool = False
     ) -> Iterator[tuple[sqlalchemy.orm.session.Session, TransactionResult]]:
         """
         Create new DB session & transaction.
@@ -1900,7 +1911,11 @@ class DB:
             session.execute(sqlalchemy.text(f"SET application_name TO '{name}'"))
 
 
-def convert_column_str_to_json(op: Any, tablename: str, columnname: str, rename_to: Optional[str] = None) -> None:
+# Alias for alembic.op. The object is not imported in Artemis, therefore we cannot check typing properly.
+AlembicOp = Any
+
+
+def convert_column_str_to_json(op: AlembicOp, tablename: str, columnname: str, rename_to: Optional[str] = None) -> None:
     """
     Generate SQL statements for converting a column from a text type to JSON while preserving data.
 
@@ -1922,9 +1937,9 @@ def convert_column_str_to_json(op: Any, tablename: str, columnname: str, rename_
 
     # copy data from the existing column to the temporary one, and cast them to JSON type
     if op.get_bind().dialect.name == 'postgresql':
-        op.get_bind().execute(sqlalchemy.text(f'UPDATE {tablename} SET __tmp_{columnname} = {columnname}::json'))
+        op.get_bind().execute(sqlalchemy.text(f'UPDATE {tablename} SET __tmp_{columnname} = {columnname}::json'))  # noqa: S608
     else:
-        op.get_bind().execute(sqlalchemy.text(f'UPDATE {tablename} SET __tmp_{columnname} = {columnname}'))
+        op.get_bind().execute(sqlalchemy.text(f'UPDATE {tablename} SET __tmp_{columnname} = {columnname}'))  # noqa: S608
 
     # drop the original column, and create it as JSON
     with op.batch_alter_table(tablename, schema=None) as batch_op:
@@ -1932,14 +1947,14 @@ def convert_column_str_to_json(op: Any, tablename: str, columnname: str, rename_
         batch_op.add_column(Column(final_columnname, JSON(), nullable=False, server_default='{}'))
 
     # copy data from the temporary column to its final location (no casting needed, they have the very same type)
-    op.get_bind().execute(sqlalchemy.text(f'UPDATE {tablename} SET {final_columnname} = __tmp_{columnname}'))
+    op.get_bind().execute(sqlalchemy.text(f'UPDATE {tablename} SET {final_columnname} = __tmp_{columnname}'))  # noqa: S608
 
     # drop the temporary column
     with op.batch_alter_table(tablename, schema=None) as batch_op:
         batch_op.drop_column(f'__tmp_{columnname}')
 
 
-def convert_column_json_to_str(op: Any, tablename: str, columnname: str, rename_to: Optional[str] = None) -> None:
+def convert_column_json_to_str(op: AlembicOp, tablename: str, columnname: str, rename_to: Optional[str] = None) -> None:
     """
     Generate SQL statements for converting a column from a JSON type to a text type while preserving data.
 
@@ -1961,9 +1976,9 @@ def convert_column_json_to_str(op: Any, tablename: str, columnname: str, rename_
 
     # copy data from the existing column to the temporary one, and them to text
     if op.get_bind().dialect.name == 'postgresql':
-        op.get_bind().execute(sqlalchemy.text(f'UPDATE {tablename} SET __tmp_{columnname} = {columnname}::text'))
+        op.get_bind().execute(sqlalchemy.text(f'UPDATE {tablename} SET __tmp_{columnname} = {columnname}::text'))  # noqa: S608
     else:
-        op.get_bind().execute(sqlalchemy.text(f'UPDATE {tablename} SET __tmp_{columnname} = {columnname}'))
+        op.get_bind().execute(sqlalchemy.text(f'UPDATE {tablename} SET __tmp_{columnname} = {columnname}'))  # noqa: S608
 
     # drop the original column, and create it as text
     with op.batch_alter_table(tablename, schema=None) as batch_op:
@@ -1971,7 +1986,7 @@ def convert_column_json_to_str(op: Any, tablename: str, columnname: str, rename_
         batch_op.add_column(Column(final_columnname, Text(), nullable=False, server_default='{}'))
 
     # copy data from the temporary column to its final location (no casting needed, they have the very same type)
-    op.get_bind().execute(sqlalchemy.text(f'UPDATE {tablename} SET {final_columnname} = __tmp_{columnname}'))
+    op.get_bind().execute(sqlalchemy.text(f'UPDATE {tablename} SET {final_columnname} = __tmp_{columnname}'))  # noqa: S608
 
     # drop the temporary column
     with op.batch_alter_table(tablename, schema=None) as batch_op:

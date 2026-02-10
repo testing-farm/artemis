@@ -225,7 +225,7 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
         return _Ok(capabilities)
 
     def _run_os(
-        self, options: list[str], json_format: bool = True, commandname: Optional[str] = None
+        self, options: list[str], *, json_format: bool = True, commandname: Optional[str] = None
     ) -> Result[Union[JSONType, str], Failure]:
         """
         Run os command with additional options and return output in json format
@@ -328,11 +328,8 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
         r_nova = self._get_nova()
         if r_nova.is_error:
             return Error(r_nova.unwrap_error())
-        instance = safe_call(
-            r_nova.unwrap().servers.get, guest_request.pool_data.mine(self, OpenStackPoolData).instance_id
-        )
 
-        return instance
+        return safe_call(r_nova.unwrap().servers.get, guest_request.pool_data.mine(self, OpenStackPoolData).instance_id)
 
     def _show_snapshot(
         self,
@@ -568,7 +565,7 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
         )
 
     def update_snapshot(
-        self, guest_request: GuestRequest, snapshot_request: SnapshotRequest, start_again: bool = True
+        self, guest_request: GuestRequest, snapshot_request: SnapshotRequest, *, start_again: bool = True
     ) -> Result[ProvisioningProgress, Failure]:
         r_output = self._show_snapshot(snapshot_request)
 
@@ -959,7 +956,7 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
         )
 
     def _do_fetch_console(
-        self, guest_request: GuestRequest, resource: str, json_format: bool = True
+        self, guest_request: GuestRequest, resource: str, *, json_format: bool = True
     ) -> Result[Optional[JSONType], Failure]:
         pool_data = guest_request.pool_data.mine(self, OpenStackPoolData)
 

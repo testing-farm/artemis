@@ -53,6 +53,7 @@ import pkg_resources
 import redis
 import ruamel.yaml
 import ruamel.yaml.compat
+import ruamel.yaml.nodes
 import sentry_sdk
 import sentry_sdk._types
 import sentry_sdk.integrations.argv
@@ -166,7 +167,7 @@ def get_yaml() -> ruamel.yaml.main.YAML:
 def get_logger() -> gluetool.log.ContextAdapter:
     from .knobs import KNOB_LOGGING_JSON, KNOB_LOGGING_LEVEL
 
-    gluetool.color.switch(True)
+    gluetool.color.switch(enabled=True)
 
     return gluetool.log.Logging.setup_logger(level=KNOB_LOGGING_LEVEL.value, json_output=KNOB_LOGGING_JSON.value)
 
@@ -624,7 +625,7 @@ class SerializableContainer:
         return cls.unserialize(get_yaml().load(serialized))
 
     @classmethod
-    def to_yaml(cls, representer: ruamel.yaml.representer.Representer, container: S) -> Any:
+    def to_yaml(cls, representer: ruamel.yaml.representer.Representer, container: S) -> Any:  # noqa: ANN401
         return representer.represent_dict(container.serialize())
 
 
@@ -657,12 +658,16 @@ def is_logging_writer_visible(writer: gluetool.log.LoggingFunctionType) -> bool:
     return KNOB_LOGGING_LEVEL.value <= loglevel_threshold
 
 
+# ruamel.yaml does not narrow the type
+_RuamelYamlDataType = Any
+
+
 # Two logging helpers, very similar to `format_dict` and `log_dict`, but emitting a YAML-ish output.
 # YAML is often more readable for humans, and, sometimes, we might use these on purpose, to provide
 # more readable output.
 #
 # TODO: move to gluetool - posibly as a switch to log_dict, no need for a stand-alone functions.
-def format_dict_yaml(data: Any) -> str:
+def format_dict_yaml(data: _RuamelYamlDataType) -> str:
     stream = ruamel.yaml.compat.StringIO()
 
     yaml = get_yaml()
@@ -679,7 +684,7 @@ def format_dict_yaml(data: Any) -> str:
     return stream.getvalue()
 
 
-def log_dict_yaml(writer: gluetool.log.LoggingFunctionType, intro: str, data: Any) -> None:
+def log_dict_yaml(writer: gluetool.log.LoggingFunctionType, intro: str, data: _RuamelYamlDataType) -> None:
     if not is_logging_writer_visible(writer):
         return
 
@@ -725,6 +730,7 @@ class Failure:
     def __init__(
         self,
         message: str,
+        *,
         exc_info: Optional[ExceptionInfoType] = None,
         traceback: Optional[_traceback.StackSummary] = None,
         caused_by: Optional['Failure'] = None,
@@ -737,7 +743,7 @@ class Failure:
         environment: Optional['Environment'] = None,
         task_call: Optional['TaskCall'] = None,
         **details: Any,
-    ):
+    ) -> None:
         self.message = message
         self.exc_info = exc_info
         self.details = details
@@ -801,6 +807,7 @@ class Failure:
         cls,
         message: str,
         exc: Exception,
+        *,
         caused_by: Optional['Failure'] = None,
         sentry: Optional[bool] = True,
         recoverable: bool = True,
@@ -830,6 +837,7 @@ class Failure:
         cls,
         message: str,
         caused_by: 'Failure',
+        *,
         sentry: Optional[bool] = True,
         # these are common "details" so we add them as extra keyword arguments with their types
         scrubbed_command: Optional[list[str]] = None,
@@ -1216,6 +1224,7 @@ class Failure:
         self,
         logger: gluetool.log.ContextAdapter,
         label: str = _DEFAULT_FAILURE_LOG_LABEL,
+        *,
         sentry: bool = True,
         **details: Any,
     ) -> None:
@@ -1311,9 +1320,7 @@ def get_broker(
 
         parsed_url = urllib.parse.urlparse(KNOB_BROKER_URL.value)
 
-        parsed_query: dict[str, Union[str, dict[str, str]]] = {
-            k: v for k, v in urllib.parse.parse_qsl(parsed_url.query)
-        }
+        parsed_query: dict[str, Union[str, dict[str, str]]] = dict(urllib.parse.parse_qsl(parsed_url.query))
 
         parsed_query['client_properties'] = client_properties
 
@@ -1427,7 +1434,7 @@ def rewrap_to_gluetool(fn: Callable[P, _Result[T, U]]) -> Callable[P, Result[T, 
 JSONSchemaType = dict[str, Any]
 
 
-def construct_validation_schema(data: Any) -> Result[JSONSchemaType, Failure]:
+def construct_validation_schema(data: str) -> Result[JSONSchemaType, Failure]:
     """
     Construct a JSON schema for future use in data validation.
 
@@ -1469,7 +1476,7 @@ def load_packaged_validation_schema(schema_subpath: str) -> Result[JSONSchemaTyp
     return load_validation_schema(os.path.join(root_schema_dirpath, schema_subpath))
 
 
-def validate_data(data: Any, schema: JSONSchemaType) -> Result[list[str], Failure]:
+def validate_data(data: JSONType, schema: JSONSchemaType) -> Result[list[str], Failure]:
     """
     Validate a given data using a JSON schema.
 

@@ -26,6 +26,7 @@ import threading
 import time
 from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar, Union, cast
 
+import dramatiq.worker
 import gluetool.log
 import prometheus_client.utils
 import redis
@@ -291,7 +292,7 @@ class MetricsBase:
         """
         Load values from the storage and update this container with up-to-date values.
 
-                .. note::
+        .. note::
 
            **Requires** the context variables defined in :py:mod:`tft.artemis` to be set properly.
 
@@ -710,7 +711,7 @@ class PoolResourcesDepleted:
             but all of them are marked as depleted; ``False`` otherwise.
         """
 
-        return any([getattr(self, field) for field in PoolResources._TRIVIAL_FIELDS]) or (
+        return any(getattr(self, field) for field in PoolResources._TRIVIAL_FIELDS) or (
             self.available_network_count != 0 and len(self.networks) == self.available_network_count
         )
 
@@ -1162,7 +1163,7 @@ class PoolMetrics(PoolMetricsBase):
             .one(),
         )[0]
 
-        self.current_guest_request_count_per_state = {state: 0 for state in GuestState.__members__.values()}
+        self.current_guest_request_count_per_state = dict.fromkeys(GuestState.__members__.values(), 0)
 
         self.current_guest_request_count_per_state.update(
             {
@@ -1177,9 +1178,7 @@ class PoolMetrics(PoolMetricsBase):
             }
         )
 
-        self.errors = {
-            errorname: count for errorname, count in get_metric_fields(logger, cache, self.key_errors).items()
-        }
+        self.errors = get_metric_fields(logger, cache, self.key_errors)
 
         self.aborts = {
             cast(tuple[str, str, str, str], tuple(field.split(':', 4))): count
@@ -1205,14 +1204,13 @@ class PoolMetrics(PoolMetricsBase):
         )
 
         # commandname => count
-        self.cli_calls = {
-            field: count
-            for field, count in get_metric_fields(
+        self.cli_calls = dict(
+            get_metric_fields(
                 logger,
                 cache,
                 self._KEY_CLI_CALLS.format(poolname=self.poolname),  # noqa: FS002
             ).items()
-        }
+        )
 
         # commandname:exit-code:cause => count
         self.cli_calls_exit_codes = {
@@ -1311,7 +1309,7 @@ class UndefinedPoolMetrics(PoolMetricsBase):
             .one(),
         )[0]
 
-        self.current_guest_request_count_per_state = {state: 0 for state in GuestState.__members__.values()}
+        self.current_guest_request_count_per_state = dict.fromkeys(GuestState.__members__.values(), 0)
 
         self.current_guest_request_count_per_state.update(
             {
@@ -1781,13 +1779,8 @@ class ProvisioningMetrics(MetricsBase):
 
         self.current = cast(Callable[[], int], current_record.scalar)()
         self.requested = get_metric(logger, cache, self._KEY_PROVISIONING_REQUESTED) or 0
-        self.success = {
-            poolname: count
-            for poolname, count in get_metric_fields(logger, cache, self._KEY_PROVISIONING_SUCCESS).items()
-        }
-        self.empty_routing = {
-            poolname: count for poolname, count in get_metric_fields(logger, cache, self._KEY_EMPTY_ROUTING).items()
-        }
+        self.success = get_metric_fields(logger, cache, self._KEY_PROVISIONING_SUCCESS)
+        self.empty_routing = get_metric_fields(logger, cache, self._KEY_EMPTY_ROUTING)
         # fields are in form `from_pool:to_pool`
         self.failover = {
             cast(tuple[str, str], tuple(field.split(':', 1))): count
@@ -1809,9 +1802,7 @@ class ProvisioningMetrics(MetricsBase):
                 ).all(),
             )
         ]
-        self.provisioning_durations = {
-            field: count for field, count in get_metric_fields(logger, cache, self._KEY_PROVISIONING_DURATIONS).items()
-        }
+        self.provisioning_durations = get_metric_fields(logger, cache, self._KEY_PROVISIONING_DURATIONS)
 
         # pool:current-state:new-state => count
         self.guest_state_transitions = {
@@ -2034,10 +2025,8 @@ class RoutingMetrics(MetricsBase):
 
         super().do_sync()
 
-        self.policy_calls = {field: count for field, count in get_metric_fields(logger, cache, self._KEY_CALLS).items()}
-        self.policy_cancellations = {
-            field: count for field, count in get_metric_fields(logger, cache, self._KEY_CANCELLATIONS).items()
-        }
+        self.policy_calls = get_metric_fields(logger, cache, self._KEY_CALLS)
+        self.policy_cancellations = get_metric_fields(logger, cache, self._KEY_CANCELLATIONS)
         # fields are in form `policy:pool:allowed`
         self.policy_rulings = {
             cast(tuple[str, str, str], tuple(field.split(':', 2))): count
@@ -2630,7 +2619,7 @@ class TaskMetrics(MetricsBase):
             for field, count in get_metric_fields(logger, cache, self._KEY_CURRENT_DELAYED_MESSAGES).items()
         }
 
-        self.current_task_request_count = {actorname: 0 for actorname in BROKER.actors}
+        self.current_task_request_count = dict.fromkeys(BROKER.actors, 0)
 
         self.current_task_request_count.update(
             {
@@ -3161,7 +3150,7 @@ class WorkerMetrics(MetricsBase):
         interval: int,
         metrics_getter: Callable[[Any], Result[tuple[int, int], Failure]],
         thread_name: str = 'worker-metrics-refresher',
-        worker_instance: Optional[Any] = None,
+        worker_instance: Optional[dramatiq.worker.Worker] = None,
     ) -> threading.Thread:
         """
         Create and start a thread to refresh cached worker metrics.
@@ -3373,9 +3362,7 @@ class DispatcherMetrics(MetricsBase):
         self.dispatched_task_invocations_count = get_metric(logger, cache, self._KEY_DISPATCHED_TASK_INVOCATIONS) or 0
 
         # actor_name => count
-        self.dispatched_task_success_count = {
-            field: count for field, count in get_metric_fields(logger, cache, self._KEY_DISPATCHED_TASK_SUCCESS).items()
-        }
+        self.dispatched_task_success_count = get_metric_fields(logger, cache, self._KEY_DISPATCHED_TASK_SUCCESS)
 
         self.dispatched_task_failure_count = get_metric(logger, cache, self._KEY_DISPATCHED_TASK_FAILURE) or 0
 
@@ -3384,10 +3371,9 @@ class DispatcherMetrics(MetricsBase):
         )
 
         # actor_names => count
-        self.dispatched_task_sequence_success_count = {
-            field: count
-            for field, count in get_metric_fields(logger, cache, self._KEY_DISPATCHED_TASK_SEQUENCE_SUCCESS).items()
-        }
+        self.dispatched_task_sequence_success_count = get_metric_fields(
+            logger, cache, self._KEY_DISPATCHED_TASK_SEQUENCE_SUCCESS
+        )
 
         self.dispatched_task_sequence_failure_count = (
             get_metric(logger, cache, self._KEY_DISPATCHED_TASK_SEQUENCE_FAILURE) or 0

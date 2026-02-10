@@ -112,7 +112,7 @@ class AzureSessionMock:
     ) -> Result[list[dict[str, Any]], Failure]:
         if commandname == 'az.vm-image-list':
             return Ok(AZURE_IMAGE_LIST)
-        elif commandname == 'az.vm-flavors-list':
+        if commandname == 'az.vm-flavors-list':
             return Ok(AZURE_SIZE_LIST)
 
         return Error(Failure(f'Mock not set up for command {commandname}'))

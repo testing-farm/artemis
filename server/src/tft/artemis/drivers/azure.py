@@ -214,6 +214,7 @@ class AzureSession:
         self,
         logger: gluetool.log.ContextAdapter,
         options: list[str],
+        *,
         json_format: bool = True,
         commandname: Optional[str] = None,
     ) -> Result[Union[JSONType, str], Failure]:
@@ -261,13 +262,14 @@ class AzureSession:
         self,
         logger: gluetool.log.ContextAdapter,
         options: list[str],
+        *,
         json_format: bool = True,
         commandname: Optional[str] = None,
     ) -> Result[Union[JSONType, str], Failure]:
         if self._login_result is not None and self._login_result.is_error:
             return Error(self._login_result.unwrap_error())
 
-        return self._run_cmd(logger, options, json_format, commandname=commandname)
+        return self._run_cmd(logger, options, json_format=json_format, commandname=commandname)
 
 
 class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
@@ -529,7 +531,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
         raise NotImplementedError
 
     def update_snapshot(
-        self, guest_request: GuestRequest, snapshot_request: SnapshotRequest, start_again: bool = True
+        self, guest_request: GuestRequest, snapshot_request: SnapshotRequest, *, start_again: bool = True
     ) -> Result[ProvisioningProgress, Failure]:
         """
         Update state of the snapshot.
@@ -603,7 +605,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
             def _update_instance_usage(
                 logger: gluetool.log.ContextAdapter,
                 usage: PoolResourcesUsage,
-                raw_instance: Any,
+                raw_instance: Any,  # noqa: ANN401
                 flavor: Optional[Flavor],
             ) -> Result[None, Failure]:
                 assert usage.instances is not None  # narrow type

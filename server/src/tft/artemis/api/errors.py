@@ -37,6 +37,11 @@ def get_failure_details_from_request(request: Optional[Request]) -> dict[str, An
     }
 
 
+# An alias making it an explicit decision allow `Any` type.
+# This is inherited from the `detail` paramter of `fastapi.exceptions.HTTPException.__init__`
+ArtemisHTTPResponseType = Any
+
+
 # There will be a lot of copy paste when it comes to parameters of `__init__` methods. I'd love to replace
 # all the parameters with `*kwargs`, but at that moment mypy would lost track of types. It would be possible
 # to `raise BadRequestError(caused_by='this should have been a failure instance')`, and mypy wouldn't spot
@@ -48,8 +53,8 @@ class ArtemisHTTPError(HTTPException):
         *,
         status: int,
         message: Optional[str] = None,
-        response: Optional[Any] = None,
-        headers: Optional[Any] = None,
+        response: Optional[ArtemisHTTPResponseType] = None,
+        headers: Optional[dict[str, str]] = None,
         request: Optional[Request] = None,
         report_as_failure: bool = True,
         logger: Optional[gluetool.log.ContextAdapter] = None,
@@ -107,8 +112,8 @@ class InternalServerError(ArtemisHTTPError):
         self,
         *,
         message: Optional[str] = None,
-        response: Optional[Any] = None,
-        headers: Optional[Any] = None,
+        response: Optional[ArtemisHTTPResponseType] = None,
+        headers: Optional[dict[str, str]] = None,
         request: Optional[Request] = None,
         logger: Optional[gluetool.log.ContextAdapter] = None,
         caused_by: Optional[Failure] = None,
@@ -134,8 +139,8 @@ class BadRequestError(ArtemisHTTPError):
         self,
         *,
         message: Optional[str] = None,
-        response: Optional[Any] = None,
-        headers: Optional[Any] = None,
+        response: Optional[ArtemisHTTPResponseType] = None,
+        headers: Optional[dict[str, str]] = None,
         request: Optional[Request] = None,
         logger: Optional[gluetool.log.ContextAdapter] = None,
         caused_by: Optional[Failure] = None,
@@ -161,8 +166,8 @@ class NoSuchEntityError(ArtemisHTTPError):
         self,
         *,
         message: Optional[str] = None,
-        response: Optional[Any] = None,
-        headers: Optional[Any] = None,
+        response: Optional[ArtemisHTTPResponseType] = None,
+        headers: Optional[dict[str, str]] = None,
         request: Optional[Request] = None,
         logger: Optional[gluetool.log.ContextAdapter] = None,
         caused_by: Optional[Failure] = None,
@@ -189,8 +194,8 @@ class UnauthorizedError(ArtemisHTTPError):
         self,
         *,
         message: Optional[str] = None,
-        response: Optional[Any] = None,
-        headers: Optional[Any] = None,
+        response: Optional[ArtemisHTTPResponseType] = None,
+        headers: Optional[dict[str, str]] = None,
         request: Optional[Request] = None,
         logger: Optional[gluetool.log.ContextAdapter] = None,
         caused_by: Optional[Failure] = None,
@@ -217,8 +222,8 @@ class ForbiddenError(ArtemisHTTPError):
         self,
         *,
         message: Optional[str] = None,
-        response: Optional[Any] = None,
-        headers: Optional[Any] = None,
+        response: Optional[ArtemisHTTPResponseType] = None,
+        headers: Optional[dict[str, str]] = None,
         request: Optional[Request] = None,
         logger: Optional[gluetool.log.ContextAdapter] = None,
         caused_by: Optional[Failure] = None,
@@ -245,8 +250,8 @@ class ConflictError(ArtemisHTTPError):
         self,
         *,
         message: Optional[str] = None,
-        response: Optional[Any] = None,
-        headers: Optional[Any] = None,
+        response: Optional[ArtemisHTTPResponseType] = None,
+        headers: Optional[dict[str, str]] = None,
         request: Optional[Request] = None,
         logger: Optional[gluetool.log.ContextAdapter] = None,
         caused_by: Optional[Failure] = None,
@@ -273,8 +278,8 @@ class MethodNotAllowedError(ArtemisHTTPError):
         self,
         *,
         message: Optional[str] = None,
-        response: Optional[Any] = None,
-        headers: Optional[Any] = None,
+        response: Optional[ArtemisHTTPResponseType] = None,
+        headers: Optional[dict[str, str]] = None,
         request: Optional[Request] = None,
         logger: Optional[gluetool.log.ContextAdapter] = None,
         caused_by: Optional[Failure] = None,

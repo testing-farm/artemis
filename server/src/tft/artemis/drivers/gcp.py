@@ -118,8 +118,9 @@ class GCPDriver(PoolDriver):
         return _Ok(capabilities)
 
     @cached_property
-    def _service_account_info(self) -> Any:
-        return self.pool_config['service-account-info']
+    def _service_account_info(self) -> dict[Any, Any]:
+        # The type is validated using pool's jsonschema (object)
+        return cast(dict[Any, Any], self.pool_config['service-account-info'])
 
     def image_name_to_image_info(
         self, logger: gluetool.log.ContextAdapter, image_name: str
@@ -333,6 +334,7 @@ class GCPDriver(PoolDriver):
         disks: list[compute_v1.AttachedDisk],
         machine_type: Optional[str] = None,
         network_link: Optional[str] = None,
+        *,
         delete_protection: bool = False,
     ) -> Result[compute_v1.Instance, Failure]:
         network_link = network_link or self.pool_config['network-resource-url']
@@ -542,7 +544,7 @@ class GCPDriver(PoolDriver):
         raise NotImplementedError
 
     def update_snapshot(
-        self, guest_request: GuestRequest, snapshot_request: SnapshotRequest, start_again: bool = True
+        self, guest_request: GuestRequest, snapshot_request: SnapshotRequest, *, start_again: bool = True
     ) -> Result[ProvisioningProgress, Failure]:
         raise NotImplementedError
 
@@ -587,12 +589,7 @@ class GCPDriver(PoolDriver):
         # Resource usage - instances and flavors
         def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[list[compute_v1.Instance], Failure]:
             return Ok(
-                [
-                    instance
-                    for instance in self._instances_client.list(
-                        project=self.pool_config['project'], zone=self.pool_config['zone']
-                    )
-                ]
+                list(self._instances_client.list(project=self.pool_config['project'], zone=self.pool_config['zone']))
             )
 
         def _update_instance_usage(

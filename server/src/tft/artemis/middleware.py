@@ -626,7 +626,7 @@ class SingletonTask(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
 
         if not task_call.actor.options['singleton']:
             logger.debug('not a singleton')
-            return
+            return None
 
         from .cache import release_lock
 

@@ -48,10 +48,16 @@ if TYPE_CHECKING:
 
 T = TypeVar('T')
 
-LOGGER: contextvars.ContextVar[gluetool.log.ContextAdapter] = contextvars.ContextVar('LOGGER', default=get_logger())
+LOGGER: contextvars.ContextVar[gluetool.log.ContextAdapter] = contextvars.ContextVar(
+    'LOGGER',
+    default=get_logger(),  # noqa: B039
+)
 DATABASE: contextvars.ContextVar[DB] = contextvars.ContextVar('DATABASE')
 SESSION: contextvars.ContextVar[sqlalchemy.orm.session.Session] = contextvars.ContextVar('SESSION')
-CACHE: contextvars.ContextVar[redis.Redis] = contextvars.ContextVar('CACHE', default=get_cache(LOGGER.get()))
+CACHE: contextvars.ContextVar[redis.Redis] = contextvars.ContextVar(
+    'CACHE',
+    default=get_cache(LOGGER.get()),  # noqa: B039
+)
 CURRENT_MESSAGE: contextvars.ContextVar[Optional[dramatiq.broker.MessageProxy]] = contextvars.ContextVar(
     'CURRENT_MESSAGE'
 )

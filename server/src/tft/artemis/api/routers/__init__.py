@@ -21,6 +21,7 @@ import sentry_sdk.tracing
 import sqlalchemy
 import sqlalchemy.exc
 import sqlalchemy.orm.exc
+import sqlalchemy.sql.dml
 from fastapi import Depends, Request, Response, status
 from typing_extensions import ParamSpec
 
@@ -363,7 +364,7 @@ class GuestRequestManager:
                 guest_logger.info,
                 f'requested task #{task_request_id}',
                 TaskCall.from_call(
-                    guest_delete_task, guestname, task_request_id=task_request_id, *extra_actor_args
+                    guest_delete_task, guestname, *extra_actor_args, task_request_id=task_request_id
                 ).serialize(),
             )
 
@@ -552,7 +553,7 @@ def _parse_environment(
             logger=logger,
             caused_by=Failure.from_exc('failed to parse environment', exc),
             failure_details=failure_details,
-        )
+        ) from exc
 
 
 def _parse_security_group_rules(
@@ -569,7 +570,7 @@ def _parse_security_group_rules(
             logger=logger,
             caused_by=Failure.from_exc('failed to parse security group rules', exc),
             failure_details=failure_details,
-        )
+        ) from exc
 
 
 def _parse_log_types(
@@ -588,7 +589,7 @@ def _parse_log_types(
                 logger=logger,
                 caused_by=Failure.from_exc('cannot convert log type to GuestLogContentType object', exc),
                 failure_details=failure_details,
-            )
+            ) from exc
 
     return parsed_log_types
 
@@ -632,7 +633,7 @@ def delete_guest(
 
     manager.delete_by_guestname(guestname, logger)
 
-    return None
+    return
 
 
 class GuestEventManager:
@@ -679,7 +680,7 @@ class GuestEventManager:
 def execute_dml(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
-    query: Any,
+    query: sqlalchemy.sql.dml.UpdateBase,
     conflict_error: Union[
         type[errors.ConflictError], type[errors.NoSuchEntityError], type[errors.InternalServerError]
     ] = errors.ConflictError,
@@ -706,7 +707,7 @@ def execute_dml(
 
 @contextlib.contextmanager
 def get_session(
-    logger: gluetool.log.ContextAdapter, db: artemis_db.DB, read_only: bool = False
+    logger: gluetool.log.ContextAdapter, db: artemis_db.DB, *, read_only: bool = False
 ) -> Generator[tuple[sqlalchemy.orm.session.Session, artemis_db.TransactionResult], None, None]:
     with db.get_session(logger, read_only=read_only) as session:
         with artemis_db.transaction(logger, session) as t:
@@ -776,7 +777,7 @@ class GuestShelfManager:
 
         manager.delete_by_shelfname(shelfname, logger)
 
-        return None
+        return
 
     @staticmethod
     def entry_delete_shelved_guest(
@@ -796,7 +797,7 @@ class GuestShelfManager:
         metrics.ShelfMetrics.inc_forced_removals(guest.shelf)
         metrics.ShelfMetrics.inc_removals(guest.shelf)
 
-        return None
+        return
 
     def __init__(self, db: Annotated[artemis_db.DB, Depends(get_db)]) -> None:
         self.db = db
@@ -1104,7 +1105,7 @@ class KnobManager:
     def entry_delete_knob(manager: 'KnobManager', logger: gluetool.log.ContextAdapter, knobname: str) -> None:
         manager.delete_knob(logger, knobname)
 
-        return None
+        return
 
     def get_knobs(self, logger: gluetool.log.ContextAdapter) -> list[KnobResponse]:
         knobs: dict[str, KnobResponse] = {}
@@ -1116,7 +1117,7 @@ class KnobManager:
             )
 
         # Second, update editable knobs.
-        for knobname, knob in Knob.DB_BACKED_KNOBS.items():
+        for knobname, _ in Knob.DB_BACKED_KNOBS.items():
             assert knobname in knobs
 
             knobs[knobname].editable = True
@@ -1225,7 +1226,7 @@ class KnobManager:
                     logger=logger,
                     caused_by=Failure.from_exc('cannot cast knob value', exc),
                     failure_details=failure_details,
-                )
+                ) from exc
 
             artemis_db.upsert(
                 logger,
@@ -1281,7 +1282,7 @@ class CacheManager:
         if r_dispatch.is_error:
             raise errors.InternalServerError(caused_by=r_dispatch.unwrap_error(), logger=logger)
 
-        return None
+        return
 
     #
     # Entry points hooked to routes
@@ -1381,8 +1382,8 @@ class UserManager:
         try:
             actual_role = artemis_db.UserRoles(user_request.role)
 
-        except ValueError:
-            raise errors.BadRequestError(failure_details={'username': username, 'role': user_request.role})
+        except ValueError as exc:
+            raise errors.BadRequestError(failure_details={'username': username, 'role': user_request.role}) from exc
 
         manager.create_user(logger, username, actual_role)
 
@@ -1393,7 +1394,7 @@ class UserManager:
     def entry_delete_user(manager: 'UserManager', logger: gluetool.log.ContextAdapter, username: str) -> None:
         manager.delete_user(logger, username)
 
-        return None
+        return
 
     @staticmethod
     def entry_reset_token(
@@ -1402,8 +1403,8 @@ class UserManager:
         try:
             actual_tokentype = TokenTypes(tokentype)
 
-        except ValueError:
-            raise errors.BadRequestError(failure_details={'username': username, 'tokentype': tokentype})
+        except ValueError as exc:
+            raise errors.BadRequestError(failure_details={'username': username, 'tokentype': tokentype}) from exc
 
         return manager.reset_token(logger, username, actual_tokentype)
 
@@ -1475,7 +1476,7 @@ class UserManager:
                 )
 
             else:
-                assert False, 'Unreachable'
+                raise AssertionError('Unreachable')
 
             execute_dml(logger, session, query, failure_details={'username': username, 'tokentype': tokentype.value})
 
@@ -1605,7 +1606,7 @@ def create_guest_request_log(
             guest_logger, session, guestname, 'guest-log-requested', logname=logname, contenttype=contenttype
         )
 
-    return None
+    return
 
 
 def get_metrics(
@@ -1707,4 +1708,4 @@ def preprovision_guest(
 
     manager.preprovision(shelfname, preprovisioning_request, ownername, logger, schemas[api_version])
 
-    return None
+    return

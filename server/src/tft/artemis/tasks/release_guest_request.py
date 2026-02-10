@@ -42,7 +42,7 @@ class Workspace(_Workspace):
             self.load_guest_request(self.guestname, state=GuestState.CONDEMNED)
 
             if self.result:
-                return
+                return None
 
             assert self.gr
 
@@ -50,7 +50,7 @@ class Workspace(_Workspace):
                 self.load_gr_pool()
 
                 if self.result:
-                    return
+                    return None
 
                 assert self.pool
 

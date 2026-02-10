@@ -24,7 +24,7 @@ from .. import (
 from ..db import DB, GuestShelf, GuestTag, Pool, PoolTag, PriorityGroup, SSHKey, User, UserRoles, upsert
 from ..drivers import PoolDriver, Tags
 from ..guest import GuestState
-from ..knobs import KNOB_DISABLE_CERT_VERIFICATION
+from ..knobs import KNOB_DISABLE_CERT_VERIFICATION, KNOB_HTTP_TIMEOUT
 
 
 def _load_bundled_schema(logger: gluetool.log.ContextAdapter) -> tuple[JSONSchemaType, dict[str, JSONSchemaType]]:
@@ -101,7 +101,9 @@ def _load_remote_schema(
         logger.debug(f'fetching schema {url}')
 
         try:
-            response = requests.get(url, verify=not KNOB_DISABLE_CERT_VERIFICATION.value)
+            response = requests.get(
+                url, verify=not KNOB_DISABLE_CERT_VERIFICATION.value, timeout=KNOB_HTTP_TIMEOUT.value
+            )
 
             if response.status_code == 404:
                 return Ok({})
@@ -354,8 +356,8 @@ def config_to_db(logger: gluetool.log.ContextAdapter, db: DB, server_config: dic
                 try:
                     role = UserRoles[user_config['role'].upper()]
 
-                except KeyError:
-                    raise Exception(f'Unknown role "{user_config["role"]}" of user "{username}"')
+                except KeyError as exc:
+                    raise Exception(f'Unknown role "{user_config["role"]}" of user "{username}"') from exc
 
             else:
                 role = UserRoles.USER
@@ -419,18 +421,18 @@ def config_to_db(logger: gluetool.log.ContextAdapter, db: DB, server_config: dic
 
         t.failure.handle(logger)
 
-        assert False, 'Failed to successfully populate DB'
+        raise AssertionError('Failed to successfully populate DB')
 
 
 @click.group()
 @click.pass_context
-def cmd_root(ctx: Any) -> None:
+def cmd_root(ctx: click.Context) -> None:
     pass
 
 
 @cmd_root.command(name='config-to-db', help='Write the given configuration into DB. Obeys all environment variables.')
 @click.pass_context
-def cmd_config_to_db(ctx: Any) -> None:
+def cmd_config_to_db(ctx: click.Context) -> None:
     logger = get_logger()
     server_config = get_config()
     db = get_db(logger)
@@ -450,7 +452,7 @@ def cmd_config_to_db(ctx: Any) -> None:
     help='If specified, the given schema would be used instead of the packaged one.',
 )
 @click.pass_context
-def cmd_validate_config(ctx: Any, custom_schema: Optional[str] = None) -> None:
+def cmd_validate_config(ctx: click.Context, custom_schema: Optional[str] = None) -> None:
     logger = get_logger()
     server_config = get_config()
 

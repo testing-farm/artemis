@@ -310,7 +310,7 @@ def fixture_redis(
     def get_cache(logger: gluetool.log.ContextAdapter) -> redislite.Redis:
         return redislite.Redis(dbfilename=str(redis_db_file))
 
-    mock_contextvar = contextvars.ContextVar('CACHE', default=get_cache(logger))
+    mock_contextvar = contextvars.ContextVar('CACHE', default=get_cache(logger))  # noqa: B039
 
     monkeypatch.setattr(tft.artemis, 'get_cache', get_cache)
     monkeypatch.setattr(tft.artemis.context, 'get_cache', get_cache)
@@ -372,8 +372,8 @@ def fixture_current_message() -> Generator[dramatiq.MessageProxy, None, None]:
         queue_name='dummy-queue-name',
         actor_name='dummy-actor-name',
         args=(MagicMock(name='mock_actor_arg1'), MagicMock(name='mock_actor_arg2')),
-        kwargs=dict(),
-        options=dict(),
+        kwargs={},
+        options={},
     )
 
     proxy = dramatiq.MessageProxy(message)

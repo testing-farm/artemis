@@ -142,6 +142,24 @@ KNOB_API_ENGINE_WORKER_RESTART_REQUESTS_SPREAD: Knob[int] = Knob(
     default=0,
 )
 
+KNOB_API_ENGINE_BIND_ADDRESS: Knob[str] = Knob(
+    'api.engine.bind.address',
+    'Address to bind the listening socket to.',
+    has_db=False,
+    envvar='ARTEMIS_API_ENGINE_BIND_ADDRESS',
+    cast_from_str=str,
+    default='0.0.0.0',  # noqa: S104
+)
+
+KNOB_API_ENGINE_BIND_PORT: Knob[int] = Knob(
+    'api.engine.bind.port',
+    'Port to bind the listening socket to.',
+    has_db=False,
+    envvar='ARTEMIS_API_ENGINE_BIND_PORT',
+    cast_from_str=int,
+    default=8001,
+)
+
 
 # Precompile the profiling path pattern
 try:
@@ -288,9 +306,9 @@ def _main_uvicorn() -> NoReturn:
         'tft.artemis.api:run_app',
         '--factory',
         '--host',
-        '0.0.0.0',
+        KNOB_API_ENGINE_BIND_ADDRESS.value,
         '--port',
-        '8001',
+        str(KNOB_API_ENGINE_BIND_PORT.value),
         '--workers',
         str(KNOB_API_PROCESSES.value),
         '--access-log',
@@ -323,7 +341,7 @@ def _main_gunicorn() -> NoReturn:
         '-k',
         'tft.artemis.api.UvicornWorker',
         '--bind',
-        '0.0.0.0:8001',
+        f'{KNOB_API_ENGINE_BIND_ADDRESS.value}:{KNOB_API_ENGINE_BIND_PORT.value}',
         '--workers',
         str(KNOB_API_PROCESSES.value),
         '--threads',
