@@ -452,11 +452,14 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
                 )
 
             return Ok(
-                IBMCloudPowerInstance(
-                    id=instance['pvmInstanceID'],
-                    name=instance['serverName'],
-                    status=instance['status'],
-                    created_at=created_at.unwrap(),
+                cast(
+                    InstanceT,
+                    IBMCloudPowerInstance(
+                        id=instance['pvmInstanceID'],
+                        name=instance['serverName'],
+                        status=instance['status'],
+                        created_at=created_at.unwrap(),
+                    ),
                 )
             )
 
