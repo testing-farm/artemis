@@ -62,6 +62,7 @@ from ..security_group_rules import SecurityGroupRule, SecurityGroupRules
 from . import (
     FlavorBasedPoolDriver,
     GuestLogUpdateProgress,
+    Instance,
     PoolCapabilities,
     PoolData,
     PoolDriver,
@@ -1478,7 +1479,7 @@ _AWS_BOOT_MODE_MATRIX = [
 ]
 
 
-class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
+class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor, Instance]):
     drivername = 'aws'
 
     image_info_class = AWSPoolImageInfo

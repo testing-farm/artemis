@@ -40,6 +40,7 @@ from . import (
     CanAcquire,
     FlavorBasedPoolDriver,
     GuestLogUpdateProgress,
+    Instance,
     PoolCapabilities,
     PoolData,
     PoolDriver,
@@ -49,7 +50,6 @@ from . import (
     ProvisioningProgress,
     ProvisioningState,
     ReleasePoolResourcesState,
-    Resource,
     ResourceManager,
     SerializedPoolResourcesIDs,
     create_tempfile,
@@ -157,7 +157,7 @@ class AzurePoolImageInfo(PoolImageInfo):
 
 
 @dataclasses.dataclass
-class AzureInstance(Resource):
+class AzureInstance(Instance):
     id: str
     vm_id: str
     name: str
@@ -315,7 +315,7 @@ class AzureSession:
         return self._run_cmd(logger, options, json_format, commandname=commandname)
 
 
-class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
+class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, AzureInstance]):
     drivername = 'azure'
 
     image_info_class = AzurePoolImageInfo

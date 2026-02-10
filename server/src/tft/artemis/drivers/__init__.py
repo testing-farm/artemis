@@ -388,13 +388,12 @@ KNOB_PARALLEL_CLI_SESSIONS: Knob[int] = Knob(
     default=4,
 )
 
-# XXX FIXME Rename to resources limit
-KNOB_INSTANCES_PER_REQUEST_LIMIT: Knob[int] = Knob(
-    'pool.instances-per-request-limit',
+KNOB_RESOURCES_PER_REQUEST_LIMIT: Knob[int] = Knob(
+    'pool.resources-per-request-limit',
     'Maximum number of instances allowed to be present in cloud simultaneously for a single guest request',
     has_db=False,
     per_entity=True,
-    envvar='ARTEMIS_POOL_INSTANCES_PER_REQUEST_LIMIT',
+    envvar='ARTEMIS_POOL_RESOURCES_PER_REQUEST_LIMIT',
     cast_from_str=int,
     default=7,
 )
@@ -2860,7 +2859,7 @@ class FlavorFilter(Protocol, Generic[FlavorT]):
         pass
 
 
-class FlavorBasedPoolDriver(PoolDriver, Generic[PoolImageInfoT, FlavorT]):
+class FlavorBasedPoolDriver(PoolDriver, Generic[PoolImageInfoT, FlavorT, InstanceT]):
     """
     A base class for drivers spawning guests from "images" and "flavors".
 
@@ -3824,7 +3823,7 @@ class ResourceManager(Generic[ResourceT]):
             claimed_names = {leftover.name for leftover in leftover_resources}
 
             if resource_name in claimed_names:
-                r_max_resources_limit = KNOB_INSTANCES_PER_REQUEST_LIMIT.get_value(entityname=self.pool.poolname)
+                r_max_resources_limit = KNOB_RESOURCES_PER_REQUEST_LIMIT.get_value(entityname=self.pool.poolname)
                 if r_max_resources_limit.is_error:
                     return Error(Failure('Could not get max resources per request limit'))
 

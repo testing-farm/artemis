@@ -210,7 +210,9 @@ class IBMCloudSession(CLISessionPermanentDir):
         return Ok(None)
 
 
-class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor], Generic[IBMCloudInstanceT]):
+class IBMCloudDriver(
+    FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor, IBMCloudInstance], Generic[IBMCloudInstanceT]
+):
     drivername = 'abstract-ibmcloud-driver'
 
     flavor_info_class = IBMCloudFlavor
