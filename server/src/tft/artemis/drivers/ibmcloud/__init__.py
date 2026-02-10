@@ -16,9 +16,11 @@ from gluetool.result import Error, Ok, Result
 from returns.pipeline import is_successful
 
 from tft.artemis.drivers import (
-    KNOB_INSTANCES_PER_REQUEST_LIMIT,
+    KNOB_RESOURCES_PER_REQUEST_LIMIT,
     CLISessionPermanentDir,
     FlavorBasedPoolDriver,
+    Instance,
+    InstanceT,
     PoolData,
     PoolImageInfo,
     PoolResourcesIDs,
@@ -28,7 +30,7 @@ from tft.artemis.drivers import (
     create_tempfile,
 )
 
-from ... import Failure, SerializableContainer, render_template
+from ... import Failure, render_template
 from ...db import GuestRequest
 from ...environment import Flavor
 from ...knobs import Knob
@@ -57,9 +59,19 @@ IBMCLOUD_DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S.%fZ'
 
 
 @dataclasses.dataclass
-class IBMCloudInstance(SerializableContainer):
-    id: str
-    name: str
+class IBMCloudPoolData(PoolData):
+    instance_id: Optional[str] = None
+    instance_name: Optional[str] = None
+
+
+@dataclasses.dataclass
+class IBMCloudPoolResourcesIDs(PoolResourcesIDs):
+    instance_id: Optional[str] = None
+    assorted_resource_ids: Optional[list[dict[str, str]]] = None
+
+
+@dataclasses.dataclass
+class IBMCloudInstance(Instance):
     status: str
     created_at: datetime.datetime
 
@@ -77,6 +89,9 @@ class IBMCloudInstance(SerializableContainer):
     @functools.cached_property
     def is_error(self) -> bool:
         raise NotImplementedError
+
+    def to_pool_resource_ids(self) -> IBMCloudPoolResourcesIDs:
+        return IBMCloudPoolResourcesIDs(instance_id=self.id)
 
     def serialize(self) -> dict[str, Any]:
         serialized = super().serialize()
@@ -97,18 +112,6 @@ class IBMCloudInstance(SerializableContainer):
 
 
 IBMCloudInstanceT = TypeVar('IBMCloudInstanceT', bound=IBMCloudInstance)
-
-
-@dataclasses.dataclass
-class IBMCloudPoolData(PoolData):
-    instance_id: Optional[str] = None
-    instance_name: Optional[str] = None
-
-
-@dataclasses.dataclass
-class IBMCloudPoolResourcesIDs(PoolResourcesIDs):
-    instance_id: Optional[str] = None
-    assorted_resource_ids: Optional[list[dict[str, str]]] = None
 
 
 @dataclasses.dataclass
@@ -421,7 +424,7 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor], Gener
             claimed_names = {leftover.name for leftover in leftover_instances}
 
             if instance_name in claimed_names:
-                r_max_instances_limit = KNOB_INSTANCES_PER_REQUEST_LIMIT.get_value(entityname=self.poolname)
+                r_max_instances_limit = KNOB_RESOURCES_PER_REQUEST_LIMIT.get_value(entityname=self.poolname)
                 if r_max_instances_limit.is_error:
                     return Error(Failure('Could not get max instances per request limit'))
 
@@ -453,13 +456,16 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor], Gener
             with create_tempfile(file_contents=post_install_script) as user_data_file:
                 r_output: Result[IBMCloudInstanceT, Failure] = self.create_instance(
                     logger=logger,
+                    guest_request=guest_request,
                     flavor=flavor,
                     image=image,
                     instance_name=instance_name,
                     user_data_file=user_data_file,
                 )
         else:
-            r_output = self.create_instance(logger=logger, flavor=flavor, image=image, instance_name=instance_name)
+            r_output = self.create_instance(
+                logger=logger, guest_request=guest_request, flavor=flavor, image=image, instance_name=instance_name
+            )
 
         if r_output.is_error:
             return Error(r_output.unwrap_error())
@@ -485,11 +491,13 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor], Gener
     def create_instance(
         self,
         logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest,
         flavor: Flavor,
         image: PoolImageInfo,
         instance_name: str,
         user_data_file: Optional[str] = None,
-    ) -> Result[IBMCloudInstanceT, Failure]:
+        tags: Optional[dict[str, str]] = None,
+    ) -> Result[InstanceT, Failure]:
         """This method will issue a cloud instance create request"""
 
         raise NotImplementedError

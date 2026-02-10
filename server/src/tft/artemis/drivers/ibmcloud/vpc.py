@@ -12,7 +12,7 @@ import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 from tmt.hardware import UNITS
 
-from tft.artemis.drivers import PoolDriver, PoolImageInfo
+from tft.artemis.drivers import InstanceT, PoolDriver, PoolImageInfo
 from tft.artemis.drivers.ibmcloud import (
     IBMCloudDriver,
     IBMCloudFlavor,
@@ -413,11 +413,13 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
     def create_instance(
         self,
         logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest,
         flavor: Flavor,
         image: PoolImageInfo,
         instance_name: str,
         user_data_file: Optional[str] = None,
-    ) -> Result[IBMCloudVPCInstance, Failure]:
+        tags: Optional[dict[str, str]] = None,
+    ) -> Result[InstanceT, Failure]:
         with IBMCloudSession(logger, self) as session:
             r_subnet_show = session.run(
                 logger,
