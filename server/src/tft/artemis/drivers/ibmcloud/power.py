@@ -463,11 +463,6 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
                 )
             )
 
-    def acquire_guest(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
-    ) -> Result[ProvisioningProgress, Failure]:
-        return self.do_acquire_guest(logger, session, guest_request)
-
     def update_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
