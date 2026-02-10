@@ -437,11 +437,6 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance, BackendFlavor]):
 
             return Ok(res)
 
-    def acquire_guest(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
-    ) -> Result[ProvisioningProgress, Failure]:
-        return self.do_acquire_guest(logger, session, guest_request)
-
     def create_instance(
         self,
         logger: gluetool.log.ContextAdapter,
