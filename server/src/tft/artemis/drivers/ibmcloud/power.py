@@ -13,7 +13,7 @@ from gluetool.result import Error, Ok, Result
 from returns.result import Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
 
-from tft.artemis.drivers import PoolDriver, PoolImageInfo, PoolImageInfoT
+from tft.artemis.drivers import InstanceT, PoolDriver, PoolImageInfo, PoolImageInfoT
 from tft.artemis.drivers.ibmcloud import (
     IBMCloudDriver,
     IBMCloudFlavor,
@@ -402,11 +402,13 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance, None]):
     def create_instance(
         self,
         logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest,
         flavor: Flavor,
         image: PoolImageInfo,
         instance_name: str,
         user_data_file: Optional[str] = None,
-    ) -> Result[IBMCloudPowerInstance, Failure]:
+        tags: Optional[dict[str, str]] = None,
+    ) -> Result[InstanceT, Failure]:
         # Here will be setting defaults for memory, just in case.
         memory = flavor.memory.to('GiB').magnitude if flavor.memory else 4
         # Unusable flavors missing processors/threads_per_core should be already filtered out

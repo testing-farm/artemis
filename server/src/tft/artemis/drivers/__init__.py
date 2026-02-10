@@ -7,6 +7,7 @@ import dataclasses
 import datetime
 import enum
 import fcntl
+import functools
 import hashlib
 import json
 import os
@@ -392,12 +393,12 @@ KNOB_PARALLEL_CLI_SESSIONS: Knob[int] = Knob(
     default=4,
 )
 
-KNOB_INSTANCES_PER_REQUEST_LIMIT: Knob[int] = Knob(
-    'pool.instances-per-request-limit',
-    'Maximum number of instances allowed to be present in cloud simultaneously for a single guest request',
+KNOB_RESOURCES_PER_REQUEST_LIMIT: Knob[int] = Knob(
+    'pool.resources-per-request-limit',
+    'Maximum number of resources allowed to be present in cloud simultaneously for a single guest request',
     has_db=False,
     per_entity=True,
-    envvar='ARTEMIS_POOL_INSTANCES_PER_REQUEST_LIMIT',
+    envvar='ARTEMIS_POOL_RESOURCES_PER_REQUEST_LIMIT',
     cast_from_str=int,
     default=7,
 )
@@ -1334,6 +1335,38 @@ def render_tags(
     return _Ok(tags)
 
 
+@dataclasses.dataclass
+class Resource(SerializableContainer, abc.ABC):
+    name: str
+
+    @functools.cached_property
+    def is_pending(self) -> bool:
+        return True
+
+    @functools.cached_property
+    def is_ready(self) -> bool:
+        return True
+
+    @functools.cached_property
+    def is_error(self) -> bool:
+        return False
+
+    @abc.abstractmethod
+    def to_pool_resource_ids(self) -> PoolResourcesIDs:
+        raise NotImplementedError
+
+
+ResourceT = TypeVar('ResourceT', bound=Resource)
+
+
+@dataclasses.dataclass
+class Instance(Resource):
+    id: str
+
+
+InstanceT = TypeVar('InstanceT', bound=Instance)
+
+
 class PoolDriver(gluetool.log.LoggerMixin, abc.ABC):
     drivername: str
 
@@ -1829,6 +1862,20 @@ class PoolDriver(gluetool.log.LoggerMixin, abc.ABC):
         guest_request.log_event(logger, session, 'acquisition-attempt', **scrubbed_details)
 
         return Ok(None)
+
+    @abc.abstractmethod
+    def create_instance(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest,
+        flavor: Flavor,
+        image: PoolImageInfo,
+        instance_name: str,
+        user_data_file: Optional[str] = None,
+        tags: Optional[dict[str, str]] = None,
+    ) -> Result[InstanceT, Failure]:
+        """This method will issue a cloud instance create request"""
+        raise NotImplementedError
 
     @abc.abstractmethod
     def acquire_guest(
@@ -2983,6 +3030,65 @@ class FlavorBasedPoolDriver(PoolDriver, abc.ABC, Generic[PoolImageInfoT, FlavorT
 
         return Ok((CanAcquire(), pairs))
 
+    def create_guest(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        instance_name: str,
+    ) -> Result[InstanceT, Failure]:
+        """
+        That is the generic workflow of guest creation performed for each flavor-based driver.
+        Compose mappings check, find image/flavor, attempt to run a cloud create command, return the provisioned guest.
+        """
+        r_image_flavor_pairs = self._collect_image_flavor_pairs(logger, session, guest_request)
+
+        if r_image_flavor_pairs.is_error:
+            return Error(r_image_flavor_pairs.unwrap_error())
+
+        can_acquire, pairs = r_image_flavor_pairs.unwrap()
+
+        if not can_acquire.can_acquire:
+            assert can_acquire.reason is not None
+
+            return Error(Failure(can_acquire.reason.message))
+
+        image, flavor = pairs[0]
+
+        self.log_acquisition_attempt(logger, session, guest_request, flavor=flavor, image=image)
+
+        r_post_install_script = self.generate_post_install_script(guest_request)
+        if r_post_install_script.is_error:
+            return Error(
+                Failure.from_failure('Could not generate post-install script', r_post_install_script.unwrap_error())
+            )
+
+        post_install_script = r_post_install_script.unwrap()
+        if post_install_script:
+            with create_tempfile(file_contents=post_install_script) as user_data_file:
+                r_output: Result[InstanceT, Failure] = self.create_instance(
+                    logger=logger,
+                    guest_request=guest_request,
+                    flavor=flavor,
+                    image=image,
+                    instance_name=instance_name,
+                    user_data_file=user_data_file,
+                )
+        else:
+            r_output = self.create_instance(
+                logger=logger, guest_request=guest_request, flavor=flavor, image=image, instance_name=instance_name
+            )
+
+        if r_output.is_error:
+            return Error(r_output.unwrap_error())
+
+        created = r_output.unwrap()
+
+        if not created.id:
+            return Error(Failure('Instance id not found', guestname=guest_request.guestname))
+
+        return Ok(created)
+
     def can_acquire(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[CanAcquire, Failure]:
@@ -3528,3 +3634,128 @@ class CLISessionPermanentDir(abc.ABC):
             return Error(self._login_result.unwrap_error())
 
         return self._run_cmd(logger, options, json_format=json_format, commandname=commandname)
+
+
+class ResourceCreateCallback(Protocol, Generic[ResourceT]):
+    def __call__(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        unique_identifier: str,
+    ) -> Result[ResourceT, Failure]:
+        pass
+
+
+class ResourceListCallback(Protocol, Generic[ResourceT]):
+    def __call__(
+        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
+    ) -> Result[list[ResourceT], Failure]:
+        pass
+
+
+class ResourceIdentifierCallback(Protocol):
+    def __call__(self, guest_request: GuestRequest) -> Result[str, Failure]:
+        pass
+
+
+class ResourceManager(Generic[ResourceT]):
+    def __init__(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        pool: PoolDriver,
+        resource_type: str,
+        resource_list_callback: ResourceListCallback[ResourceT],
+        resource_create_callback: ResourceCreateCallback[ResourceT],
+        resource_identifier_callback: ResourceIdentifierCallback,
+    ) -> None:
+        self.logger = logger
+        self.pool = pool
+        self.resource_type = resource_type
+        self.resource_create_callback = resource_create_callback
+        self.resource_list_callback = resource_list_callback
+        self.resource_identifier_callback = resource_identifier_callback
+
+    def acquire(
+        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest, session: sqlalchemy.orm.session.Session
+    ) -> Result[ResourceT, Failure]:
+        r_resource_name = self.resource_identifier_callback(guest_request)
+        if r_resource_name.is_error:
+            return Error(Failure.from_failure('Could not get resource name', r_resource_name.unwrap_error()))
+        resource_name = r_resource_name.unwrap()
+
+        r_existing_resources = self.resource_list_callback(self.logger, guest_request)
+        if r_existing_resources.is_error:
+            return Error(
+                Failure.from_failure(
+                    'Could not list already allocated resources for guest request', r_existing_resources.unwrap_error()
+                )
+            )
+        existing_resources = r_existing_resources.unwrap()
+
+        if existing_resources:
+            # Let's check state first - if the resource is already broken it is of no use to us, while resources in
+            # build or active state can be reused.
+
+            pending_resources = [
+                resource for resource in existing_resources if resource.is_pending or resource.is_ready
+            ]
+            error_resources = [resource for resource in existing_resources if resource.is_error]
+            leftover_resources = pending_resources[1:] + error_resources
+
+            # Schedule cleanup of resources we won't use
+            for leftover in leftover_resources:
+                self.pool.dispatch_resource_cleanup(
+                    self.logger,
+                    session,
+                    leftover.to_pool_resource_ids(),
+                    guest_request=guest_request,
+                )
+
+            if pending_resources:
+                # At least one reusable resource has been found
+                # Resources are sorted by provisioning time, let's take the first provisioned one.
+                resource_to_use = pending_resources[0]
+
+                if len(pending_resources) > 1:
+                    Failure(
+                        'Multiple reusable resources found for a guest request',
+                        guestname=guest_request.guestname,
+                        poolname=self.pool.poolname,
+                        resource_ids=[resource.name for resource in pending_resources],
+                        chosen_resource=resource_to_use.name,
+                    ).handle(self.logger)
+
+                return Ok(resource_to_use)
+
+            # If we ended up here this means all preallocated resources are in unusable state. At the same time we may
+            # not be able to use the expected artemis-GUESTNAME naming as clouds may not allow two resources with the
+            # same name. So let's generate a postfix, append it to the expected name, this way the resource will be
+            # tracked in a list_resources call among related to this guest request.
+            # To avoid going into eternal loop the iterations will be limited by resources_per_request_limit knob,
+            # and once exhausted a definitive error will be returned so that request could be given another
+            # chance by a different pool.
+            claimed_names = {leftover.name for leftover in leftover_resources}
+
+            if resource_name in claimed_names:
+                r_max_resources_limit = KNOB_RESOURCES_PER_REQUEST_LIMIT.get_value(entityname=self.pool.poolname)
+                if r_max_resources_limit.is_error:
+                    return Error(Failure('Could not get max resources per request limit'))
+
+                # Can't use the expected resource_name because there is a leftover resource with this name. Let's try
+                # to pick up a new one
+                for postfix in range(1, r_max_resources_limit.unwrap()):
+                    resource_name = f'{resource_name}-{postfix}'
+                    if resource_name not in claimed_names:
+                        break
+                else:
+                    # seems that all allowed names are already claimed by leftover resources, which means something
+                    # is wrong -> can't continue
+                    return Error(
+                        Failure(
+                            'Too many leftover resources', resource_type=self.resource_type, pool=self.pool.poolname
+                        )
+                    )
+
+        # If we reached here -> we identified the name of the resource to be created, let's create one!
+        return self.resource_create_callback(self.logger, session, guest_request, resource_name)
