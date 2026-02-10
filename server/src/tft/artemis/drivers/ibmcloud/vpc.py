@@ -522,11 +522,14 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance, BackendFlavor]):
                     )
                 )
             return Ok(
-                IBMCloudVPCInstance(
-                    id=instance['id'],
-                    name=instance['name'],
-                    status=instance['status'],
-                    created_at=created_at.unwrap(),
+                cast(
+                    InstanceT,
+                    IBMCloudVPCInstance(
+                        id=instance['id'],
+                        name=instance['name'],
+                        status=instance['status'],
+                        created_at=created_at.unwrap(),
+                    ),
                 )
             )
 
