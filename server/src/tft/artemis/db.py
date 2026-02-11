@@ -856,10 +856,10 @@ class _PoolDataMapping:
 
         return pool_data_class.unserialize(pool_data)
 
-    def mine_or_none(self, pool: 'PoolDriver', pool_data_class: type[PoolDataT]) -> Optional[PoolDataT]:
+    def mine_or_none(self, pool: 'PoolDriver[Any]', pool_data_class: type[PoolDataT]) -> Optional[PoolDataT]:
         return self.one_or_none(pool.poolname, pool_data_class)
 
-    def mine(self, pool: 'PoolDriver', pool_data_class: type[PoolDataT]) -> PoolDataT:
+    def mine(self, pool: 'PoolDriver[Any]', pool_data_class: type[PoolDataT]) -> PoolDataT:
         return self.one(pool.poolname, pool_data_class)
 
     def update(self, poolname: str, pool_data: PoolDataT) -> SerializedPoolDataMapping:

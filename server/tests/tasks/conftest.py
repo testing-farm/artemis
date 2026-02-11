@@ -1,6 +1,7 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
+from typing import Any
 from unittest.mock import MagicMock
 
 import gluetool.log
@@ -23,7 +24,7 @@ def fixture_dummy_guest_request(workspace: Workspace) -> MagicMock:
 @pytest.fixture(name='dummy_pool')
 def fixture_dummy_pool(
     logger: gluetool.log.ContextAdapter, workspace: Workspace, dummy_guest_request: GuestRequest
-) -> tft.artemis.drivers.PoolDriver:
+) -> tft.artemis.drivers.PoolDriver[Any]:
     assert workspace.gr
 
     workspace.gr.poolname = 'dummy-pool'

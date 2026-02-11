@@ -27,6 +27,7 @@ from . import (
     CanAcquire,
     ConfigImageFilter,
     ConsoleUrlData,
+    Instance,
     PoolCapabilities,
     PoolData,
     PoolDriver,
@@ -79,7 +80,7 @@ class GCPPoolResourcesIDs(PoolResourcesIDs):
     zone: Optional[str] = None
 
 
-class GCPDriver(PoolDriver):
+class GCPDriver(PoolDriver[Instance]):
     drivername = 'gcp'
 
     pool_data_class = GCPPoolData

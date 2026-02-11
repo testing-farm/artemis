@@ -39,6 +39,7 @@ from . import (
     ConsoleUrlData,
     FlavorBasedPoolDriver,
     GuestLogUpdateProgress,
+    Instance,
     PoolCapabilities,
     PoolData,
     PoolDriver,
@@ -277,7 +278,7 @@ class AzureSession:
         return self._run_cmd(logger, options, json_format=json_format, commandname=commandname)
 
 
-class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, BackendFlavor]):
+class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, BackendFlavor, Instance]):
     drivername = 'azure'
 
     image_info_class = AzurePoolImageInfo

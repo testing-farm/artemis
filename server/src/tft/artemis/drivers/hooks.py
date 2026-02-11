@@ -7,7 +7,7 @@ Helpers for driver hooks. Common, often-used actions and primitives.
 
 import os
 import threading
-from typing import Optional
+from typing import Any, Optional
 
 import gluetool.log
 import gluetool.utils
@@ -79,7 +79,7 @@ def get_pattern_map(
 
 def map_environment_to_imagename_by_pattern_map(
     logger: gluetool.log.ContextAdapter,
-    pool: PoolDriver,
+    pool: PoolDriver[Any],
     environment: Environment,
     needle_template: str,
     mapping_filename: Optional[str] = None,
@@ -141,7 +141,7 @@ def map_environment_to_imagename_by_pattern_map(
 
 def map_environment_to_image_info(
     logger: gluetool.log.ContextAdapter,
-    pool: PoolDriver,
+    pool: PoolDriver[Any],
     environment: Environment,
     needle_template: str,
     mapping_filename: Optional[str] = None,

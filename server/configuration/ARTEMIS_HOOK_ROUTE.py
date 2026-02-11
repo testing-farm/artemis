@@ -10,6 +10,8 @@ but you probably won't need to touch :py:func:`hook_ROUTE` - it's pretty generic
 :py:data:`POLICIES`. Change that list rather than the code, since the decisions should happen in policies.
 """
 
+from typing import Any
+
 import gluetool.log
 import sqlalchemy
 
@@ -93,6 +95,6 @@ def hook_ROUTE(  # noqa: N802
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
     guest_request: GuestRequest,
-    pools: list[PoolDriver],
+    pools: list[PoolDriver[Any]],
 ) -> PolicyReturnType:
     return run_routing_policies(logger, session, guest_request, pools, POLICIES)

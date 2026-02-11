@@ -63,6 +63,7 @@ from . import (
     ConsoleUrlData,
     FlavorBasedPoolDriver,
     GuestLogUpdateProgress,
+    Instance,
     PoolCapabilities,
     PoolData,
     PoolDriver,
@@ -1493,7 +1494,7 @@ _AWS_BOOT_MODE_MATRIX = [
 ]
 
 
-class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor, BackendFlavor]):
+class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor, BackendFlavor, Instance]):
     drivername = 'aws'
 
     image_info_class = AWSPoolImageInfo
