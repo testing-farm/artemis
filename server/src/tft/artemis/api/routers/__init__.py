@@ -39,7 +39,7 @@ from ... import (
 )
 from ...cache import get_cache_value, iter_cache_keys
 from ...context import DATABASE, LOGGER, SESSION
-from ...drivers import PoolDriver
+from ...drivers import Instance, PoolDriver
 from ...environment import Environment
 from ...guest import GuestState
 from ...knobs import KNOB_DEPLOYMENT, KNOB_DEPLOYMENT_ENVIRONMENT, KNOB_TRACING_ENABLED, Knob
@@ -1182,7 +1182,7 @@ class CacheManager:
 
     def _get_pool(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, poolname: str
-    ) -> PoolDriver:
+    ) -> PoolDriver[Instance]:
         r_pool = PoolDriver.load_or_none(logger, session, poolname)
 
         if r_pool.is_error:
