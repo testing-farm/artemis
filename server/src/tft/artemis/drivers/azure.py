@@ -38,6 +38,7 @@ from . import (
     CanAcquire,
     FlavorBasedPoolDriver,
     GuestLogUpdateProgress,
+    Instance,
     PoolCapabilities,
     PoolData,
     PoolDriver,
@@ -272,7 +273,7 @@ class AzureSession:
         return self._run_cmd(logger, options, json_format=json_format, commandname=commandname)
 
 
-class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
+class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Instance]):
     drivername = 'azure'
 
     image_info_class = AzurePoolImageInfo

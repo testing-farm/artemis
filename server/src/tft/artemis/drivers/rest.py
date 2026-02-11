@@ -21,6 +21,7 @@ from ..metrics import PoolResourcesMetrics
 from . import (
     CanAcquire,
     GuestLogUpdateProgress,
+    Instance,
     PoolCapabilities,
     PoolData,
     PoolDriver,
@@ -46,7 +47,7 @@ class RestPoolResourcesIDs(PoolResourcesIDs):
     guestname: Optional[str] = None
 
 
-class RestDriver(PoolDriver):
+class RestDriver(PoolDriver[Instance]):
     """
     A generic driver that communicates with REST-based middleman.
     """

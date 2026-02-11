@@ -8,10 +8,10 @@ from gluetool.result import Ok, Result
 
 from .. import Failure
 from ..db import GuestRequest
-from . import PoolData, PoolDriver, PoolImageSSHInfo, ProvisioningProgress, ProvisioningState
+from . import Instance, PoolData, PoolDriver, PoolImageSSHInfo, ProvisioningProgress, ProvisioningState
 
 
-class LocalhostDriver(PoolDriver):
+class LocalhostDriver(PoolDriver[Instance]):
     """
     A dummy driver always "provisioning" a localhost for the given guest.
     """

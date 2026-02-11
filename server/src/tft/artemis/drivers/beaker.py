@@ -54,6 +54,7 @@ from . import (
     CLIOutput,
     ConfigImageFilter,
     GuestLogUpdateProgress,
+    Instance,
     PoolCapabilities,
     PoolData,
     PoolDriver,
@@ -1184,7 +1185,7 @@ class BeakerPoolImageInfo(PoolImageInfo):
     bootc_image: Optional[str] = None
 
 
-class BeakerDriver(PoolDriver):
+class BeakerDriver(PoolDriver[Instance]):
     drivername = 'beaker'
 
     image_info_class = BeakerPoolImageInfo

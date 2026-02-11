@@ -1365,7 +1365,7 @@ class Instance(Resource):
 InstanceT = TypeVar('InstanceT', bound=Instance)
 
 
-class PoolDriver(gluetool.log.LoggerMixin):
+class PoolDriver(gluetool.log.LoggerMixin, Generic[InstanceT]):
     drivername: str
 
     _image_map_hook_name: str
@@ -1399,12 +1399,12 @@ class PoolDriver(gluetool.log.LoggerMixin):
         self.image_info_cache_key = self.POOL_IMAGE_INFO_CACHE_KEY.format(self.poolname)  # noqa: FS002
         self.flavor_info_cache_key = self.POOL_FLAVOR_INFO_CACHE_KEY.format(self.poolname)  # noqa: FS002
 
-    _drivers_registry: ClassVar[dict[str, type['PoolDriver']]] = {}
+    _drivers_registry: ClassVar[dict[str, type['PoolDriver[Any]']]] = {}
 
     @staticmethod
     def _instantiate(
         logger: gluetool.log.ContextAdapter, driver_name: str, poolname: str, pool_config: dict[str, Any]
-    ) -> Result['PoolDriver', Failure]:
+    ) -> Result['PoolDriver[Any]', Failure]:
         pool_driver_class = PoolDriver._drivers_registry.get(driver_name)
 
         if pool_driver_class is None:
@@ -1423,7 +1423,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
     @staticmethod
     def load_or_none(
         logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, poolname: str
-    ) -> Result[Optional['PoolDriver'], Failure]:
+    ) -> Result[Optional['PoolDriver[Any]'], Failure]:
         r_pool_record = SafeQuery.from_session(session, Pool).filter(Pool.poolname == poolname).one_or_none()
 
         if r_pool_record.is_error:
@@ -1445,7 +1445,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
     @staticmethod
     def load(
         logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, poolname: str
-    ) -> Result['PoolDriver', Failure]:
+    ) -> Result['PoolDriver[Any]', Failure]:
         r_pool = PoolDriver.load_or_none(logger, session, poolname)
 
         if r_pool.is_error:
@@ -1461,13 +1461,13 @@ class PoolDriver(gluetool.log.LoggerMixin):
     @staticmethod
     def load_all(
         logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, *, enabled_only: bool = True
-    ) -> Result[list['PoolDriver'], Failure]:
+    ) -> Result[list['PoolDriver[Any]'], Failure]:
         r_pools = SafeQuery.from_session(session, Pool).all()
 
         if r_pools.is_error:
             return Error(r_pools.unwrap_error())
 
-        pools: list[PoolDriver] = []
+        pools: list[PoolDriver[Any]] = []
 
         for pool_record in r_pools.unwrap():
             r_pool = PoolDriver._instantiate(logger, pool_record.driver, pool_record.poolname, pool_record.parameters)
@@ -2850,7 +2850,7 @@ class FlavorFilter(Protocol, Generic[FlavorT]):
         pass
 
 
-class FlavorBasedPoolDriver(PoolDriver, Generic[PoolImageInfoT, FlavorT]):
+class FlavorBasedPoolDriver(PoolDriver[InstanceT], Generic[PoolImageInfoT, FlavorT, InstanceT]):
     """
     A base class for drivers spawning guests from "images" and "flavors".
 
@@ -3595,7 +3595,7 @@ class CLISessionPermanentDir:
     CLI_CMD = 'cli'
     CLI_CONFIG_DIR_ENV_VAR = 'CLI_CONFIG_DIR'
 
-    def __init__(self, logger: gluetool.log.ContextAdapter, pool: 'PoolDriver') -> None:
+    def __init__(self, logger: gluetool.log.ContextAdapter, pool: 'PoolDriver[Any]') -> None:
         self.pool = pool
 
         r_session_dir_path = KNOB_CLI_SESSION_CONFIGURATION_DIR.get_value(entityname=self.pool.poolname)
@@ -3717,34 +3717,22 @@ class CLISessionPermanentDir:
         return self._run_cmd(logger, options, json_format=json_format, commandname=commandname)
 
 
-class ResourceCreateCallback(Protocol, Generic[ResourceT]):
-    def __call__(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        unique_identifier: str,
-    ) -> Result[ResourceT, Failure]:
-        pass
+ResourceCreateCallback = Callable[
+    [gluetool.log.ContextAdapter, sqlalchemy.orm.session.Session, GuestRequest, str], Result[ResourceT, Failure]
+]
 
 
-class ResourceListCallback(Protocol, Generic[ResourceT]):
-    def __call__(
-        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
-    ) -> Result[list[ResourceT], Failure]:
-        pass
+ResourceListCallback = Callable[[gluetool.log.ContextAdapter, GuestRequest], Result[list[ResourceT], Failure]]
 
 
-class ResourceIdentifierCallback(Protocol):
-    def __call__(self, guest_request: GuestRequest) -> Result[str, Failure]:
-        pass
+ResourceIdentifierCallback = Callable[[GuestRequest], Result[str, Failure]]
 
 
 class ResourceManager(Generic[ResourceT]):
     def __init__(
         self,
         logger: gluetool.log.ContextAdapter,
-        pool: PoolDriver,
+        pool: PoolDriver[Any],
         resource_type: str,
         resource_list_callback: ResourceListCallback[ResourceT],
         resource_create_callback: ResourceCreateCallback[ResourceT],

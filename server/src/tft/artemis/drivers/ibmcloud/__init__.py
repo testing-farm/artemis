@@ -8,7 +8,7 @@ import os
 import re
 import shutil
 from collections.abc import Generator
-from typing import Any, Generic, Optional, TypedDict, TypeVar, cast
+from typing import Any, Optional, TypedDict, TypeVar, cast
 
 import gluetool.log
 import sqlalchemy.orm.session
@@ -214,7 +214,7 @@ class IBMCloudSession(CLISessionPermanentDir):
         return Ok(None)
 
 
-class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor], Generic[IBMCloudInstanceT]):
+class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor, IBMCloudInstanceT]):
     drivername = 'abstract-ibmcloud-driver'
 
     flavor_info_class = IBMCloudFlavor

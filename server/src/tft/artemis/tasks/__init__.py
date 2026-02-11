@@ -66,6 +66,7 @@ from ..db import (
     transaction,
 )
 from ..drivers import (
+    Instance,
     PoolDriver,
     PoolLogger,
     aws as aws_driver,
@@ -1833,11 +1834,11 @@ class Workspace:
         self.sr: Optional[SnapshotRequest] = None
         self.shelf: Optional[GuestShelf] = None
         self.ssh_key: Optional[SSHKey] = None
-        self.pool: Optional[PoolDriver] = None
+        self.pool: Optional[PoolDriver[Instance]] = None
         self.is_pool_enabled: Optional[bool] = None
         self.guest_events: Optional[list[GuestEvent]] = None
 
-        self.pools: list[PoolDriver] = []
+        self.pools: list[PoolDriver[Instance]] = []
         self.master_key: Optional[SSHKey] = None
 
         self.shelfname: Optional[str] = None

@@ -22,6 +22,7 @@ from ..metrics import PoolResourcesMetrics
 from . import (
     CanAcquire,
     GuestLogUpdateProgress,
+    Instance,
     PoolCapabilities,
     PoolData,
     PoolDriver,
@@ -45,7 +46,7 @@ class FlasherPoolResourcesIDs(PoolResourcesIDs):
     guestname: Optional[str] = None
 
 
-class FlasherDriver(PoolDriver):
+class FlasherDriver(PoolDriver[Instance]):
     drivername = 'flasher'  # PoolDriver needs this. See __init__.py
 
     pool_data_class = FlasherPoolData
