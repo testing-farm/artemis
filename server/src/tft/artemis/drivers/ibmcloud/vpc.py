@@ -14,7 +14,7 @@ from gluetool.result import Error, Ok, Result
 from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
 
-from tft.artemis.drivers import InstanceT, PoolDriver, PoolImageInfo
+from tft.artemis.drivers import PoolDriver, PoolImageInfo
 from tft.artemis.drivers.ibmcloud import (
     IBMCloudDriver,
     IBMCloudFlavor,
@@ -437,7 +437,7 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance, BackendFlavor]):
 
             return Ok(res)
 
-    def create_instance(
+    def create_instance(  # type: ignore[override]
         self,
         logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest,
@@ -446,7 +446,7 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance, BackendFlavor]):
         instance_name: str,
         user_data_file: Optional[str] = None,
         tags: Optional[dict[str, str]] = None,
-    ) -> Result[InstanceT, Failure]:
+    ) -> Result[IBMCloudVPCInstance, Failure]:
         with IBMCloudSession(logger, self) as session:
             r_subnet_show = session.run(
                 logger,
@@ -517,14 +517,11 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance, BackendFlavor]):
                     )
                 )
             return Ok(
-                cast(
-                    InstanceT,
-                    IBMCloudVPCInstance(
-                        id=instance['id'],
-                        name=instance['name'],
-                        status=instance['status'],
-                        created_at=created_at.unwrap(),
-                    ),
+                IBMCloudVPCInstance(
+                    id=instance['id'],
+                    name=instance['name'],
+                    status=instance['status'],
+                    created_at=created_at.unwrap(),
                 )
             )
 
