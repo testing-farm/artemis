@@ -624,11 +624,16 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance]):
                     commandname='ibmcloud.pi.instance-delete',
                 )
                 if r_delete_instance.is_error:
-                    return Error(
-                        Failure.from_failure(
-                            f'Failed to cleanup instance {resource_ids.instance_id}', r_delete_instance.unwrap_error()
-                        )
-                    )
+                    failure = r_delete_instance.unwrap_error()
+
+                    if failure.command_output:
+                        cause = ibm_cloud_power_error_cause_extractor(failure.command_output)
+
+                        if cause == IBMCloudPowerErrorCauses.MISSING_INSTANCE:
+                            failure.recoverable = False
+                            PoolMetrics.inc_error(self.poolname, cause)
+
+                    return Error(failure)
 
         return Ok(ReleasePoolResourcesState.RELEASED)
 
