@@ -19,7 +19,7 @@ from tmt.hardware import UNITS
 
 from tft.artemis.drivers.aws import awscli_error_cause_extractor
 
-from .. import Failure, JSONType, log_dict_yaml, render_template
+from .. import Failure, JSONType, render_template
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
 from ..environment import (
     Flavor,

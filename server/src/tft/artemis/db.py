@@ -1984,7 +1984,7 @@ def convert_column_json_to_str(op: AlembicOp, tablename: str, columnname: str, r
 
 
 def swap_enums(
-    op: Any,
+    op: AlembicOp,
     tablename: str,
     columnname: str,
     typename: str,
@@ -2017,11 +2017,13 @@ def swap_enums(
     with op.batch_alter_table(tablename, schema=None) as batch_op:
         if op.get_bind().dialect.name == 'postgresql':
             op.get_bind().execute(
-                sqlalchemy.text(f'UPDATE {tablename} SET __tmp_{columnname} = state::text::__new_{typename}')
+                sqlalchemy.text(f'UPDATE {tablename} SET __tmp_{columnname} = state::text::__new_{typename}')  # noqa: S608
             )
 
         else:
-            op.get_bind().execute(sqlalchemy.text(f'UPDATE {tablename} SET __tmp_{columnname} = {columnname}'))
+            op.get_bind().execute(
+                sqlalchemy.text(f'UPDATE {tablename} SET __tmp_{columnname} = {columnname}')  # noqa: S608
+            )
 
     # drop the current column and the current type
     with op.batch_alter_table(tablename, schema=None) as batch_op:
@@ -2040,11 +2042,15 @@ def swap_enums(
     # copy saved state to this recreated column
     if op.get_bind().dialect.name == 'postgresql':
         op.get_bind().execute(
-            sqlalchemy.text(f'UPDATE {tablename} SET {columnname} = __tmp_{columnname}::text::{typename}')
+            sqlalchemy.text(
+                f'UPDATE {tablename} SET {columnname} = __tmp_{columnname}::text::{typename}'  # noqa: S608
+            )
         )
 
     else:
-        op.get_bind().execute(sqlalchemy.text(f'UPDATE {tablename} SET {columnname} = __tmp_{columnname}'))
+        op.get_bind().execute(
+            sqlalchemy.text(f'UPDATE {tablename} SET {columnname} = __tmp_{columnname}')  # noqa: S608
+        )
 
     # drop the temporary column and its type
     with op.batch_alter_table(tablename, schema=None) as batch_op:
