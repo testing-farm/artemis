@@ -26,6 +26,7 @@ from ..metrics import PoolResourcesMetrics, PoolResourcesUsage
 from . import (
     CanAcquire,
     ConfigImageFilter,
+    ConsoleUrlData,
     PoolCapabilities,
     PoolData,
     PoolDriver,
@@ -600,6 +601,13 @@ class GCPDriver(PoolDriver):
             return Error(r_instances_usage.unwrap_error())
 
         return Ok(resources)
+
+    # The following are necessary implementations of abstract methods the driver does not have use for. They are
+    # required, but we will remove them in the future.
+    def acquire_console_url(
+        self, logger: gluetool.log.ContextAdapter, guest: GuestRequest
+    ) -> Result[ConsoleUrlData, Failure]:
+        return Error(Failure('unsupported driver method', poolname=self.poolname, method='acquire_console_url'))
 
 
 PoolDriver._drivers_registry['gcp'] = GCPDriver

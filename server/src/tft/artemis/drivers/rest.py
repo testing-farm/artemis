@@ -20,10 +20,13 @@ from ..knobs import KNOB_DISABLE_CERT_VERIFICATION, KNOB_HTTP_TIMEOUT
 from ..metrics import PoolResourcesMetrics
 from . import (
     CanAcquire,
+    ConfigImageFilter,
+    ConsoleUrlData,
     GuestLogUpdateProgress,
     PoolCapabilities,
     PoolData,
     PoolDriver,
+    PoolImageInfo,
     PoolResourcesIDs,
     ProvisioningProgress,
     ProvisioningState,
@@ -136,6 +139,13 @@ class RestDriver(PoolDriver):
         reason = data.get('reason', None)
 
         return Ok(CanAcquire(can_acquire=result, reason=Failure(reason) if reason else None))
+
+    def list_images(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        filters: Optional[ConfigImageFilter] = None,
+    ) -> Result[list[PoolImageInfo], Failure]:
+        return Ok([])
 
     def acquire_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
@@ -475,6 +485,13 @@ class RestDriver(PoolDriver):
             return Error(Failure.from_exc('failed to trigger guest reboot', exc))
 
         return Ok(None)
+
+    # The following are necessary implementations of abstract methods the driver does not have use for. They are
+    # required, but we will remove them in the future.
+    def acquire_console_url(
+        self, logger: gluetool.log.ContextAdapter, guest: GuestRequest
+    ) -> Result[ConsoleUrlData, Failure]:
+        return Error(Failure('unsupported driver method', poolname=self.poolname, method='acquire_console_url'))
 
 
 PoolDriver._drivers_registry['rest'] = RestDriver

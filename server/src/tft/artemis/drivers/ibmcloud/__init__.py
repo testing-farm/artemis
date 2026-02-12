@@ -1,6 +1,7 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
+import abc
 import dataclasses
 import datetime
 import functools
@@ -18,6 +19,7 @@ from returns.pipeline import is_successful
 from tft.artemis.drivers import (
     KNOB_INSTANCES_PER_REQUEST_LIMIT,
     CLISessionPermanentDir,
+    ConsoleUrlData,
     FlavorBasedPoolDriver,
     PoolData,
     PoolImageInfo,
@@ -57,7 +59,7 @@ IBMCLOUD_DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S.%fZ'
 
 
 @dataclasses.dataclass
-class IBMCloudInstance(SerializableContainer):
+class IBMCloudInstance(SerializableContainer, abc.ABC):
     id: str
     name: str
     status: str
@@ -66,14 +68,17 @@ class IBMCloudInstance(SerializableContainer):
     def __post_init__(self) -> None:
         self.status = self.status.lower()
 
+    @abc.abstractmethod
     @functools.cached_property
     def is_pending(self) -> bool:
         raise NotImplementedError
 
+    @abc.abstractmethod
     @functools.cached_property
     def is_ready(self) -> bool:
         raise NotImplementedError
 
+    @abc.abstractmethod
     @functools.cached_property
     def is_error(self) -> bool:
         raise NotImplementedError
@@ -212,7 +217,7 @@ class IBMCloudSession(CLISessionPermanentDir):
         return Ok(None)
 
 
-class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor], Generic[IBMCloudInstanceT]):
+class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor], abc.ABC, Generic[IBMCloudInstanceT]):
     drivername = 'abstract-ibmcloud-driver'
 
     flavor_info_class = IBMCloudFlavor
@@ -477,11 +482,13 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor], Gener
             )
         )
 
+    @abc.abstractmethod
     def _show_instance(self, logger: gluetool.log.ContextAdapter, instance_id: str) -> Result[Any, Failure]:
         """This method will show a single instance details."""
 
         raise NotImplementedError
 
+    @abc.abstractmethod
     def create_instance(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -494,7 +501,15 @@ class IBMCloudDriver(FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor], Gener
 
         raise NotImplementedError
 
+    @abc.abstractmethod
     def list_instances(self, logger: gluetool.log.ContextAdapter) -> Result[list[IBMCloudInstanceT], Failure]:
         """This method will issue a cloud guest list command and return a list of raw instances data"""
 
         raise NotImplementedError
+
+    # The following are necessary implementations of abstract methods the driver does not have use for. They are
+    # required, but we will remove them in the future.
+    def acquire_console_url(
+        self, logger: gluetool.log.ContextAdapter, guest: GuestRequest
+    ) -> Result[ConsoleUrlData, Failure]:
+        return Error(Failure('unsupported driver method', poolname=self.poolname, method='acquire_console_url'))
