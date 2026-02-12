@@ -103,6 +103,21 @@ definitions:
     # empty `cpu`.
     minProperties: 1
 
+  # HW requirements: `device` block
+  hw_device:
+    type: object
+
+    properties:
+      driver:
+        anyOf:
+          - type: string
+
+    additionalProperties: false
+
+    # enforce at least one property - we don't care which one, but we don't want
+    # empty `device`.
+    minProperties: 1
+
   # HW requirements: single `disk` item
   hw_disk:
     type: object
@@ -159,6 +174,22 @@ definitions:
 
   hw_hostname:
     type: string
+
+  hw_iommu:
+    type: object
+
+    properties:
+      is-supported:
+        type: boolean
+
+      model-name:
+        type: string
+
+    additionalProperties: false
+
+    # enforce at least one property - we don't care which one, but we don't want
+    # empty `iommu`.
+    minProperties: 1
 
   hw_memory:
     anyOf:
@@ -292,6 +323,9 @@ definitions:
       cpu:
         "$ref": "#/definitions/hw_cpu"
 
+      device:
+        "$ref": "#/definitions/hw_device"
+
       disk:
         "$ref": "#/definitions/hw_disks"
 
@@ -300,6 +334,9 @@ definitions:
 
       hostname:
         "$ref": "#/definitions/hw_hostname"
+
+      iommu:
+        "$ref": "#/definitions/hw_iommu"
 
       memory:
         "$ref": "#/definitions/hw_memory"
