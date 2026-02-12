@@ -4,9 +4,14 @@
 from typing import Any, Optional
 from unittest.mock import MagicMock
 
+import tft.artemis.drivers.localhost
 import tft.artemis.guest
 import tft.artemis.tasks
 from tft.artemis.tasks import DoerType, TaskLogger
+
+
+class DummyPool(tft.artemis.drivers.localhost.LocalhostDriver):
+    pass
 
 
 def assert_task_core_call(

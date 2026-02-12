@@ -60,6 +60,7 @@ from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from ..security_group_rules import SecurityGroupRule, SecurityGroupRules
 from . import (
+    ConsoleUrlData,
     FlavorBasedPoolDriver,
     GuestLogUpdateProgress,
     PoolCapabilities,
@@ -3127,6 +3128,13 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor]):
             return Error(Failure.from_failure('failed to trigger instance reboot', r.unwrap_error()))
 
         return Ok(None)
+
+    # The following are necessary implementations of abstract methods the driver does not have use for. They are
+    # required, but we will remove them in the future.
+    def acquire_console_url(
+        self, logger: gluetool.log.ContextAdapter, guest: GuestRequest
+    ) -> Result[ConsoleUrlData, Failure]:
+        return Error(Failure('unsupported driver method', poolname=self.poolname, method='acquire_console_url'))
 
 
 PoolDriver._drivers_registry['aws'] = AWSDriver

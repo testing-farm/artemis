@@ -10,6 +10,8 @@ import tft.artemis.drivers
 from tft.artemis.api.models import GuestRequest
 from tft.artemis.tasks import Workspace
 
+from . import DummyPool
+
 
 @pytest.fixture(name='dummy_guest_request')
 def fixture_dummy_guest_request(workspace: Workspace) -> MagicMock:
@@ -25,7 +27,7 @@ def fixture_dummy_pool(
     assert workspace.gr
 
     workspace.gr.poolname = 'dummy-pool'
-    workspace.pool = tft.artemis.drivers.PoolDriver(logger, 'dummy-pool', {})
+    workspace.pool = DummyPool(logger, 'dummy-pool', {})
 
     return workspace.pool
 

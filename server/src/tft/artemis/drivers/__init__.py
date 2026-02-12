@@ -1,6 +1,7 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
+import abc
 import contextlib
 import dataclasses
 import datetime
@@ -1327,7 +1328,7 @@ def render_tags(
     return _Ok(tags)
 
 
-class PoolDriver(gluetool.log.LoggerMixin):
+class PoolDriver(gluetool.log.LoggerMixin, abc.ABC):
     drivername: str
 
     _image_map_hook_name: str
@@ -1603,6 +1604,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
             delay=delay,
         )
 
+    @abc.abstractmethod
     def release_pool_resources(
         self, logger: gluetool.log.ContextAdapter, raw_resources_ids: SerializedPoolResourcesIDs
     ) -> Result[ReleasePoolResourcesState, Failure]:
@@ -1621,6 +1623,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         raise NotImplementedError
 
+    @abc.abstractmethod
     def list_images(
         self, logger: gluetool.log.ContextAdapter, filters: Optional[ConfigImageFilter] = None
     ) -> Result[list[PoolImageInfo], Failure]:
@@ -1821,6 +1824,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         return Ok(None)
 
+    @abc.abstractmethod
     def acquire_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
@@ -1840,6 +1844,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         raise NotImplementedError
 
+    @abc.abstractmethod
     def update_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
@@ -1872,6 +1877,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         return Ok(WatchdogState.COMPLETE)
 
+    @abc.abstractmethod
     def release_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[None, Failure]:
@@ -1881,6 +1887,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         raise NotImplementedError
 
+    @abc.abstractmethod
     def acquire_console_url(
         self, logger: gluetool.log.ContextAdapter, guest: GuestRequest
     ) -> Result[ConsoleUrlData, Failure]:
@@ -1927,6 +1934,7 @@ class PoolDriver(gluetool.log.LoggerMixin):
 
         return updater(logger, guest_request, guest_log)
 
+    @abc.abstractmethod
     def trigger_reboot(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[None, Failure]:
         """
         Trigger a hard reboot of a guest.
@@ -3361,7 +3369,7 @@ def create_tempfile(file_contents: Optional[str] = None, **kwargs: Any) -> Itera
         os.unlink(temp_file.name)
 
 
-class CLISessionPermanentDir:
+class CLISessionPermanentDir(abc.ABC):
     """
     A representation of an authenticated cli session that is using same config directory.
 
@@ -3487,6 +3495,7 @@ class CLISessionPermanentDir:
 
         return Ok(r_run.unwrap().stdout)
 
+    @abc.abstractmethod
     def _login(self, logger: gluetool.log.ContextAdapter) -> Result[None, Failure]:
         """Will be overridden by particular implementation"""
         raise NotImplementedError

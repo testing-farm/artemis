@@ -36,6 +36,7 @@ from ..knobs import Knob
 from ..metrics import PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from . import (
     CanAcquire,
+    ConsoleUrlData,
     FlavorBasedPoolDriver,
     GuestLogUpdateProgress,
     PoolCapabilities,
@@ -1069,6 +1070,13 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor]):
             return Error(Failure.from_failure('failed to trigger instance reboot', r_output.unwrap_error()))
 
         return Ok(None)
+
+    # The following are necessary implementations of abstract methods the driver does not have use for. They are
+    # required, but we will remove them in the future.
+    def acquire_console_url(
+        self, logger: gluetool.log.ContextAdapter, guest: GuestRequest
+    ) -> Result[ConsoleUrlData, Failure]:
+        return Error(Failure('unsupported driver method', poolname=self.poolname, method='acquire_console_url'))
 
 
 PoolDriver._drivers_registry['azure'] = AzureDriver
