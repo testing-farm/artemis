@@ -22,6 +22,9 @@ definitions:
       cpu:
         "$ref": "#/definitions/patch_flavor_cpu"
 
+      iommu:
+        "$ref": "#/definitions/patch_flavor_iommu"
+
       network:
         "$ref": "#/definitions/patch_flavor_networks"
 
@@ -80,6 +83,14 @@ definitions:
         type: integer
 
       model-name:
+        type: string
+
+      vendor:
+        anyOf:
+          - type: string
+          - type: integer
+
+      vendor-name:
         type: string
 
       flag:
@@ -159,6 +170,19 @@ definitions:
     required: []
     additionalProperties: false
 
+  patch_flavor_iommu:
+    type: object
+
+    properties:
+      is-supported:
+        type: boolean
+
+      model-name:
+        type: string
+
+    required: []
+    additionalProperties: false
+
   patch_flavor_virtualization:
     type: object
 
@@ -209,6 +233,9 @@ definitions:
 
       gpu:
         "$ref": "#/definitions/patch_flavor_gpu"
+
+      iommu:
+        "$ref": "#/definitions/patch_flavor_iommu"
 
       virtualization:
         "$ref": "#/definitions/patch_flavor_virtualization"
