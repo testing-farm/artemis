@@ -4,6 +4,7 @@
 import dataclasses
 import functools
 import json
+import re
 from collections.abc import Iterator
 from typing import Any, Optional, TypedDict, cast
 
@@ -22,7 +23,7 @@ from tft.artemis.drivers.ibmcloud import (
     IBMCloudSession,
 )
 
-from ... import Failure
+from ... import Failure, process_output_to_str
 from ...db import GuestRequest
 from ...environment import (
     Flavor,
@@ -94,6 +95,32 @@ class IBMCloudVPCErrorCauses(PoolErrorCauses):
     NONE = 'none'
 
     UNEXPECTED_INSTANCE_STATE = 'unexpected-instance-state'
+    MISSING_INSTANCE = 'missing-instance'
+
+
+CLI_ERROR_PATTERNS = {
+    IBMCloudVPCErrorCauses.MISSING_INSTANCE: re.compile(r'Instance not found'),
+}
+
+
+def ibm_cloud_vpc_error_cause_extractor(output: gluetool.utils.ProcessOutput) -> IBMCloudVPCErrorCauses:
+    if output.exit_code == 0:
+        return IBMCloudVPCErrorCauses.NONE
+
+    stdout = process_output_to_str(output, stream='stdout')
+    stderr = process_output_to_str(output, stream='stderr')
+
+    stdout = stdout.strip() if stdout is not None else None
+    stderr = stderr.strip() if stderr is not None else None
+
+    for cause, pattern in CLI_ERROR_PATTERNS.items():
+        if stdout and pattern.search(stdout):
+            return cause
+
+        if stderr and pattern.search(stderr):
+            return cause
+
+    return IBMCloudVPCErrorCauses.NONE
 
 
 class APIImageType(TypedDict):
@@ -631,13 +658,16 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance]):
                     commandname='ibmcloud.is.instance-delete',
                 )
                 if r_delete_instance.is_error:
-                    return Error(
-                        Failure.from_failure(
-                            'Failed to cleanup instance',
-                            r_delete_instance.unwrap_error(),
-                            instance_id=resource_ids.instance_id,
-                        )
-                    )
+                    failure = r_delete_instance.unwrap_error()
+
+                    if failure.command_output:
+                        cause = ibm_cloud_vpc_error_cause_extractor(failure.command_output)
+
+                        if cause == IBMCloudVPCErrorCauses.MISSING_INSTANCE:
+                            failure.recoverable = False
+                            PoolMetrics.inc_error(self.poolname, cause)
+
+                    return Error(failure)
 
         return Ok(ReleasePoolResourcesState.RELEASED)
 
