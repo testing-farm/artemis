@@ -13,6 +13,7 @@ from ..db import GuestRequest
 from . import (
     ConfigImageFilter,
     ConsoleUrlData,
+    Instance,
     PoolData,
     PoolDriver,
     PoolImageInfo,
@@ -22,7 +23,6 @@ from . import (
     ReleasePoolResourcesState,
     SerializedPoolResourcesIDs,
 )
-from . import Instance, PoolData, PoolDriver, PoolImageSSHInfo, ProvisioningProgress, ProvisioningState
 
 
 class LocalhostDriver(PoolDriver[Instance]):
