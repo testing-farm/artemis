@@ -479,6 +479,7 @@ def policy_supports_architecture(
     )
 
 
+@policy_boilerplate
 def policy_supports_guest_logs(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,

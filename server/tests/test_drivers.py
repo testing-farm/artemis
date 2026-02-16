@@ -18,7 +18,6 @@ import tft.artemis.drivers.localhost
 from tft.artemis.drivers import vm_info_to_ip
 
 from . import MockPatcher
-from .tasks import DummyPool
 
 POST_INSTALL_SCRIPT_TEMPLATE_CLOUD_INIT = """
 #cloud-config

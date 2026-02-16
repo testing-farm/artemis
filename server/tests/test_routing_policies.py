@@ -38,7 +38,6 @@ from tft.artemis.drivers import PoolDriver
 from tft.artemis.metrics import PoolMetrics
 
 from . import MockPatcher
-from .tasks import DummyPool
 
 
 # Routing knobs do have a DB source, therefore we cannot acquire their value right away
@@ -289,7 +288,9 @@ def test_create_preferrence_filter_by_driver_class_no_trigger(mock_inputs: MockI
 def test_create_preferrence_filter_by_driver_class(mock_inputs: MockInputs) -> None:
     mock_logger, mock_session, _, mock_guest_request = mock_inputs
 
-    policy = tft.artemis.routing_policies.create_preferrence_filter_by_driver_class('dummy-custom-policy', DummyPool)
+    policy = tft.artemis.routing_policies.create_preferrence_filter_by_driver_class(
+        'dummy-custom-policy', tft.artemis.drivers.localhost.LocalhostDriver
+    )
 
     assert cast(tft.artemis.routing_policies.PolicyWrapperType, policy).policy_name == 'dummy-custom-policy'
 
