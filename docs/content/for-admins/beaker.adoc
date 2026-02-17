@@ -285,40 +285,7 @@ Beaker driver provides console log access through stored console output. For det
 |URL
 |URL pointing to Beaker's stored console output
 
-|`sys.log:dump`
-|URL
-|URL pointing to system log stored by Beaker
-
-|`anaconda.log:dump`
-|blob
-|Anaconda installer log
-
-|`storage.log:dump`
-|blob
-|Storage configuration log from installation
-
-|`program.log:dump`
-|blob
-|Program execution log from installation
-
-|`packaging.log:dump`
-|blob
-|Package installation log
-
-|`ks.cfg:dump`
-|blob
-|Kickstart configuration file used for installation
-
 |===
-
-==== Interactive console via conserver
-
-Beaker provides interactive console access via conserver. This is available directly through Beaker, external to Artemis. Users can connect to conserver directly to access the live console of their provisioned machines.
-
-[NOTE]
-====
-Interactive console via conserver is not exposed through Artemis API. Users need to connect to conserver directly using the appropriate Beaker credentials and machine hostname.
-====
 
 === Installation method
 
