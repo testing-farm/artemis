@@ -15,6 +15,7 @@ import gluetool.log
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 from returns.pipeline import is_successful
+from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 
 from tft.artemis.drivers import (
     BackendFlavorT,
@@ -244,9 +245,9 @@ class IBMCloudDriver(
             logger=logger,
             pool=self,
             resource_type='instance',
-            resource_list_callback=self.list_instances_by_guest_request,
+            resource_list_callback=self._query_backend_instances_by_guest_request,
             resource_create_callback=self.create_guest,
-            resource_identifier_callback=self.get_instance_name,
+            resource_identifier_callback=self._render_instance_name,
         )
 
     @classmethod
@@ -317,20 +318,18 @@ class IBMCloudDriver(
 
         return Ok(tags['items'][0].get('tags', []))
 
-    def get_instance_name(self, guest_request: GuestRequest) -> Result[str, Failure]:
+    def _render_instance_name(self, guest_request: GuestRequest) -> _Result[str, Failure]:
         r_instance_name_template = KNOB_INSTANCE_NAME_TEMPLATE.get_value(entityname=self.poolname)
         if r_instance_name_template.is_error:
-            return Error(Failure('Could not get instance_name template'))
+            return _Error(
+                Failure.from_failure('Could not get instance_name template', r_instance_name_template.unwrap_error())
+            )
 
-        r_rendered = render_template(
+        return render_template(
             r_instance_name_template.unwrap(),
             GUESTNAME=guest_request.guestname,
             ENVIRONMENT=guest_request.environment,
-        )
-        if not is_successful(r_rendered):
-            return Error(Failure('Could not render instance_name template'))
-
-        return Ok(r_rendered.unwrap())
+        ).alt(lambda failure: Failure.from_failure('Could not render instance name template', failure))
 
     def create_guest(
         self,
@@ -338,7 +337,7 @@ class IBMCloudDriver(
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         instance_name: str,
-    ) -> Result[InstanceT, Failure]:
+    ) -> _Result[IBMCloudInstanceT, Failure]:
         """
         That is the generic workflow of guest creation performed for each flavor-based driver.
         Compose mappings check, find image/flavor, attempt to run a cloud create command, return the provisioned guest.
@@ -346,14 +345,14 @@ class IBMCloudDriver(
         r_image_flavor_pairs = self._collect_image_flavor_pairs(logger, session, guest_request)
 
         if r_image_flavor_pairs.is_error:
-            return Error(r_image_flavor_pairs.unwrap_error())
+            return _Error(r_image_flavor_pairs.unwrap_error())
 
         can_acquire, pairs = r_image_flavor_pairs.unwrap()
 
         if not can_acquire.can_acquire:
             assert can_acquire.reason is not None
 
-            return Error(Failure(can_acquire.reason.message))
+            return _Error(Failure(can_acquire.reason.message))
 
         image, flavor = pairs[0]
 
@@ -361,51 +360,44 @@ class IBMCloudDriver(
 
         r_post_install_script = self.generate_post_install_script(guest_request)
         if r_post_install_script.is_error:
-            return Error(
+            return _Error(
                 Failure.from_failure('Could not generate post-install script', r_post_install_script.unwrap_error())
             )
 
         post_install_script = r_post_install_script.unwrap()
         if post_install_script:
             with create_tempfile(file_contents=post_install_script) as user_data_file:
-                r_output: Result[InstanceT, Failure] = self.create_instance(
-                    logger=logger,
-                    guest_request=guest_request,
-                    flavor=flavor,
-                    image=image,
-                    instance_name=instance_name,
-                    user_data_file=user_data_file,
+                r_instance: _Result[IBMCloudInstanceT, Failure] = self._create_backend_instance(
+                    logger, guest_request, flavor, image, instance_name, user_data_file=user_data_file
                 )
         else:
-            r_output = self.create_instance(
-                logger=logger, guest_request=guest_request, flavor=flavor, image=image, instance_name=instance_name
-            )
+            r_instance = self._create_backend_instance(logger, guest_request, flavor, image, instance_name)
 
-        if r_output.is_error:
-            return Error(r_output.unwrap_error())
+        return r_instance.alt(
+            lambda failure: Failure.from_failure('Instance id not found', failure, guestname=guest_request.guestname)
+        )
 
-        created = r_output.unwrap()
+    @abc.abstractmethod
+    def _query_backend_flavors(self, logger: gluetool.log.ContextAdapter) -> _Result[list[BackendFlavorT], Failure]:
+        raise NotImplementedError
 
-        if not created.id:
-            return Error(Failure('Instance id not found', guestname=guest_request.guestname))
-
-        return Ok(created)
-
-    def list_instances_by_guest_request(
+    def _query_backend_instances_by_guest_request(
         self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
-    ) -> Result[list[IBMCloudInstanceT], Failure]:
+    ) -> _Result[list[IBMCloudInstanceT], Failure]:
         """
-        This method will list all allocated instances that correspond to the given guest request.
-        Order is newest -> oldest by time of creation.
+        Fetch list of instances for a given guest request from the backend infrastructure.
+
+        :returns: list of instances, sorted by their time of creation, from the newest to the oldest.
         """
+
         r_instances_list = self.list_instances(logger)
         if r_instances_list.is_error:
-            return Error(Failure.from_failure('failed to list instances', r_instances_list.unwrap_error()))
+            return _Error(Failure.from_failure('failed to list instances', r_instances_list.unwrap_error()))
 
         # Let's get expected name to match against
-        r_expected_name = self.get_instance_name(guest_request)
-        if r_expected_name.is_error:
-            return Error(Failure.from_failure('failed to get expected instance name', r_expected_name.unwrap_error()))
+        r_expected_name = self._render_instance_name(guest_request)
+        if not is_successful(r_expected_name):
+            return _Error(Failure.from_failure('failed to get expected instance name', r_expected_name.failure()))
         expected_name = r_expected_name.unwrap()
 
         res = [instance for instance in r_instances_list.unwrap() if instance.name.startswith(expected_name)]
@@ -414,20 +406,20 @@ class IBMCloudDriver(
         try:
             res = sorted(res, key=lambda x: x.created_at)
         except ValueError:
-            return Error(Failure('Double check time format, could not convert time data'))
+            return _Error(Failure('Double check time format, could not convert time data'))
 
-        return Ok(res)
+        return _Ok(res)
 
     def acquire_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
         r_instance = self.instance_resource_manager.acquire(logger, guest_request, session)
-        if r_instance.is_error:
+        if not is_successful(r_instance):
             return Ok(
                 ProvisioningProgress(
                     state=ProvisioningState.CANCEL,
                     pool_data=IBMCloudPoolData(),
-                    pool_failures=[r_instance.unwrap_error()],
+                    pool_failures=[r_instance.failure()],
                 )
             )
 
@@ -458,7 +450,7 @@ class IBMCloudDriver(
         raise NotImplementedError
 
     @abc.abstractmethod
-    def create_instance(
+    def _create_backend_instance(
         self,
         logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest,
@@ -466,9 +458,14 @@ class IBMCloudDriver(
         image: PoolImageInfo,
         instance_name: str,
         user_data_file: Optional[str] = None,
-        tags: Optional[dict[str, str]] = None,
-    ) -> Result[InstanceT, Failure]:
-        """This method will issue a cloud instance create request"""
+        tags: Optional[Tags] = None,
+    ) -> _Result[InstanceT, Failure]:
+        """
+        Create new backend instance.
+
+        Send requests or invoke commands to instruct the backend infrastructure to create new instance for the given
+        guest request.
+        """
 
         raise NotImplementedError
 

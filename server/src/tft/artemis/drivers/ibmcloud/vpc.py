@@ -14,7 +14,7 @@ from gluetool.result import Error, Ok, Result
 from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
 
-from tft.artemis.drivers import PoolDriver, PoolImageInfo
+from tft.artemis.drivers import PoolDriver, PoolImageInfo, Tags
 from tft.artemis.drivers.ibmcloud import (
     IBMCloudDriver,
     IBMCloudFlavor,
@@ -437,7 +437,7 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance, BackendFlavor]):
 
             return Ok(res)
 
-    def create_instance(  # type: ignore[override]
+    def _create_backend_instance(  # type: ignore[override]
         self,
         logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest,
@@ -445,8 +445,8 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance, BackendFlavor]):
         image: PoolImageInfo,
         instance_name: str,
         user_data_file: Optional[str] = None,
-        tags: Optional[dict[str, str]] = None,
-    ) -> Result[IBMCloudVPCInstance, Failure]:
+        tags: Optional[Tags] = None,
+    ) -> _Result[IBMCloudVPCInstance, Failure]:
         with IBMCloudSession(logger, self) as session:
             r_subnet_show = session.run(
                 logger,
@@ -454,14 +454,14 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance, BackendFlavor]):
                 commandname='ibmcloud-show-subnet',
             )
             if r_subnet_show.is_error:
-                return Error(
+                return _Error(
                     Failure.from_failure('Failed to execute show subnet details command', r_subnet_show.unwrap_error())
                 )
 
             try:
                 vpc_id = cast(dict[str, Any], r_subnet_show.unwrap())['vpc']['id']
             except KeyError:
-                return Error(Failure('Subnet details have no vpc information'))
+                return _Error(Failure('Subnet details have no vpc information'))
 
             root_disk_size: Optional[SizeType] = None
             # If disk size is defined in flavor -> let's use it, otherwise take defaults from pool config
@@ -506,17 +506,17 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance, BackendFlavor]):
             r_instance_create = session.run(logger, create_cmd_args, commandname='ibmcloud.instance-create')
 
             if r_instance_create.is_error:
-                return Error(Failure.from_failure('Instance creation failed', r_instance_create.unwrap_error()))
+                return _Error(Failure.from_failure('Instance creation failed', r_instance_create.unwrap_error()))
 
             instance = cast(dict[str, Any], r_instance_create.unwrap())
             created_at = self.timestamp_to_datetime(instance['created_at'])
             if created_at.is_error:
-                return Error(
+                return _Error(
                     Failure.from_failure(
                         'Could not parse instance create timestamp', created_at.unwrap_error(), instance=instance['id']
                     )
                 )
-            return Ok(
+            return _Ok(
                 IBMCloudVPCInstance(
                     id=instance['id'],
                     name=instance['name'],
