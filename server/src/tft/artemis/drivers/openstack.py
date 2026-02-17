@@ -20,7 +20,7 @@ import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 from keystoneauth1.identity import v3
 from novaclient import client as nocl
-from returns.result import Result as _Result, Success as _Ok
+from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
 
 from .. import Failure, JSONType, process_output_to_str, safe_call
@@ -156,7 +156,7 @@ class OpenStackPoolResourcesIDs(PoolResourcesIDs):
     instance_id: Optional[str] = None
 
 
-class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
+class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor, novaclient.v2.flavors.Flavor]):
     drivername = 'openstack'
 
     pool_data_class = OpenStackPoolData
@@ -187,6 +187,21 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
 
         elif self.pool_config.get('project-domain-id'):
             self._os_cmd_base += ['--os-project-domain-id', self.pool_config['project-domain-id']]
+
+    def _query_backend_flavors(
+        self, logger: gluetool.log.ContextAdapter
+    ) -> _Result[list[novaclient.v2.flavors.Flavor], Failure]:
+        r_nova = self._get_nova()
+
+        if r_nova.is_error:
+            return _Error(r_nova.unwrap_error())
+
+        r_flavors = safe_call(r_nova.unwrap().flavors.list)
+
+        if r_flavors.is_error:
+            return _Error(r_flavors.unwrap_error())
+
+        return _Ok(r_flavors.unwrap())
 
     def login_session(self, logger: gluetool.log.ContextAdapter) -> Result[keystoneauth1.session.Session, Failure]:
         # NOTE(ivasilev) Either project-domain-name or project-domain-id can be used for auth, so let's pass whatever's
@@ -773,14 +788,6 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
         #   ...
         # ]
 
-        def _fetch(logger: gluetool.log.ContextAdapter) -> Result[list[novaclient.v2.flavors.Flavor], Failure]:
-            r_nova = self._get_nova()
-
-            if r_nova.is_error:
-                return Error(r_nova.unwrap_error())
-
-            return safe_call(r_nova.unwrap().flavors.list)
-
         def _constructor(
             logger: gluetool.log.ContextAdapter, raw_flavor: novaclient.v2.flavors.Flavor
         ) -> Iterator[Result[Flavor, Failure]]:
@@ -805,7 +812,7 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor]):
             )
 
         return self.do_fetch_pool_flavor_info(
-            self.logger, _fetch, lambda raw_flavor: cast(str, raw_flavor.name), _constructor
+            self.logger, self._query_backend_flavors, lambda raw_flavor: cast(str, raw_flavor.name), _constructor
         )
 
     def _do_fetch_console(
