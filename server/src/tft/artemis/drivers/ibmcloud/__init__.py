@@ -30,6 +30,7 @@ from tft.artemis.drivers import (
     ProvisioningState,
     ResourceManager,
     Tags,
+    create_tempfile,
 )
 
 from ... import Failure, render_template
@@ -221,7 +222,7 @@ class IBMCloudSession(CLISessionPermanentDir):
 
 
 class IBMCloudDriver(
-    FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor, BackendFlavorT],
+    FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor, BackendFlavorT, IBMCloudInstanceT],
     abc.ABC,
     Generic[IBMCloudInstanceT, BackendFlavorT],
 ):
@@ -330,6 +331,65 @@ class IBMCloudDriver(
             return Error(Failure('Could not render instance_name template'))
 
         return Ok(r_rendered.unwrap())
+
+    def create_guest(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        instance_name: str,
+    ) -> Result[InstanceT, Failure]:
+        """
+        That is the generic workflow of guest creation performed for each flavor-based driver.
+        Compose mappings check, find image/flavor, attempt to run a cloud create command, return the provisioned guest.
+        """
+        r_image_flavor_pairs = self._collect_image_flavor_pairs(logger, session, guest_request)
+
+        if r_image_flavor_pairs.is_error:
+            return Error(r_image_flavor_pairs.unwrap_error())
+
+        can_acquire, pairs = r_image_flavor_pairs.unwrap()
+
+        if not can_acquire.can_acquire:
+            assert can_acquire.reason is not None
+
+            return Error(Failure(can_acquire.reason.message))
+
+        image, flavor = pairs[0]
+
+        self.log_acquisition_attempt(logger, session, guest_request, flavor=flavor, image=image)
+
+        r_post_install_script = self.generate_post_install_script(guest_request)
+        if r_post_install_script.is_error:
+            return Error(
+                Failure.from_failure('Could not generate post-install script', r_post_install_script.unwrap_error())
+            )
+
+        post_install_script = r_post_install_script.unwrap()
+        if post_install_script:
+            with create_tempfile(file_contents=post_install_script) as user_data_file:
+                r_output: Result[InstanceT, Failure] = self.create_instance(
+                    logger=logger,
+                    guest_request=guest_request,
+                    flavor=flavor,
+                    image=image,
+                    instance_name=instance_name,
+                    user_data_file=user_data_file,
+                )
+        else:
+            r_output = self.create_instance(
+                logger=logger, guest_request=guest_request, flavor=flavor, image=image, instance_name=instance_name
+            )
+
+        if r_output.is_error:
+            return Error(r_output.unwrap_error())
+
+        created = r_output.unwrap()
+
+        if not created.id:
+            return Error(Failure('Instance id not found', guestname=guest_request.guestname))
+
+        return Ok(created)
 
     def list_instances_by_guest_request(
         self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
