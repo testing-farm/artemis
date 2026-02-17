@@ -38,6 +38,7 @@ from tft.artemis.drivers import PoolDriver
 from tft.artemis.metrics import PoolMetrics
 
 from . import MockPatcher
+from .tasks import DummyPool
 
 
 # Routing knobs do have a DB source, therefore we cannot acquire their value right away
@@ -270,9 +271,9 @@ def test_create_preferrence_filter_by_driver_class_no_trigger(mock_inputs: MockI
     assert cast(tft.artemis.routing_policies.PolicyWrapperType, policy).policy_name == 'dummy-custom-policy'
 
     mock_pools: list[PoolDriver[Any]] = [
-        PoolDriver(mock_logger, 'pool1', {}),
-        PoolDriver(mock_logger, 'pool2', {}),
-        PoolDriver(mock_logger, 'pool3', {}),
+        DummyPool(mock_logger, 'pool1', {}),
+        DummyPool(mock_logger, 'pool2', {}),
+        DummyPool(mock_logger, 'pool3', {}),
     ]
 
     r_ruling = policy(mock_logger, mock_session, mock_pools, mock_guest_request)
@@ -288,17 +289,15 @@ def test_create_preferrence_filter_by_driver_class_no_trigger(mock_inputs: MockI
 def test_create_preferrence_filter_by_driver_class(mock_inputs: MockInputs) -> None:
     mock_logger, mock_session, _, mock_guest_request = mock_inputs
 
-    policy = tft.artemis.routing_policies.create_preferrence_filter_by_driver_class(
-        'dummy-custom-policy', tft.artemis.drivers.localhost.LocalhostDriver
-    )
+    policy = tft.artemis.routing_policies.create_preferrence_filter_by_driver_class('dummy-custom-policy', DummyPool)
 
     assert cast(tft.artemis.routing_policies.PolicyWrapperType, policy).policy_name == 'dummy-custom-policy'
 
     mock_pools: list[PoolDriver[Any]] = [
-        PoolDriver(mock_logger, 'pool1', {}),
-        PoolDriver(mock_logger, 'pool2', {}),
-        tft.artemis.drivers.localhost.LocalhostDriver(mock_logger, 'pool3', {}),
-        PoolDriver(mock_logger, 'pool4', {}),
+        tft.artemis.drivers.localhost.LocalhostDriver(mock_logger, 'pool1', {}),
+        tft.artemis.drivers.localhost.LocalhostDriver(mock_logger, 'pool2', {}),
+        DummyPool(mock_logger, 'pool3', {}),
+        tft.artemis.drivers.localhost.LocalhostDriver(mock_logger, 'pool4', {}),
     ]
 
     r_ruling = policy(mock_logger, mock_session, mock_pools, mock_guest_request)

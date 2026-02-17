@@ -1864,20 +1864,6 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[InstanceT]):
         return Ok(None)
 
     @abc.abstractmethod
-    def create_instance(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest_request: GuestRequest,
-        flavor: Flavor,
-        image: PoolImageInfo,
-        instance_name: str,
-        user_data_file: Optional[str] = None,
-        tags: Optional[dict[str, str]] = None,
-    ) -> Result[InstanceT, Failure]:
-        """This method will issue a cloud instance create request"""
-        raise NotImplementedError
-
-    @abc.abstractmethod
     def acquire_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
@@ -3587,14 +3573,14 @@ class CLISessionPermanentDir(abc.ABC):
 
 
 ResourceCreateCallback = Callable[
-    [gluetool.log.ContextAdapter, sqlalchemy.orm.session.Session, GuestRequest, str], Result[ResourceT, Failure]
+    [gluetool.log.ContextAdapter, sqlalchemy.orm.session.Session, GuestRequest, str], _Result[ResourceT, Failure]
 ]
 
 
-ResourceListCallback = Callable[[gluetool.log.ContextAdapter, GuestRequest], Result[list[ResourceT], Failure]]
+ResourceListCallback = Callable[[gluetool.log.ContextAdapter, GuestRequest], _Result[list[ResourceT], Failure]]
 
 
-ResourceIdentifierCallback = Callable[[GuestRequest], Result[str, Failure]]
+ResourceIdentifierCallback = Callable[[GuestRequest], _Result[str, Failure]]
 
 
 class ResourceManager(Generic[ResourceT]):
@@ -3609,24 +3595,26 @@ class ResourceManager(Generic[ResourceT]):
     ) -> None:
         self.logger = logger
         self.pool = pool
+
         self.resource_type = resource_type
+
         self.resource_create_callback = resource_create_callback
         self.resource_list_callback = resource_list_callback
         self.resource_identifier_callback = resource_identifier_callback
 
     def acquire(
         self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest, session: sqlalchemy.orm.session.Session
-    ) -> Result[ResourceT, Failure]:
+    ) -> _Result[ResourceT, Failure]:
         r_resource_name = self.resource_identifier_callback(guest_request)
-        if r_resource_name.is_error:
-            return Error(Failure.from_failure('Could not get resource name', r_resource_name.unwrap_error()))
+        if not is_successful(r_resource_name):
+            return _Error(Failure.from_failure('Could not get resource name', r_resource_name.failure()))
         resource_name = r_resource_name.unwrap()
 
         r_existing_resources = self.resource_list_callback(self.logger, guest_request)
-        if r_existing_resources.is_error:
-            return Error(
+        if not is_successful(r_existing_resources):
+            return _Error(
                 Failure.from_failure(
-                    'Could not list already allocated resources for guest request', r_existing_resources.unwrap_error()
+                    'Could not list already allocated resources for guest request', r_existing_resources.failure()
                 )
             )
         existing_resources = r_existing_resources.unwrap()
@@ -3664,7 +3652,7 @@ class ResourceManager(Generic[ResourceT]):
                         chosen_resource=resource_to_use.name,
                     ).handle(self.logger)
 
-                return Ok(resource_to_use)
+                return _Ok(resource_to_use)
 
             # If we ended up here this means all preallocated resources are in unusable state. At the same time we may
             # not be able to use the expected artemis-GUESTNAME naming as clouds may not allow two resources with the
@@ -3678,7 +3666,11 @@ class ResourceManager(Generic[ResourceT]):
             if resource_name in claimed_names:
                 r_max_resources_limit = KNOB_RESOURCES_PER_REQUEST_LIMIT.get_value(entityname=self.pool.poolname)
                 if r_max_resources_limit.is_error:
-                    return Error(Failure('Could not get max resources per request limit'))
+                    return _Error(
+                        Failure.from_failure(
+                            'Could not get max resources per request limit', r_max_resources_limit.unwrap_error()
+                        )
+                    )
 
                 # Can't use the expected resource_name because there is a leftover resource with this name. Let's try
                 # to pick up a new one
@@ -3689,7 +3681,7 @@ class ResourceManager(Generic[ResourceT]):
                 else:
                     # seems that all allowed names are already claimed by leftover resources, which means something
                     # is wrong -> can't continue
-                    return Error(
+                    return _Error(
                         Failure(
                             'Too many leftover resources', resource_type=self.resource_type, pool=self.pool.poolname
                         )

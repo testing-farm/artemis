@@ -18,6 +18,7 @@ import tft.artemis.drivers.localhost
 from tft.artemis.drivers import vm_info_to_ip
 
 from . import MockPatcher
+from .tasks import DummyPool
 
 POST_INSTALL_SCRIPT_TEMPLATE_CLOUD_INIT = """
 #cloud-config
@@ -227,7 +228,7 @@ def test_generate_post_install_script_from_template_cloud_init(
     logger: gluetool.log.ContextAdapter,
 ) -> None:
     guest_request = MagicMock(post_install_script=user_data)
-    pool: tft.artemis.drivers.PoolDriver[Any] = tft.artemis.drivers.PoolDriver(
+    pool: tft.artemis.drivers.PoolDriver[Any] = DummyPool(
         logger,
         'dummy-driver-with-post-install-script',
         {'post-install-template': POST_INSTALL_SCRIPT_TEMPLATE_CLOUD_INIT},
@@ -254,9 +255,7 @@ def test_generate_post_install_script_from_template_default(
     logger: gluetool.log.ContextAdapter,
 ) -> None:
     guest_request = MagicMock(post_install_script=user_data, serialize=lambda: {'post_install_script': user_data})
-    pool: tft.artemis.drivers.PoolDriver[Any] = tft.artemis.drivers.PoolDriver(
-        logger, 'dummy-driver-with-post-install-script', {}
-    )
+    pool: tft.artemis.drivers.PoolDriver[Any] = DummyPool(logger, 'dummy-driver-with-post-install-script', {})
     r_script = pool.generate_post_install_script(guest_request)
     assert r_script.is_ok
     script = r_script.unwrap()

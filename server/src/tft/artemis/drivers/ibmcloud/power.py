@@ -10,10 +10,10 @@ from typing import Any, Optional, TypedDict, cast
 import gluetool.log
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
-from returns.result import Result as _Result, Success as _Ok
+from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
 
-from tft.artemis.drivers import PoolDriver, PoolImageInfo, PoolImageInfoT
+from tft.artemis.drivers import PoolDriver, PoolImageInfo, PoolImageInfoT, Tags
 from tft.artemis.drivers.ibmcloud import (
     IBMCloudDriver,
     IBMCloudFlavor,
@@ -399,7 +399,7 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance, None]):
 
         return Ok(resources)
 
-    def create_instance(  # type: ignore[override]
+    def _create_backend_instance(  # type: ignore[override]
         self,
         logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest,
@@ -407,8 +407,8 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance, None]):
         image: PoolImageInfo,
         instance_name: str,
         user_data_file: Optional[str] = None,
-        tags: Optional[dict[str, str]] = None,
-    ) -> Result[IBMCloudPowerInstance, Failure]:
+        tags: Optional[Tags] = None,
+    ) -> _Result[IBMCloudPowerInstance, Failure]:
         # Here will be setting defaults for memory, just in case.
         memory = flavor.memory.to('GiB').magnitude if flavor.memory else 4
         # Unusable flavors missing processors/threads_per_core should be already filtered out
@@ -441,12 +441,12 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance, None]):
             r_instance_create = session.run(logger, create_cmd_args, commandname='ibmcloud.instance-create')
 
             if r_instance_create.is_error:
-                return Error(Failure.from_failure('Instance creation failed', r_instance_create.unwrap_error()))
+                return _Error(Failure.from_failure('Instance creation failed', r_instance_create.unwrap_error()))
 
             instance = cast(list[dict[str, Any]], r_instance_create.unwrap())[0]
             created_at = self.timestamp_to_datetime(instance['creationDate'])
             if created_at.is_error:
-                return Error(
+                return _Error(
                     Failure.from_failure(
                         'Could not parse instance create timestamp',
                         created_at.unwrap_error(),
@@ -454,7 +454,7 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance, None]):
                     )
                 )
 
-            return Ok(
+            return _Ok(
                 IBMCloudPowerInstance(
                     id=instance['pvmInstanceID'],
                     name=instance['serverName'],
