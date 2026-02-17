@@ -520,7 +520,7 @@ Console support varies significantly across cloud providers. This section provid
 |`aws`
 |[green]#yes#
 |[green]#yes#
-|Interactive console uses AWS EC2 Instance Connect. Only available on instances with ENA (Elastic Network Adapter) support. Console URL is generated dynamically via a configurable template. See <<console-aws-notes,AWS notes>>.
+|Interactive console uses AWS EC2 Instance Connect. Only available on instances with ENA (Elastic Network Adapter) support. Console URL is generated dynamically via a configurable template. See <<aws.adoc#_console_access,"AWS driver">> for configuration details.
 
 |`azure`
 |[red]#no#
@@ -558,45 +558,6 @@ Console support varies significantly across cloud providers. This section provid
 |Full console support. Interactive console URL (VNC/SPICE, depending on OpenStack configuration) via `openstack console url show`. Console log blob via `openstack console log show`. URL expires after a configurable time (default: 600 seconds).
 
 |===
-
-[[console-aws-notes]]
-===== AWS console notes
-
-AWS console URL support requires:
-
-* The instance flavor must have ENA (Elastic Network Adapter) support. Flavors without ENA support are automatically filtered out when a guest requests `console:interactive` with URL content type.
-* The console URL template is configurable via the `aws.logs.console.interactive.url` knob (environment variable: `ARTEMIS_AWS_LOGS_CONSOLE_INTERACTIVE_URL`).
-* Default URL template: `https://console.aws.amazon.com/ec2/v2/connect/ec2-user/{instance_id}?connection-type=isc&serial-port=0`
-
-[NOTE]
-====
-Due to the nature of AWS EC2 Instance Connect, there may be a slight lag when accessing the console compared to dedicated infrastructure like OpenStack or Beaker.
-====
-
-===== OpenStack console notes
-
-OpenStack console support includes:
-
-* Console URL is obtained via `openstack console url show` command.
-* The type of console (VNC, SPICE, etc.) depends on the OpenStack deployment configuration.
-* Console URL expiration is configurable via `openstack.console.url.expires` knob (environment variable: `ARTEMIS_OPENSTACK_CONSOLE_URL_EXPIRES`). Default: 600 seconds.
-
-===== Beaker console notes
-
-Beaker console and log support:
-
-* Console log dumps are available as both URL (pointing to Beaker's stored output) and blob (content fetched from Beaker).
-* System log (`sys.log:dump`) is available as URL.
-* Installation logs are available as blobs: `anaconda.log:dump`, `storage.log:dump`, `program.log:dump`, `packaging.log:dump`.
-* Kickstart configuration (`ks.cfg:dump`) is available as blob.
-* Interactive console is available via conserver, which is external to Artemis. Users can connect directly to conserver using their Beaker credentials and machine hostname.
-
-===== IBM Cloud Power console notes
-
-IBM Cloud Power console support:
-
-* Console URL is obtained via IBM Power Virtual Server API.
-* URL expiration is configurable via `ibmcloud-power.console.url.expires` knob (environment variable: `ARTEMIS_IBMCLOUD_POWER_CONSOLE_URL_EXPIRES`). Default: 300 seconds.
 
 [NOTE]
 ====

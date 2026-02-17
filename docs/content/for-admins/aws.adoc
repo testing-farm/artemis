@@ -125,6 +125,15 @@ use-public-ip: true
 
 AWS driver supports both interactive console (URL) and console log (blob) access. For details on console support across all drivers, see <<drivers.adoc#_console_support_details,"Console support details">>.
 
+==== Console log
+
+Console log is retrieved via the AWS `get-console-output` API.
+
+[NOTE]
+====
+AWS limits console output to the most recent 64 KB. Older output is not available through this API.
+====
+
 ==== Interactive console
 
 Interactive console uses AWS EC2 Instance Connect. The console URL template can be customized:
