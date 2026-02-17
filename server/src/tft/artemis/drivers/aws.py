@@ -179,7 +179,7 @@ ConfigImageFilter = TypedDict(
 
 
 #: A type of AWS instance type description as provided by the output of ``ec2 describe-instance-types``.
-BackendFlavor = dict[str, str]
+BackendFlavor = dict[str, Any]
 
 
 AWS_VM_HYPERVISORS = ('nitro', 'xen')
@@ -1551,7 +1551,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor, BackendFlavor
         if r_raw_flavors.is_error:
             return _Error(r_raw_flavors.unwrap_error())
 
-        return _Ok(cast(list[dict[str, Any]], r_raw_flavors.unwrap()))
+        return _Ok(cast(list[BackendFlavor], r_raw_flavors.unwrap()))
 
     # ignore[override]: mismatch with PoolImageInfoT in the parent, will be resolved with later patches focusing on
     # the deduplication.
