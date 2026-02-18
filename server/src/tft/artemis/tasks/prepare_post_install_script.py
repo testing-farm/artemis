@@ -83,6 +83,7 @@ class Workspace(_Workspace):
                 ['/bin/sh', POST_INSTALL_SCRIPT_REMOTE_FILEPATH],
                 key=self.master_key,
                 ssh_timeout=r_ssh_timeout.unwrap(),
+                ssh_options=self.pool.ssh_options,
                 poolname=self.pool.poolname,
                 commandname='prepare-post-install-script.execute',
                 cause_extractor=self.pool.cli_error_cause_extractor,
