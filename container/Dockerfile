@@ -66,6 +66,9 @@ RUN    microdnf --refresh \
                            net-tools \
                            # required by ibmcloud installer
                            tar \
+                           # required for traceroute setup
+                           sudo \
+                           traceroute \
     && update-crypto-policies --set LEGACY \
     && microdnf clean all \
     && rm -rf /var/cache/dnf \
@@ -107,6 +110,9 @@ RUN    mkdir -p $HOME/.ibmcloud \
 RUN    find $HOME/.ibmcloud -type d -exec chmod g+rx {} +
 RUN    find $HOME/.ibmcloud -type f -exec chmod g+r {} +
 
+# Install and configure passwordless root access to pvsadm, sadly pvsadm needs to be run as root only
+RUN echo 'cnc ALL=(ALL) NOPASSWD: /usr/local/bin/traceroute' | tee /etc/sudoers.d/traceroute \
+    && chmod 0440 /etc/sudoers.d/traceroute
 #
 # We want Artemis to support also older SSH keys for now, Fedora 33+ has strong crypto enabled
 # https://fedoraproject.org/wiki/Changes/StrongCryptoSettings2
