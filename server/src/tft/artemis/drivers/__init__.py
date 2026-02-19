@@ -3559,7 +3559,7 @@ class Resource(SerializableContainer, abc.ABC):
 
     @functools.cached_property
     def is_pending(self) -> bool:
-        return True
+        return False
 
     @functools.cached_property
     def is_ready(self) -> bool:
@@ -3717,7 +3717,7 @@ class ResourceManager(Generic[ResourceT, ResourceCreationRequestT, ResourceCreat
             )
         resource_name = r_resource_name.unwrap()
 
-        r_existing_resources = self.list_resources(self.logger, guest_request)
+        r_existing_resources = self.list_resources(logger, guest_request)
         if not is_successful(r_existing_resources):
             return _Error(
                 Failure.from_failure(
@@ -3729,7 +3729,7 @@ class ResourceManager(Generic[ResourceT, ResourceCreationRequestT, ResourceCreat
         existing_resources = r_existing_resources.unwrap()
 
         if not existing_resources:
-            return self.create_resource(self.logger, session, guest_request, resource_name, resource_request).alt(
+            return self.create_resource(logger, session, guest_request, resource_name, resource_request).alt(
                 lambda failure: failure.update(**failure_details)
             )
 
@@ -3742,7 +3742,7 @@ class ResourceManager(Generic[ResourceT, ResourceCreationRequestT, ResourceCreat
         # Schedule cleanup of resources we won't use
         for leftover in leftover_resources:
             self.pool.dispatch_resource_cleanup(
-                self.logger,
+                logger,
                 session,
                 leftover.to_pool_resource_ids(),
                 guest_request=guest_request,
@@ -3760,7 +3760,7 @@ class ResourceManager(Generic[ResourceT, ResourceCreationRequestT, ResourceCreat
                     poolname=self.pool.poolname,
                     resource_ids=[resource.name for resource in pending_resources],
                     chosen_resource=resource_to_use.name,
-                ).handle(self.logger)
+                ).handle(logger)
 
             return self.reuse_resource(logger, session, guest_request, resource_request, resource_to_use).alt(
                 lambda failure: failure.update(**failure_details)
@@ -3776,7 +3776,7 @@ class ResourceManager(Generic[ResourceT, ResourceCreationRequestT, ResourceCreat
         claimed_names = {leftover.name for leftover in leftover_resources}
 
         if resource_name not in claimed_names:
-            return self.create_resource(self.logger, session, guest_request, resource_name, resource_request).alt(
+            return self.create_resource(logger, session, guest_request, resource_name, resource_request).alt(
                 lambda failure: failure.update(**failure_details)
             )
 
@@ -3792,10 +3792,11 @@ class ResourceManager(Generic[ResourceT, ResourceCreationRequestT, ResourceCreat
 
         # Can't use the expected resource_name because there is a leftover resource with this name. Let's try
         # to pick up a new one
+        expected_resource_name = resource_name
         for postfix in range(1, r_max_resources_limit.unwrap()):
-            resource_name = f'{resource_name}-{postfix}'
+            resource_name = f'{expected_resource_name}-{postfix}'
             if resource_name not in claimed_names:
-                return self.create_resource(self.logger, session, guest_request, resource_name, resource_request).alt(
+                return self.create_resource(logger, session, guest_request, resource_name, resource_request).alt(
                     lambda failure: failure.update(**failure_details)
                 )
 
