@@ -97,6 +97,7 @@ class Workspace(_Workspace):
                 key=self.master_key,
                 ssh_timeout=r_timeout.unwrap(),
                 ssh_options=self.pool.ssh_options,
+                guestname=self.guestname,
                 poolname=self.pool.poolname,
                 commandname=f'{Workspace.TASKNAME}.shell-ping',
                 cause_extractor=self.pool.cli_error_cause_extractor,

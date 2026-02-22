@@ -1311,7 +1311,11 @@ class BeakerDriver(PoolDriver[Instance]):
         return Ok(patterns_out)
 
     def _run_bkr(
-        self, logger: gluetool.log.ContextAdapter, options: list[str], commandname: Optional[str] = None
+        self,
+        logger: gluetool.log.ContextAdapter,
+        options: list[str],
+        commandname: Optional[str] = None,
+        guestname: Optional[str] = None,
     ) -> Result[CLIOutput, Failure]:
         """
         Run bkr command with additional options
@@ -1344,6 +1348,7 @@ class BeakerDriver(PoolDriver[Instance]):
             bkr_command,
             json_output=False,
             command_scrubber=lambda cmd: ['bkr', *options],
+            guestname=guestname,
             poolname=self.poolname,
             commandname=commandname,
             cause_extractor=bkr_error_cause_extractor,
@@ -2304,6 +2309,7 @@ class BeakerDriver(PoolDriver[Instance]):
             key=r_master_key.unwrap(),
             ssh_timeout=r_ssh_timeout.unwrap(),
             ssh_options=self.ssh_options,
+            guestname=guest_request.guestname,
             poolname=self.poolname,
             commandname='bkr.extend',
             cause_extractor=bkr_error_cause_extractor,

@@ -240,7 +240,12 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor, novaclient.v2
         return _Ok(capabilities)
 
     def _run_os(
-        self, options: list[str], *, json_format: bool = True, commandname: Optional[str] = None
+        self,
+        options: list[str],
+        *,
+        json_format: bool = True,
+        commandname: Optional[str] = None,
+        guestname: Optional[str] = None,
     ) -> Result[Union[JSONType, str], Failure]:
         """
         Run os command with additional options and return output in json format
@@ -264,6 +269,7 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor, novaclient.v2
             os_base + options,
             json_output=json_format,
             command_scrubber=lambda cmd: ['openstack', *options],
+            guestname=guestname,
             poolname=self.poolname,
             commandname=commandname,
             cause_extractor=os_error_cause_extractor,

@@ -3060,6 +3060,7 @@ def run_cli_tool(
     env: Optional[dict[str, str]] = None,
     deadline: Optional[datetime.timedelta] = None,
     # for CLI calls metrics
+    guestname: Optional[str] = None,
     poolname: Optional[str] = None,
     commandname: Optional[str] = None,
     cause_extractor: Optional[PoolErrorCauseExtractor] = None,
@@ -3094,6 +3095,7 @@ def run_cli_tool(
     command_scrubber = command_scrubber or _noop_scrubber
     failure_details: dict[str, Any] = {
         'scrubbed_command': command_scrubber(command),
+        'guestname': guestname,
         'poolname': poolname,
         'commandname': commandname,
         # TODO: logging complete environ is a security hole. Needs to be scrubbed first.
@@ -3216,6 +3218,7 @@ def run_remote(
     ssh_options: Optional[list[str]] = None,
     deadline: Optional[datetime.timedelta] = None,
     # for CLI calls metrics
+    guestname: Optional[str] = None,
     poolname: Optional[str] = None,
     commandname: Optional[str] = None,
     cause_extractor: Optional[PoolErrorCauseExtractor] = None,
@@ -3248,7 +3251,12 @@ def run_remote(
         ]
 
         return run_cli_tool(
-            logger, ssh_command, poolname=poolname, commandname=commandname, cause_extractor=cause_extractor
+            logger,
+            ssh_command,
+            guestname=guestname,
+            poolname=poolname,
+            commandname=commandname,
+            cause_extractor=cause_extractor,
         )
 
 
@@ -3263,6 +3271,7 @@ def copy_to_remote(
     ssh_options: Optional[list[str]] = None,
     deadline: Optional[datetime.timedelta] = None,
     # for CLI calls metrics
+    guestname: Optional[str] = None,
     poolname: Optional[str] = None,
     commandname: Optional[str] = None,
     cause_extractor: Optional[PoolErrorCauseExtractor] = None,
@@ -3291,7 +3300,12 @@ def copy_to_remote(
         ]
 
         return run_cli_tool(
-            logger, scp_command, poolname=poolname, commandname=commandname, cause_extractor=cause_extractor
+            logger,
+            scp_command,
+            guestname=guestname,
+            poolname=poolname,
+            commandname=commandname,
+            cause_extractor=cause_extractor,
         )
 
 
@@ -3306,6 +3320,7 @@ def copy_from_remote(
     ssh_options: Optional[list[str]] = None,
     deadline: Optional[datetime.timedelta] = None,
     # for CLI calls metrics
+    guestname: Optional[str] = None,
     poolname: Optional[str] = None,
     commandname: Optional[str] = None,
     cause_extractor: Optional[PoolErrorCauseExtractor] = None,
@@ -3334,7 +3349,12 @@ def copy_from_remote(
         ]
 
         return run_cli_tool(
-            logger, scp_command, poolname=poolname, commandname=commandname, cause_extractor=cause_extractor
+            logger,
+            scp_command,
+            guestname=guestname,
+            poolname=poolname,
+            commandname=commandname,
+            cause_extractor=cause_extractor,
         )
 
 
@@ -3346,6 +3366,7 @@ def ping_shell_remote(
     ssh_timeout: int,
     ssh_options: Optional[list[str]] = None,
     # for CLI calls metrics
+    guestname: Optional[str] = None,
     poolname: Optional[str] = None,
     commandname: Optional[str] = None,
     cause_extractor: Optional[PoolErrorCauseExtractor] = None,
@@ -3368,6 +3389,7 @@ def ping_shell_remote(
         key=key,
         ssh_timeout=ssh_timeout,
         ssh_options=ssh_options,
+        guestname=guestname,
         poolname=poolname,
         commandname=commandname,
         cause_extractor=cause_extractor,
@@ -3480,6 +3502,7 @@ class CLISessionPermanentDir(abc.ABC):
         options: list[str],
         *,
         json_format: bool = True,
+        guestname: Optional[str] = None,
         commandname: Optional[str] = None,
     ) -> Result[Union[JSONType, str], Failure]:
         environ = {**os.environ, self.CLI_CONFIG_DIR_ENV_VAR: self.session_dir_path}
@@ -3507,6 +3530,7 @@ class CLISessionPermanentDir(abc.ABC):
             env=environ,
             json_output=json_format,
             command_scrubber=lambda cmd: [self.CLI_PREFIX, *options],
+            guestname=guestname,
             poolname=self.pool.poolname,
             commandname=commandname,
             cause_extractor=self.pool.cli_error_cause_extractor,
