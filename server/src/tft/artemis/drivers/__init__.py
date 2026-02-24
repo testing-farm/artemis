@@ -3695,7 +3695,7 @@ class ResourceManager(Generic[ResourceT, ResourceCreationRequestT, ResourceCreat
         self.create_resource = create_resource
         self.reuse_resource = reuse_resource
         self.list_resources = list_resources
-        self.resource_identifier = resource_name
+        self.resource_name = resource_name
         self.create_resource_request = create_resource_request
 
     def acquire(
@@ -3710,7 +3710,7 @@ class ResourceManager(Generic[ResourceT, ResourceCreationRequestT, ResourceCreat
 
         resource_request = r_resource_request.unwrap()
 
-        r_resource_name = self.resource_identifier(guest_request)
+        r_resource_name = self.resource_name(guest_request)
         if not is_successful(r_resource_name):
             return _Error(
                 Failure.from_failure('Could not get resource name', r_resource_name.failure(), **failure_details)
@@ -3803,4 +3803,6 @@ class ResourceManager(Generic[ResourceT, ResourceCreationRequestT, ResourceCreat
         else:
             # seems that all allowed names are already claimed by leftover resources, which means something
             # is wrong -> can't continue
-            return _Error(Failure('Too many leftover resources', **failure_details))
+            return _Error(
+                Failure('Too many leftover resources', recoverable=False, fail_guest_request=False, **failure_details)
+            )
