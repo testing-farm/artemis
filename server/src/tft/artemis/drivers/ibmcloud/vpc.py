@@ -14,7 +14,7 @@ from gluetool.result import Error, Ok, Result
 from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
 
-from tft.artemis.drivers import PoolDriver, PoolImageInfo
+from tft.artemis.drivers import PoolDriver, PoolImageInfo, create_tempfile
 from tft.artemis.drivers.ibmcloud import (
     IBMCloudDriver,
     IBMCloudFlavor,
@@ -22,6 +22,8 @@ from tft.artemis.drivers.ibmcloud import (
     IBMCloudPoolData,
     IBMCloudPoolResourcesIDs,
     IBMCloudSession,
+    InstanceCreationOutcome,
+    InstanceCreationRequest,
 )
 
 from ... import Failure, process_output_to_str
@@ -437,39 +439,34 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance, BackendFlavor]):
 
             return Ok(res)
 
-    def acquire_guest(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
-    ) -> Result[ProvisioningProgress, Failure]:
-        return self.do_acquire_guest(logger, session, guest_request)
-
-    def create_instance(
+    def _create_instance(
         self,
         logger: gluetool.log.ContextAdapter,
-        flavor: Flavor,
-        image: PoolImageInfo,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
         instance_name: str,
-        user_data_file: Optional[str] = None,
-    ) -> Result[IBMCloudVPCInstance, Failure]:
-        with IBMCloudSession(logger, self) as session:
-            r_subnet_show = session.run(
+        instance_request: InstanceCreationRequest,
+    ) -> _Result[InstanceCreationOutcome[IBMCloudVPCInstance], Failure]:
+        with IBMCloudSession(logger, self) as cli_session:
+            r_subnet_show = cli_session.run(
                 logger,
                 ['is', 'subnet', self.pool_config['subnet-id'], '--output', 'json'],
                 commandname='ibmcloud-show-subnet',
             )
             if r_subnet_show.is_error:
-                return Error(
+                return _Error(
                     Failure.from_failure('Failed to execute show subnet details command', r_subnet_show.unwrap_error())
                 )
 
             try:
                 vpc_id = cast(dict[str, Any], r_subnet_show.unwrap())['vpc']['id']
             except KeyError:
-                return Error(Failure('Subnet details have no vpc information'))
+                return _Error(Failure('Subnet details have no vpc information'))
 
             root_disk_size: Optional[SizeType] = None
             # If disk size is defined in flavor -> let's use it, otherwise take defaults from pool config
-            if flavor.disk and flavor.disk[0].size is not None:
-                root_disk_size = flavor.disk[0].size
+            if instance_request.flavor.disk and instance_request.flavor.disk[0].size is not None:
+                root_disk_size = instance_request.flavor.disk[0].size
             else:
                 # let's take boot partition size from the driver config
                 if 'default-root-disk-size' in self.pool_config:
@@ -482,10 +479,10 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance, BackendFlavor]):
                 instance_name,
                 vpc_id,
                 self.pool_config['zone'],
-                flavor.id,
+                instance_request.flavor.id,
                 self.pool_config['subnet-id'],
                 '--image',
-                image.id,
+                instance_request.image.id,
                 '--allow-ip-spoofing=false',
                 '--keys',
                 self.pool_config['master-key-name'],
@@ -503,30 +500,39 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance, BackendFlavor]):
                 }
                 create_cmd_args += ['--boot-volume', json.dumps(boot_volume_specs)]
 
-            if user_data_file:
-                create_cmd_args += ['--user-data', f'@{user_data_file}']
+            if instance_request.post_install_script:
+                with create_tempfile(file_contents=instance_request.post_install_script) as user_data_file:
+                    create_cmd_args += ['--user-data', f'@{user_data_file}']
 
-            r_instance_create = session.run(logger, create_cmd_args, commandname='ibmcloud.instance-create')
+                    r_instance_create = cli_session.run(logger, create_cmd_args, commandname='ibmcloud.instance-create')
 
-            if r_instance_create.is_error:
-                return Error(Failure.from_failure('Instance creation failed', r_instance_create.unwrap_error()))
+            else:
+                r_instance_create = cli_session.run(logger, create_cmd_args, commandname='ibmcloud.instance-create')
 
-            instance = cast(dict[str, Any], r_instance_create.unwrap())
-            created_at = self.timestamp_to_datetime(instance['created_at'])
-            if created_at.is_error:
-                return Error(
-                    Failure.from_failure(
-                        'Could not parse instance create timestamp', created_at.unwrap_error(), instance=instance['id']
-                    )
+        if r_instance_create.is_error:
+            return _Error(Failure.from_failure('Instance creation failed', r_instance_create.unwrap_error()))
+
+        instance = cast(dict[str, Any], r_instance_create.unwrap())
+        created_at = self.timestamp_to_datetime(instance['created_at'])
+        if created_at.is_error:
+            return _Error(
+                Failure.from_failure(
+                    'Could not parse instance create timestamp', created_at.unwrap_error(), instance=instance['id']
                 )
-            return Ok(
-                IBMCloudVPCInstance(
+            )
+
+        return _Ok(
+            InstanceCreationOutcome(
+                resource=IBMCloudVPCInstance(
                     id=instance['id'],
                     name=instance['name'],
                     status=instance['status'],
                     created_at=created_at.unwrap(),
-                )
+                ),
+                flavor=instance_request.flavor,
+                image=instance_request.image,
             )
+        )
 
     def _show_instance(self, logger: gluetool.log.ContextAdapter, instance_id: str) -> Result[Any, Failure]:
         """This method will show a single instance details."""

@@ -42,6 +42,7 @@ from . import (
     ConsoleUrlData,
     FlavorBasedPoolDriver,
     GuestLogUpdateProgress,
+    Instance,
     PoolCapabilities,
     PoolData,
     PoolDriver,
@@ -156,7 +157,7 @@ class OpenStackPoolResourcesIDs(PoolResourcesIDs):
     instance_id: Optional[str] = None
 
 
-class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor, novaclient.v2.flavors.Flavor]):
+class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor, novaclient.v2.flavors.Flavor, Instance]):
     drivername = 'openstack'
 
     pool_data_class = OpenStackPoolData

@@ -1445,22 +1445,6 @@ of crashed resources.
 
 5+|If unset for a pool, the given pool is ignored by Artemis in general.
 
-|`pool.instances-per-request-limit`
-|`int`
-|`ARTEMIS_POOL_INSTANCES_PER_REQUEST_LIMIT`
-|`7`
-|no
-
-
-|`pool.instances-per-request-limit:$entityname`
-|
-|`ARTEMIS_POOL_INSTANCES_PER_REQUEST_LIMIT_$entityname`
-|
-|
-
-
-5+|Maximum number of instances allowed to be present in cloud simultaneously for a single guest request
-
 |`pool.max-parallel-cli-sessions`
 |`int`
 |`ARTEMIS_MAX_PARALLEL_CLI_SESSIONS`
@@ -1476,6 +1460,22 @@ of crashed resources.
 
 
 5+|A maximum number of parallel CLI sessions for the same pool
+
+|`pool.resources-per-request-limit`
+|`int`
+|`ARTEMIS_POOL_RESOURCES_PER_REQUEST_LIMIT`
+|`7`
+|no
+
+
+|`pool.resources-per-request-limit:$entityname`
+|
+|`ARTEMIS_POOL_RESOURCES_PER_REQUEST_LIMIT_$entityname`
+|
+|
+
+
+5+|Maximum number of resources allowed to be present in cloud simultaneously for a single guest request
 
 |`pool.update-guest-request-tick`
 |`int`

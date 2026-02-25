@@ -7,6 +7,7 @@ import dataclasses
 import datetime
 import enum
 import fcntl
+import functools
 import hashlib
 import json
 import os
@@ -392,12 +393,12 @@ KNOB_PARALLEL_CLI_SESSIONS: Knob[int] = Knob(
     default=4,
 )
 
-KNOB_INSTANCES_PER_REQUEST_LIMIT: Knob[int] = Knob(
-    'pool.instances-per-request-limit',
-    'Maximum number of instances allowed to be present in cloud simultaneously for a single guest request',
+KNOB_RESOURCES_PER_REQUEST_LIMIT: Knob[int] = Knob(
+    'pool.resources-per-request-limit',
+    'Maximum number of resources allowed to be present in cloud simultaneously for a single guest request',
     has_db=False,
     per_entity=True,
-    envvar='ARTEMIS_POOL_INSTANCES_PER_REQUEST_LIMIT',
+    envvar='ARTEMIS_POOL_RESOURCES_PER_REQUEST_LIMIT',
     cast_from_str=int,
     default=7,
 )
@@ -1334,7 +1335,10 @@ def render_tags(
     return _Ok(tags)
 
 
-class PoolDriver(gluetool.log.LoggerMixin, abc.ABC):
+InstanceT = TypeVar('InstanceT', bound='Instance', covariant=True)  # noqa: PLC0105
+
+
+class PoolDriver(gluetool.log.LoggerMixin, Generic[InstanceT]):
     drivername: str
 
     _image_map_hook_name: str
@@ -1368,12 +1372,12 @@ class PoolDriver(gluetool.log.LoggerMixin, abc.ABC):
         self.image_info_cache_key = self.POOL_IMAGE_INFO_CACHE_KEY.format(self.poolname)  # noqa: FS002
         self.flavor_info_cache_key = self.POOL_FLAVOR_INFO_CACHE_KEY.format(self.poolname)  # noqa: FS002
 
-    _drivers_registry: ClassVar[dict[str, type['PoolDriver']]] = {}
+    _drivers_registry: ClassVar[dict[str, type['PoolDriver[Any]']]] = {}
 
     @staticmethod
     def _instantiate(
         logger: gluetool.log.ContextAdapter, driver_name: str, poolname: str, pool_config: dict[str, Any]
-    ) -> Result['PoolDriver', Failure]:
+    ) -> Result['PoolDriver[Any]', Failure]:
         pool_driver_class = PoolDriver._drivers_registry.get(driver_name)
 
         if pool_driver_class is None:
@@ -1392,7 +1396,7 @@ class PoolDriver(gluetool.log.LoggerMixin, abc.ABC):
     @staticmethod
     def load_or_none(
         logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, poolname: str
-    ) -> Result[Optional['PoolDriver'], Failure]:
+    ) -> Result[Optional['PoolDriver[Any]'], Failure]:
         r_pool_record = SafeQuery.from_session(session, Pool).filter(Pool.poolname == poolname).one_or_none()
 
         if r_pool_record.is_error:
@@ -1414,7 +1418,7 @@ class PoolDriver(gluetool.log.LoggerMixin, abc.ABC):
     @staticmethod
     def load(
         logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, poolname: str
-    ) -> Result['PoolDriver', Failure]:
+    ) -> Result['PoolDriver[Any]', Failure]:
         r_pool = PoolDriver.load_or_none(logger, session, poolname)
 
         if r_pool.is_error:
@@ -1430,13 +1434,13 @@ class PoolDriver(gluetool.log.LoggerMixin, abc.ABC):
     @staticmethod
     def load_all(
         logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, *, enabled_only: bool = True
-    ) -> Result[list['PoolDriver'], Failure]:
+    ) -> Result[list['PoolDriver[Any]'], Failure]:
         r_pools = SafeQuery.from_session(session, Pool).all()
 
         if r_pools.is_error:
             return Error(r_pools.unwrap_error())
 
-        pools: list[PoolDriver] = []
+        pools: list[PoolDriver[Any]] = []
 
         for pool_record in r_pools.unwrap():
             r_pool = PoolDriver._instantiate(logger, pool_record.driver, pool_record.poolname, pool_record.parameters)
@@ -2711,7 +2715,16 @@ class FlavorFilter(Protocol, Generic[FlavorT]):
         pass
 
 
-class FlavorBasedPoolDriver(PoolDriver, abc.ABC, Generic[PoolImageInfoT, FlavorT, BackendFlavorT]):
+class FlavorBasedPoolDriver(
+    PoolDriver[InstanceT,],
+    abc.ABC,
+    Generic[
+        PoolImageInfoT,
+        FlavorT,
+        BackendFlavorT,
+        InstanceT,
+    ],
+):
     """
     A base class for drivers spawning guests from "images" and "flavors".
 
@@ -3407,7 +3420,7 @@ class CLISessionPermanentDir(abc.ABC):
     CLI_CMD = 'cli'
     CLI_CONFIG_DIR_ENV_VAR = 'CLI_CONFIG_DIR'
 
-    def __init__(self, logger: gluetool.log.ContextAdapter, pool: 'PoolDriver') -> None:
+    def __init__(self, logger: gluetool.log.ContextAdapter, pool: 'PoolDriver[Any]') -> None:
         self.pool = pool
 
         r_session_dir_path = KNOB_CLI_SESSION_CONFIGURATION_DIR.get_value(entityname=self.pool.poolname)
@@ -3528,3 +3541,268 @@ class CLISessionPermanentDir(abc.ABC):
             return Error(self._login_result.unwrap_error())
 
         return self._run_cmd(logger, options, json_format=json_format, commandname=commandname)
+
+
+#
+# Resource manager
+#
+
+
+@dataclasses.dataclass
+class Resource(SerializableContainer, abc.ABC):
+    """
+    Represents a resource acquired from the backend.
+    """
+
+    #: Resource name.
+    name: str
+
+    @functools.cached_property
+    def is_pending(self) -> bool:
+        return False
+
+    @functools.cached_property
+    def is_ready(self) -> bool:
+        return True
+
+    @functools.cached_property
+    def is_error(self) -> bool:
+        return False
+
+    @abc.abstractmethod
+    def to_pool_resource_ids(self) -> PoolResourcesIDs:
+        raise NotImplementedError
+
+
+@dataclasses.dataclass
+class Instance(Resource):
+    """
+    Represents a backend instance.
+
+    .. note::
+
+        This applies not just to cloud-like backends where language often works with the term "instance", it is more
+        general, and covers all machine-like objects backends can offer.
+    """
+
+    #: Instance ID.
+    id: str
+
+
+#: Represents a type of backend resource.
+ResourceT = TypeVar('ResourceT', bound=Resource, covariant=True)  # noqa: PLC0105
+
+#: Represents a type of backend resource creation request.
+ResourceCreationRequestT = TypeVar(  # noqa: PLC0105
+    'ResourceCreationRequestT', bound='ResourceCreationRequest', covariant=True
+)
+
+#: Represents a type of backend resource creation outcome.
+ResourceCreationOutcomeT = TypeVar(  # noqa: PLC0105
+    'ResourceCreationOutcomeT', bound='ResourceCreationOutcome[Resource]', covariant=True
+)
+
+
+@dataclasses.dataclass
+class ResourceCreationRequest:
+    """
+    Bundles components needed to create a resource.
+    """
+
+
+@dataclasses.dataclass
+class ResourceCreationOutcome(Generic[ResourceT]):
+    """
+    Bundles components of the created resource, including the resource itself.
+    """
+
+    resource: ResourceT
+
+
+#: When invoked, provide a list of resources for the given guest request.
+RMListResourcesCallback = Callable[
+    [
+        gluetool.log.ContextAdapter,
+        GuestRequest,
+    ],
+    _Result[list[ResourceT], Failure],
+]
+
+
+#: When invoked, create a resource creation request.
+RMCreateResourceRequestCallback = Callable[
+    [
+        gluetool.log.ContextAdapter,
+        sqlalchemy.orm.session.Session,
+        GuestRequest,
+    ],
+    _Result[ResourceCreationRequestT, Failure],
+]
+
+
+#: When invoked, issue commands to the backend to obtain the resource, and provide its description.
+RMCreateResourceCallback = Callable[
+    [
+        gluetool.log.ContextAdapter,
+        sqlalchemy.orm.session.Session,
+        GuestRequest,
+        str,
+        ResourceCreationRequestT,
+    ],
+    _Result[ResourceCreationOutcomeT, Failure],
+]
+
+
+#: When invoked, take existing resource, and provide its description as if it was just created.
+RMReuseResourceCallback = Callable[
+    [
+        gluetool.log.ContextAdapter,
+        sqlalchemy.orm.session.Session,
+        GuestRequest,
+        ResourceCreationRequestT,
+        ResourceT,
+    ],
+    _Result[ResourceCreationOutcomeT, Failure],
+]
+
+
+#: When invoked, provide name of the resource for the given guest request.
+RMResourceNameCallback = Callable[
+    [
+        GuestRequest,
+    ],
+    _Result[str, Failure],
+]
+
+
+class ResourceManager(Generic[ResourceT, ResourceCreationRequestT, ResourceCreationOutcomeT]):
+    def __init__(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        pool: PoolDriver[Any],
+        resource_type: str,
+        list_resources: RMListResourcesCallback[ResourceT],
+        resource_name: RMResourceNameCallback,
+        create_resource_request: RMCreateResourceRequestCallback[ResourceCreationRequestT],
+        create_resource: RMCreateResourceCallback[ResourceCreationRequestT, ResourceCreationOutcomeT],
+        reuse_resource: RMReuseResourceCallback[ResourceCreationRequestT, ResourceT, ResourceCreationOutcomeT],
+    ) -> None:
+        self.logger = logger
+        self.pool = pool
+
+        self.resource_type = resource_type
+
+        self.create_resource = create_resource
+        self.reuse_resource = reuse_resource
+        self.list_resources = list_resources
+        self.resource_name = resource_name
+        self.create_resource_request = create_resource_request
+
+    def acquire(
+        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest, session: sqlalchemy.orm.session.Session
+    ) -> _Result[ResourceCreationOutcomeT, Failure]:
+        failure_details: dict[str, Any] = {'resource_type': self.resource_type, 'pool': self.pool.poolname}
+
+        r_resource_request = self.create_resource_request(logger, session, guest_request)
+
+        if not is_successful(r_resource_request):
+            return _Error(r_resource_request.failure().update(**failure_details))
+
+        resource_request = r_resource_request.unwrap()
+
+        r_resource_name = self.resource_name(guest_request)
+        if not is_successful(r_resource_name):
+            return _Error(
+                Failure.from_failure('Could not get resource name', r_resource_name.failure(), **failure_details)
+            )
+        resource_name = r_resource_name.unwrap()
+
+        r_existing_resources = self.list_resources(logger, guest_request)
+        if not is_successful(r_existing_resources):
+            return _Error(
+                Failure.from_failure(
+                    'Could not list already allocated resources for guest request',
+                    r_existing_resources.failure(),
+                    **failure_details,
+                )
+            )
+        existing_resources = r_existing_resources.unwrap()
+
+        if not existing_resources:
+            return self.create_resource(logger, session, guest_request, resource_name, resource_request).alt(
+                lambda failure: failure.update(**failure_details)
+            )
+
+        # Let's check state first - if the resource is already broken it is of no use to us, while resources in
+        # build or active state can be reused.
+        pending_resources = [resource for resource in existing_resources if resource.is_pending or resource.is_ready]
+        error_resources = [resource for resource in existing_resources if resource.is_error]
+        leftover_resources = pending_resources[1:] + error_resources
+
+        # Schedule cleanup of resources we won't use
+        for leftover in leftover_resources:
+            self.pool.dispatch_resource_cleanup(
+                logger,
+                session,
+                leftover.to_pool_resource_ids(),
+                guest_request=guest_request,
+            )
+
+        if pending_resources:
+            # At least one reusable resource has been found
+            # Resources are sorted by provisioning time, let's take the first provisioned one.
+            resource_to_use = pending_resources[0]
+
+            if len(pending_resources) > 1:
+                Failure(
+                    'Multiple reusable resources found for a guest request',
+                    guestname=guest_request.guestname,
+                    poolname=self.pool.poolname,
+                    resource_ids=[resource.name for resource in pending_resources],
+                    chosen_resource=resource_to_use.name,
+                ).handle(logger)
+
+            return self.reuse_resource(logger, session, guest_request, resource_request, resource_to_use).alt(
+                lambda failure: failure.update(**failure_details)
+            )
+
+        # If we ended up here this means all preallocated resources are in unusable state. At the same time we may
+        # not be able to use the expected artemis-GUESTNAME naming as clouds may not allow two resources with the
+        # same name. So let's generate a postfix, append it to the expected name, this way the resource will be
+        # tracked in a list_resources call among related to this guest request.
+        # To avoid going into eternal loop the iterations will be limited by resources_per_request_limit knob,
+        # and once exhausted a definitive error will be returned so that request could be given another
+        # chance by a different pool.
+        claimed_names = {leftover.name for leftover in leftover_resources}
+
+        if resource_name not in claimed_names:
+            return self.create_resource(logger, session, guest_request, resource_name, resource_request).alt(
+                lambda failure: failure.update(**failure_details)
+            )
+
+        r_max_resources_limit = KNOB_RESOURCES_PER_REQUEST_LIMIT.get_value(entityname=self.pool.poolname)
+        if r_max_resources_limit.is_error:
+            return _Error(
+                Failure.from_failure(
+                    'Could not get max resources per request limit',
+                    r_max_resources_limit.unwrap_error(),
+                    **failure_details,
+                )
+            )
+
+        # Can't use the expected resource_name because there is a leftover resource with this name. Let's try
+        # to pick up a new one
+        expected_resource_name = resource_name
+        for postfix in range(1, r_max_resources_limit.unwrap()):
+            resource_name = f'{expected_resource_name}-{postfix}'
+            if resource_name not in claimed_names:
+                return self.create_resource(logger, session, guest_request, resource_name, resource_request).alt(
+                    lambda failure: failure.update(**failure_details)
+                )
+
+        else:
+            # seems that all allowed names are already claimed by leftover resources, which means something
+            # is wrong -> can't continue
+            return _Error(
+                Failure('Too many leftover resources', recoverable=False, fail_guest_request=False, **failure_details)
+            )

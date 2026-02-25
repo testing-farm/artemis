@@ -17,7 +17,7 @@ just a couple of parameters - together with fixtures, this makes the actual test
 """
 
 import datetime
-from typing import NamedTuple, Optional, cast
+from typing import Any, NamedTuple, Optional, cast
 from unittest.mock import MagicMock
 
 import _pytest.monkeypatch
@@ -66,7 +66,7 @@ def enough_resources_excess_multiplier(session: sqlalchemy.orm.session.Session) 
 class MockInputs(NamedTuple):
     logger: gluetool.log.ContextAdapter
     session: sqlalchemy.orm.session.Session
-    pools: list[PoolDriver]
+    pools: list[PoolDriver[Any]]
     guest_request: MagicMock
 
 
@@ -128,7 +128,7 @@ def test_boilerplate(mock_inputs: MockInputs) -> None:
     def policy_dummy_whatever(
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
-        pools: list[PoolDriver],
+        pools: list[PoolDriver[Any]],
         guest_request: tft.artemis.db.GuestRequest,
     ) -> tft.artemis.routing_policies.PolicyReturnType:
         assert isinstance(logger, tft.artemis.routing_policies.PolicyLogger)
@@ -157,7 +157,7 @@ def test_boilerplate_error(mock_inputs: MockInputs) -> None:
     def policy_dummy_whatever(
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
-        pools: list[PoolDriver],
+        pools: list[PoolDriver[Any]],
         guest_request: tft.artemis.db.GuestRequest,
     ) -> tft.artemis.routing_policies.PolicyReturnType:
         return mock_return_value
@@ -177,7 +177,7 @@ def test_boilerplate_crash(mock_inputs: MockInputs) -> None:
     def policy_dummy_whatever(
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
-        pools: list[PoolDriver],
+        pools: list[PoolDriver[Any]],
         guest_request: tft.artemis.db.GuestRequest,
     ) -> tft.artemis.routing_policies.PolicyReturnType:
         raise mock_exception
@@ -265,12 +265,12 @@ def test_create_preferrence_filter_by_driver_class_no_trigger(mock_inputs: MockI
     mock_logger, mock_session, _, mock_guest_request = mock_inputs
 
     policy = tft.artemis.routing_policies.create_preferrence_filter_by_driver_class(
-        'dummy-custom-policy', cast(type[PoolDriver], dict)
+        'dummy-custom-policy', cast(type[PoolDriver[Any]], dict)
     )
 
     assert cast(tft.artemis.routing_policies.PolicyWrapperType, policy).policy_name == 'dummy-custom-policy'
 
-    mock_pools: list[PoolDriver] = [
+    mock_pools: list[PoolDriver[Any]] = [
         DummyPool(mock_logger, 'pool1', {}),
         DummyPool(mock_logger, 'pool2', {}),
         DummyPool(mock_logger, 'pool3', {}),
@@ -293,7 +293,7 @@ def test_create_preferrence_filter_by_driver_class(mock_inputs: MockInputs) -> N
 
     assert cast(tft.artemis.routing_policies.PolicyWrapperType, policy).policy_name == 'dummy-custom-policy'
 
-    mock_pools: list[PoolDriver] = [
+    mock_pools: list[PoolDriver[Any]] = [
         tft.artemis.drivers.localhost.LocalhostDriver(mock_logger, 'pool1', {}),
         tft.artemis.drivers.localhost.LocalhostDriver(mock_logger, 'pool2', {}),
         DummyPool(mock_logger, 'pool3', {}),
@@ -357,7 +357,7 @@ def test_run_routing_policies_error(
 
 
 def do_test_policy_match_pool_name(
-    mock_inputs: MockInputs, pool_name: Optional[str], expected_pools: Optional[list[PoolDriver]]
+    mock_inputs: MockInputs, pool_name: Optional[str], expected_pools: Optional[list[PoolDriver[Any]]]
 ) -> None:
     mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
 

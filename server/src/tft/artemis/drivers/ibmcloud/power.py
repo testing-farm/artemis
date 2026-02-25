@@ -10,10 +10,10 @@ from typing import Any, Optional, TypedDict, cast
 import gluetool.log
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
-from returns.result import Result as _Result, Success as _Ok
+from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
 
-from tft.artemis.drivers import PoolDriver, PoolImageInfo, PoolImageInfoT
+from tft.artemis.drivers import PoolDriver, PoolImageInfo, PoolImageInfoT, create_tempfile
 from tft.artemis.drivers.ibmcloud import (
     IBMCloudDriver,
     IBMCloudFlavor,
@@ -21,6 +21,8 @@ from tft.artemis.drivers.ibmcloud import (
     IBMCloudPoolData,
     IBMCloudPoolResourcesIDs,
     IBMCloudSession,
+    InstanceCreationOutcome,
+    InstanceCreationRequest,
 )
 
 from ... import Failure, JSONType, logging_filter, process_output_to_str
@@ -399,23 +401,23 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance, None]):
 
         return Ok(resources)
 
-    def create_instance(
+    def _create_instance(
         self,
         logger: gluetool.log.ContextAdapter,
-        flavor: Flavor,
-        image: PoolImageInfo,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
         instance_name: str,
-        user_data_file: Optional[str] = None,
-    ) -> Result[IBMCloudPowerInstance, Failure]:
+        instance_request: InstanceCreationRequest,
+    ) -> _Result[InstanceCreationOutcome[IBMCloudPowerInstance], Failure]:
         # Here will be setting defaults for memory, just in case.
-        memory = flavor.memory.to('GiB').magnitude if flavor.memory else 4
+        memory = instance_request.flavor.memory.to('GiB').magnitude if instance_request.flavor.memory else 4
         # Unusable flavors missing processors/threads_per_core should be already filtered out
-        assert flavor.cpu.processors
-        assert flavor.cpu.threads_per_core
+        assert instance_request.flavor.cpu.processors
+        assert instance_request.flavor.cpu.threads_per_core
 
-        processors = max(flavor.cpu.processors / flavor.cpu.threads_per_core, 1)
+        processors = max(instance_request.flavor.cpu.processors / instance_request.flavor.cpu.threads_per_core, 1)
 
-        with IBMCloudPowerSession(logger, self) as session:
+        with IBMCloudPowerSession(logger, self) as cli_session:
             create_cmd_args = [
                 'pi',
                 'instance',
@@ -424,7 +426,7 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance, None]):
                 '--subnets',
                 self.pool_config['subnet-id'],
                 '--image',
-                image.id,
+                instance_request.image.id,
                 '--key-name',
                 self.pool_config['master-key-name'],
                 '--processors',
@@ -433,38 +435,42 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance, None]):
                 str(memory),
                 '--json',
             ]
-            if user_data_file:
-                create_cmd_args += ['--user-data', f'@{user_data_file}']
 
-            r_instance_create = session.run(logger, create_cmd_args, commandname='ibmcloud.instance-create')
+            if instance_request.post_install_script:
+                with create_tempfile(file_contents=instance_request.post_install_script) as user_data_file:
+                    create_cmd_args += ['--user-data', f'@{user_data_file}']
 
-            if r_instance_create.is_error:
-                return Error(Failure.from_failure('Instance creation failed', r_instance_create.unwrap_error()))
+                    r_instance_create = cli_session.run(logger, create_cmd_args, commandname='ibmcloud.instance-create')
 
-            instance = cast(list[dict[str, Any]], r_instance_create.unwrap())[0]
-            created_at = self.timestamp_to_datetime(instance['creationDate'])
-            if created_at.is_error:
-                return Error(
-                    Failure.from_failure(
-                        'Could not parse instance create timestamp',
-                        created_at.unwrap_error(),
-                        instance_id=instance['pvmInstanceID'],
-                    )
+            else:
+                r_instance_create = cli_session.run(logger, create_cmd_args, commandname='ibmcloud.instance-create')
+
+        if r_instance_create.is_error:
+            return _Error(Failure.from_failure('Instance creation failed', r_instance_create.unwrap_error()))
+
+        instance = cast(list[dict[str, Any]], r_instance_create.unwrap())[0]
+        created_at = self.timestamp_to_datetime(instance['creationDate'])
+        if created_at.is_error:
+            return _Error(
+                Failure.from_failure(
+                    'Could not parse instance create timestamp',
+                    created_at.unwrap_error(),
+                    instance_id=instance['pvmInstanceID'],
                 )
+            )
 
-            return Ok(
-                IBMCloudPowerInstance(
+        return _Ok(
+            InstanceCreationOutcome(
+                resource=IBMCloudPowerInstance(
                     id=instance['pvmInstanceID'],
                     name=instance['serverName'],
                     status=instance['status'],
                     created_at=created_at.unwrap(),
-                )
+                ),
+                flavor=instance_request.flavor,
+                image=instance_request.image,
             )
-
-    def acquire_guest(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
-    ) -> Result[ProvisioningProgress, Failure]:
-        return self.do_acquire_guest(logger, session, guest_request)
+        )
 
     def update_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest

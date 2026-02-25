@@ -13,6 +13,7 @@ from ..db import GuestRequest
 from . import (
     ConfigImageFilter,
     ConsoleUrlData,
+    Instance,
     PoolData,
     PoolDriver,
     PoolImageInfo,
@@ -24,7 +25,7 @@ from . import (
 )
 
 
-class LocalhostDriver(PoolDriver):
+class LocalhostDriver(PoolDriver[Instance]):
     """
     A dummy driver always "provisioning" a localhost for the given guest.
     """
