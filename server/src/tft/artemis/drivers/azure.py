@@ -185,7 +185,6 @@ class AzureInstance(Instance):
         return self.status == 'failed'
 
     def to_pool_resource_ids(self) -> AzurePoolResourcesIDs:
-        # XXX FIXME Make sure that all resources are here
         return AzurePoolResourcesIDs(instance_id=self.id)
 
     def serialize(self) -> dict[str, Any]:
@@ -863,8 +862,11 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
 
         status = output['provisioningState'].lower()
 
+        # Initial pool data might not have had all fields set (vm_id, creation date are not defined in a return from
+        # initial vm create call), so let's update crucial bits here.
+        # vm_id is necessary to figure out associated boot_log_container in later cleanup
         pool_data = guest_request.pool_data.mine(self, AzurePoolData)
-        # Initial pool data might not have had all fields set (vm_id, creation date, etc), so let's update it here
+        pool_data.vm_id = output['vmId']
 
         logger.info(f'current instance status {pool_data.instance_id}:{status}')
 
