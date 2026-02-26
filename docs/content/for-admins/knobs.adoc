@@ -663,7 +663,7 @@ until cancelled and reprovisioned.
 |`azure.mapping.resource-group-name.template`
 |`str`
 |`ARTEMIS_AZURE_RESOURCE_GROUP_NAME_TEMPLATE`
-|`{{ TAGS.ArtemisGuestLabel }}-{{ GUESTNAME }}`
+|`artemis-{{ GUESTNAME }}`
 |no
 
 
