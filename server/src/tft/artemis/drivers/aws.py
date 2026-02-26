@@ -1964,7 +1964,13 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor, BackendFlavor
         return Ok(cast(list[dict[str, Any]], r_output.unwrap())[0])
 
     def _aws_command(
-        self, args: list[str], *, json_output: bool = True, key: Optional[str] = None, commandname: Optional[str] = None
+        self,
+        args: list[str],
+        *,
+        json_output: bool = True,
+        key: Optional[str] = None,
+        guestname: Optional[str] = None,
+        commandname: Optional[str] = None,
     ) -> Result[JSONType, Failure]:
         """
         Runs command via aws cli and returns a dictionary with command reply.
@@ -1980,6 +1986,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor, BackendFlavor
             command,
             json_output=json_output,
             env=self.environ,
+            guestname=guestname,
             poolname=self.poolname,
             commandname=commandname,
             cause_extractor=awscli_error_cause_extractor,

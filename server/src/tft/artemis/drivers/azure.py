@@ -222,6 +222,7 @@ class AzureSession:
         options: list[str],
         *,
         json_format: bool = True,
+        guestname: Optional[str] = None,
         commandname: Optional[str] = None,
     ) -> Result[Union[JSONType, str], Failure]:
         environ = {**os.environ, 'AZURE_CONFIG_DIR': self.session_directory.name}
@@ -232,6 +233,7 @@ class AzureSession:
             env=environ,
             json_output=json_format,
             command_scrubber=lambda cmd: ['azure', *options],
+            guestname=guestname,
             poolname=self.pool.poolname,
             commandname=commandname,
             cause_extractor=awscli_error_cause_extractor,

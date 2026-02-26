@@ -137,6 +137,7 @@ class Workspace(_Workspace):
                         key=self.master_key,
                         ssh_options=self.pool.ssh_options,
                         ssh_timeout=ssh_timeout,
+                        guestname=self.guestname,
                         poolname=self.pool.poolname,
                         commandname='prepare-kickstart-wait.fetch-log',
                     )
@@ -203,6 +204,7 @@ class Workspace(_Workspace):
                 key=self.master_key,
                 ssh_timeout=ssh_timeout,
                 ssh_options=self.pool.ssh_options,
+                guestname=self.guestname,
                 poolname=self.pool.poolname,
                 commandname='prepare-verify-ssh.shell-ping',
                 cause_extractor=self.pool.cli_error_cause_extractor,
@@ -222,6 +224,7 @@ class Workspace(_Workspace):
                 key=self.master_key,
                 ssh_options=self.pool.ssh_options,
                 ssh_timeout=ssh_timeout,
+                guestname=self.guestname,
                 poolname=self.pool.poolname,
                 commandname='prepare-kickstart-wait.check-inprogress',
             )
@@ -235,6 +238,7 @@ class Workspace(_Workspace):
                     key=self.master_key,
                     ssh_options=self.pool.ssh_options,
                     ssh_timeout=ssh_timeout,
+                    guestname=self.guestname,
                     poolname=self.pool.poolname,
                     commandname='prepare-kickstart-wait.check-error',
                 )
@@ -272,6 +276,7 @@ class Workspace(_Workspace):
                 key=self.master_key,
                 ssh_options=self.pool.ssh_options,
                 ssh_timeout=ssh_timeout,
+                guestname=self.guestname,
                 poolname=self.pool.poolname,
                 commandname='prepare-kickstart-wait.check-inprogress',
             )

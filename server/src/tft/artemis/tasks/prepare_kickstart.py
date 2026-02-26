@@ -144,6 +144,7 @@ class Workspace(_Workspace):
                 key=self.master_key,
                 ssh_options=self.pool.ssh_options,
                 ssh_timeout=ssh_timeout,
+                guestname=self.guestname,
                 poolname=self.pool.poolname,
                 commandname='prepare-kickstart.check-if-ran',
             )
@@ -181,6 +182,7 @@ class Workspace(_Workspace):
                     key=self.master_key,
                     ssh_options=self.pool.ssh_options,
                     ssh_timeout=ssh_timeout,
+                    guestname=self.guestname,
                     poolname=self.pool.poolname,
                     commandname='prepare-kickstart.fetch-files',
                 )
@@ -224,6 +226,7 @@ class Workspace(_Workspace):
                 key=self.master_key,
                 ssh_options=self.pool.ssh_options,
                 ssh_timeout=ssh_timeout,
+                guestname=self.guestname,
                 poolname=self.pool.poolname,
                 commandname='prepare-kickstart.installed-pkgs',
             )
@@ -349,6 +352,7 @@ class Workspace(_Workspace):
                 r_validator = run_cli_tool(
                     self.logger,
                     ['ksvalidator', kickstart_filepath],
+                    guestname=self.guestname,
                     poolname=self.pool.poolname,
                     commandname='prepare-kickstart.validate-kickstart',
                 )
@@ -365,6 +369,7 @@ class Workspace(_Workspace):
                     key=self.master_key,
                     ssh_options=self.pool.ssh_options,
                     ssh_timeout=ssh_timeout,
+                    guestname=self.guestname,
                     poolname=self.pool.poolname,
                     commandname='prepare-kickstart.copy-kickstart',
                 )
@@ -383,6 +388,7 @@ class Workspace(_Workspace):
                 key=self.master_key,
                 ssh_options=self.pool.ssh_options,
                 ssh_timeout=ssh_timeout,
+                guestname=self.guestname,
                 poolname=self.pool.poolname,
                 commandname='prepare-kickstart.copy-script',
             )
@@ -400,6 +406,7 @@ class Workspace(_Workspace):
                 key=self.master_key,
                 ssh_options=self.pool.ssh_options,
                 ssh_timeout=ssh_timeout,
+                guestname=self.guestname,
                 poolname=self.pool.poolname,
                 commandname='prepare-kickstart.kexec',
             )
