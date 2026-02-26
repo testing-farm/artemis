@@ -50,6 +50,7 @@ from . import (
     ProvisioningProgress,
     ProvisioningState,
     ReleasePoolResourcesState,
+    Resource,
     ResourceCreationOutcome,
     ResourceCreationRequest,
     ResourceManager,
@@ -98,7 +99,7 @@ KNOB_RESOURCE_GROUP_NAME_TEMPLATE: Knob[str] = Knob(
     per_entity=True,
     envvar='ARTEMIS_AZURE_RESOURCE_GROUP_NAME_TEMPLATE',
     cast_from_str=str,
-    default='{{ TAGS.ArtemisGuestLabel }}-{{ GUESTNAME }}',
+    default='artemis-{{ GUESTNAME }}',
 )
 
 
@@ -218,6 +219,30 @@ class InstanceCreationRequest(ResourceCreationRequest):
 class InstanceCreationOutcome(ResourceCreationOutcome[AzureInstance]):
     flavor: Flavor
     image: AzurePoolImageInfo
+
+
+@dataclasses.dataclass
+class ResourceGroup(Resource):
+    # shared resource groups are not to be cleaned up on guest cancellation
+    id: str
+    is_shared: bool
+
+    def to_pool_resource_ids(self) -> AzurePoolResourcesIDs:
+        if not self.is_shared:
+            return AzurePoolResourcesIDs(resource_group=self.name)
+
+        return AzurePoolResourcesIDs()
+
+
+@dataclasses.dataclass
+class ResourceGroupCreationRequest(ResourceCreationRequest):
+    name: str
+    tags: Optional[Tags] = None
+
+
+@dataclasses.dataclass
+class ResourceGroupCreationOutcome(ResourceCreationOutcome[ResourceGroup]):
+    pass
 
 
 @dataclasses.dataclass(repr=False)
@@ -386,6 +411,19 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
             reuse_resource=self._reuse_instance,
         )
 
+        self.resource_group_resource_manager: ResourceManager[
+            ResourceGroup, ResourceGroupCreationRequest, ResourceGroupCreationOutcome
+        ] = ResourceManager(
+            logger=logger,
+            pool=self,
+            resource_type='resource_group',
+            list_resources=self._query_resouce_groups_by_guest_request,
+            resource_name=self._render_resource_group_name,
+            create_resource_request=self._create_resource_group_request,
+            create_resource=self._create_resource_group,
+            reuse_resource=self._reuse_resource_group,
+        )
+
     @classmethod
     def timestamp_to_datetime(
         cls, timestamp: str, ts_format: str = AZURE_DATETIME_FORMAT
@@ -401,6 +439,131 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
                 Failure.from_exc(
                     'failed to parse timestamp', exc, timestamp=timestamp, strptime_format=AZURE_DATETIME_FORMAT
                 )
+            )
+
+    def _render_resource_group_name(self, guest_request: GuestRequest) -> _Result[str, Failure]:
+        r_resource_group_template = KNOB_RESOURCE_GROUP_NAME_TEMPLATE.get_value(entityname=self.poolname)
+        if r_resource_group_template.is_error:
+            return _Error(Failure('Could not get resource group name template'))
+
+        return render_template(
+            r_resource_group_template.unwrap(),
+            GUESTNAME=guest_request.guestname,
+            ENVIRONMENT=guest_request.environment,
+        ).alt(lambda failure: Failure.from_failure('Could not render resource group name template', failure))
+
+    def _create_resource_group_request(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+    ) -> _Result[ResourceGroupCreationRequest, Failure]:
+        # Let's figure out a resource group for guest. If one is defined in pool config - we should be using it,
+        # otherwise let's create a new one specifically for this vm to make cleanup fast and easy.
+        if self.pool_config.get('guest-resource-group'):
+            return _Ok(ResourceGroupCreationRequest(name=self.pool_config['guest-request-group']))
+
+        r_resource_group_template = KNOB_RESOURCE_GROUP_NAME_TEMPLATE.get_value(entityname=self.poolname)
+        if r_resource_group_template.is_error:
+            return _Error(Failure('Could not get resource_group_name template'))
+
+        r_rendered = render_template(
+            r_resource_group_template.unwrap(),
+            GUESTNAME=guest_request.guestname,
+            ENVIRONMENT=guest_request.environment,
+        )
+        if not is_successful(r_rendered):
+            return _Error(Failure.from_failure('Could not render resource_group_name template', r_rendered.failure()))
+
+        return _Ok(ResourceGroupCreationRequest(name=r_rendered.unwrap()))
+
+    def _reuse_resource_group(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        resource_group_request: ResourceGroupCreationRequest,
+        resource_group: ResourceGroup,
+    ) -> _Result[ResourceGroupCreationOutcome, Failure]:
+        """
+        Reuse existing resource_group.
+        """
+
+        return _Ok(
+            ResourceGroupCreationOutcome(
+                resource=resource_group,
+            )
+        )
+
+    def _create_resource_group(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        resource_group_name: str,
+        resource_group_request: ResourceGroupCreationRequest,
+    ) -> _Result[ResourceGroupCreationOutcome, Failure]:
+        with AzureSession(logger, self) as az_session:
+            tags_options = []
+            if resource_group_request.tags:
+                tags_options = ['--tags'] + [f'{tag}={value}' for tag, value in resource_group_request.tags.items()]
+
+            r_create_resource_group = az_session.run_az(
+                logger,
+                [
+                    'group',
+                    'create',
+                    '--location',
+                    self.pool_config['default-location'],
+                    '--name',
+                    resource_group_request.name,
+                    *tags_options,
+                ],
+                commandname='az.resource-group-create',
+            )
+
+            if r_create_resource_group.is_error:
+                return _Error(
+                    Failure.from_failure('failed to create resource group', r_create_resource_group.unwrap_error())
+                )
+
+            resource_group = cast(dict[str, str], r_create_resource_group.unwrap())
+
+            return _Ok(
+                ResourceGroupCreationOutcome(
+                    resource=ResourceGroup(
+                        name=resource_group['name'],
+                        id=resource_group['id'],
+                        is_shared=(resource_group['name'] == self.pool_config.get('guest-resource-group')),
+                    )
+                )
+            )
+
+    def _query_resouce_groups_by_guest_request(
+        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
+    ) -> _Result[list[ResourceGroup], Failure]:
+        # Let's get expected name to match against
+        r_expected_name = self._render_resource_group_name(guest_request)
+        if not is_successful(r_expected_name):
+            return _Error(Failure.from_failure('failed to get expected resouce group name', r_expected_name.failure()))
+
+        with AzureSession(logger, self) as session:
+            r_resource_groups_list = session.run_az(logger, ['group', 'list'], commandname='az.resource-groups-list')
+            if r_resource_groups_list.is_error:
+                return _Error(
+                    Failure.from_failure('failed to list resource groups', r_resource_groups_list.unwrap_error())
+                )
+
+            return _Ok(
+                [
+                    ResourceGroup(
+                        id=rg['id'],
+                        name=rg['name'],
+                        is_shared=(rg['name'] == self.pool_config.get('guest-resource-group')),
+                    )
+                    for rg in cast(list[dict[str, str]], r_resource_groups_list.unwrap())
+                    if rg['name'].startswith(r_expected_name.unwrap())
+                ]
             )
 
     def _create_instance(
@@ -448,27 +611,6 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
             tags_options = ['--tags'] + [f'{tag}={value}' for tag, value in tags.items()]
 
         with AzureSession(logger, self) as az_session:
-            if instance_request.resource_group != self.pool_config.get('guest-resource-group'):
-                # First let's create a resource group for this vm
-                r_create_resource_group = az_session.run_az(
-                    logger,
-                    [
-                        'group',
-                        'create',
-                        '--location',
-                        self.pool_config['default-location'],
-                        '--name',
-                        instance_request.resource_group,
-                        *tags_options,
-                    ],
-                    commandname='az.vm-create',
-                )
-
-                if r_create_resource_group.is_error:
-                    return _Error(
-                        Failure.from_failure('failed to create resource group', r_create_resource_group.unwrap_error())
-                    )
-
             az_vm_create_options = [
                 'vm',
                 'create',
@@ -580,28 +722,17 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
 
             return _Error(Failure(can_acquire.reason.message))
 
-        # Let's figure out a resource group for guest. If one is defined in pool config - we should be using it,
-        # otherwise let's create a new one specifically for this vm to make cleanup fast and easy.
-        if not self.pool_config.get('guest-resource-group'):
-            r_resource_group_template = KNOB_RESOURCE_GROUP_NAME_TEMPLATE.get_value(entityname=self.poolname)
-            if r_resource_group_template.is_error:
-                return _Error(Failure('Could not get resource_group_name template'))
+        # XXX FIXME Figure out how to pass tags to resource group creation
+        r_resource_group = self.resource_group_resource_manager.acquire(logger, guest_request, session).lash(
+            lambda failure: _Error(failure)
+        )
 
-            r_rendered = render_template(
-                r_resource_group_template.unwrap(),
-                GUESTNAME=guest_request.guestname,
-                ENVIRONMENT=guest_request.environment,
-            )
-            if not is_successful(r_rendered):
-                return _Error(
-                    Failure.from_failure('Could not render resource_group_name template', r_rendered.failure())
-                )
-
-            resource_group = r_rendered.unwrap()
-        else:
-            resource_group = self.pool_config['guest-resource-group']
-
-        instance_request = InstanceCreationRequest(image=pairs[0][0], flavor=pairs[0][1], resource_group=resource_group)
+        instance_request = InstanceCreationRequest(
+            image=pairs[0][0],
+            flavor=pairs[0][1],
+            # XXX FIXME Later on change this to accept resource group object
+            resource_group=r_resource_group.unwrap().resource.name,
+        )
 
         self.log_acquisition_attempt(
             logger, session, guest_request, flavor=instance_request.flavor, image=instance_request.image
