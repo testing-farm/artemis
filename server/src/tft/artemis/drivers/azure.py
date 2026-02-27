@@ -461,7 +461,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
         # Let's figure out a resource group for guest. If one is defined in pool config - we should be using it,
         # otherwise let's create a new one specifically for this vm to make cleanup fast and easy.
         if self.pool_config.get('guest-resource-group'):
-            return _Ok(ResourceGroupCreationRequest(name=self.pool_config['guest-request-group']))
+            return _Ok(ResourceGroupCreationRequest(name=self.pool_config['guest-resource-group']))
 
         r_resource_group_template = KNOB_RESOURCE_GROUP_NAME_TEMPLATE.get_value(entityname=self.poolname)
         if r_resource_group_template.is_error:
@@ -863,7 +863,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
     def release_pool_resources(
         self, logger: gluetool.log.ContextAdapter, raw_resource_ids: SerializedPoolResourcesIDs
     ) -> Result[ReleasePoolResourcesState, Failure]:
-        # NOTE(ivasilev) If the resource_group matches the one in pool config's guest-request-group, then the cleanup
+        # NOTE(ivasilev) If the resource_group matches the one in pool config's guest-resource-group, then the cleanup
         # will be solely relying on removing all resources tagged with the instance-id tag one by one.
         # Otherwise in case of a precreated for this guest RG, by removing it we'll will effectively clean everything
         # up in a single call. Calls to iterative one-by-one resource listing in this scenario will remain only for the
