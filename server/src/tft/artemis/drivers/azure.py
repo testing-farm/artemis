@@ -1264,7 +1264,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
                 else _Ok(
                     ProvisioningProgress(
                         state=ProvisioningState.CANCEL,
-                        pool_data=AzurePoolData(),
+                        pool_data=guest_request.pool_data.mine(self, AzurePoolData),
                         pool_failures=[failure],
                     )
                 )
