@@ -136,16 +136,6 @@ BackendFlavor = dict[str, Any]
 
 
 @dataclasses.dataclass
-class AzurePoolData(PoolData):
-    # A long identificator '/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/providers/...'
-    instance_id: Optional[str] = None
-    instance_name: Optional[str] = None
-    resource_group: Optional[str] = None
-    # A uuid id
-    vm_id: Optional[str] = None
-
-
-@dataclasses.dataclass
 class AzurePoolResourcesIDs(PoolResourcesIDs):
     instance_id: Optional[str] = None
     assorted_resource_ids: Optional[list[dict[str, str]]] = None
@@ -163,15 +153,66 @@ class AzurePoolImageInfo(PoolImageInfo):
 
 
 @dataclasses.dataclass
+class ResourceGroup(Resource):
+    # shared resource groups are not to be cleaned up on guest cancellation
+    id: str
+    is_shared: bool
+
+    def to_pool_resource_ids(self) -> AzurePoolResourcesIDs:
+        if not self.is_shared:
+            return AzurePoolResourcesIDs(resource_group=self.name)
+
+        return AzurePoolResourcesIDs()
+
+
+@dataclasses.dataclass
+class AzurePoolData(PoolData):
+    # A long identificator '/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/providers/...'
+    instance_id: Optional[str] = None
+    instance_name: Optional[str] = None
+    resource_group: Optional[ResourceGroup] = None
+    # A uuid id
+    vm_id: Optional[str] = None
+
+    @classmethod
+    def unserialize(cls, serialized: dict[str, Any]) -> 'AzurePoolData':
+        pool_data = super().unserialize(serialized)
+
+        if serialized['resource_group']:
+            pool_data.resource_group = ResourceGroup.unserialize(serialized['resource_group'])
+
+        return pool_data
+
+    def serialize(self) -> dict[str, Any]:
+        serialized = super().serialize()
+
+        if self.resource_group:
+            serialized['resource_group'] = ResourceGroup.serialize(self.resource_group)
+
+        return serialized
+
+
+@dataclasses.dataclass
+class ResourceGroupCreationRequest(ResourceCreationRequest):
+    name: str
+    tags: Optional[Tags] = None
+
+
+@dataclasses.dataclass
+class ResourceGroupCreationOutcome(ResourceCreationOutcome[ResourceGroup]):
+    pass
+
+
+@dataclasses.dataclass
 class AzureInstance(Instance):
     status: str
     created_at: datetime.datetime
     vm_id: str
-    resource_group: str
+    resource_group: ResourceGroup
 
     def __post_init__(self) -> None:
         self.status = self.status.lower()
-        self.resource_group = self.resource_group.lower()
+        self.resource_group = self.resource_group
 
     @functools.cached_property
     def is_pending(self) -> bool:
@@ -210,7 +251,7 @@ class AzureInstance(Instance):
 class InstanceCreationRequest(ResourceCreationRequest):
     flavor: Flavor
     image: AzurePoolImageInfo
-    resource_group: str
+    resource_group: ResourceGroup
     tags: Optional[Tags] = None
     post_install_script: Optional[str] = None
 
@@ -219,30 +260,6 @@ class InstanceCreationRequest(ResourceCreationRequest):
 class InstanceCreationOutcome(ResourceCreationOutcome[AzureInstance]):
     flavor: Flavor
     image: AzurePoolImageInfo
-
-
-@dataclasses.dataclass
-class ResourceGroup(Resource):
-    # shared resource groups are not to be cleaned up on guest cancellation
-    id: str
-    is_shared: bool
-
-    def to_pool_resource_ids(self) -> AzurePoolResourcesIDs:
-        if not self.is_shared:
-            return AzurePoolResourcesIDs(resource_group=self.name)
-
-        return AzurePoolResourcesIDs()
-
-
-@dataclasses.dataclass
-class ResourceGroupCreationRequest(ResourceCreationRequest):
-    name: str
-    tags: Optional[Tags] = None
-
-
-@dataclasses.dataclass
-class ResourceGroupCreationOutcome(ResourceCreationOutcome[ResourceGroup]):
-    pass
 
 
 @dataclasses.dataclass(repr=False)
@@ -615,7 +632,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
                 'vm',
                 'create',
                 '--resource-group',
-                instance_request.resource_group,
+                instance_request.resource_group.name,
                 '--image',
                 instance_request.image.id,
                 '--name',
@@ -730,8 +747,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
         instance_request = InstanceCreationRequest(
             image=pairs[0][0],
             flavor=pairs[0][1],
-            # XXX FIXME Later on change this to accept resource group object
-            resource_group=r_resource_group.unwrap().resource.name,
+            resource_group=r_resource_group.unwrap().resource,
         )
 
         self.log_acquisition_attempt(
@@ -863,11 +879,8 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
     def release_pool_resources(
         self, logger: gluetool.log.ContextAdapter, raw_resource_ids: SerializedPoolResourcesIDs
     ) -> Result[ReleasePoolResourcesState, Failure]:
-        # NOTE(ivasilev) If the resource_group matches the one in pool config's guest-resource-group, then the cleanup
-        # will be solely relying on removing all resources tagged with the instance-id tag one by one.
-        # Otherwise in case of a precreated for this guest RG, by removing it we'll will effectively clean everything
-        # up in a single call. Calls to iterative one-by-one resource listing in this scenario will remain only for the
-        # purpose of incurring costs.
+        # NOTE(ivasilev) No complicated checks for whether resource group has to be actually deleted will be performed
+        # here. If resource_group name is passed then it is assumed it needs to be deleted.
 
         def _delete_resource(resource_id: str) -> Result[JSONType, Failure]:
             with AzureSession(logger, self) as session:
@@ -883,20 +896,16 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
 
         if resource_group:
             with AzureSession(logger, self) as session:
-                if resource_group != self.pool_config.get('guest-resource-group'):
-                    # RG has been precreated for this guest -> by removing it all resources will be cleaned up
-                    r_remove_resource_group = session.run_az(
-                        logger,
-                        ['group', 'delete', '--name', resource_group, '-y'],
-                        commandname='az.group-delete',
-                        json_format=False,
+                r_remove_resource_group = session.run_az(
+                    logger,
+                    ['group', 'delete', '--name', resource_group, '-y'],
+                    commandname='az.group-delete',
+                    json_format=False,
+                )
+                if r_remove_resource_group.is_error:
+                    return Error(
+                        Failure.from_failure('failed to remove resource group', r_remove_resource_group.unwrap_error())
                     )
-                    if r_remove_resource_group.is_error:
-                        return Error(
-                            Failure.from_failure(
-                                'failed to remove resource group', r_remove_resource_group.unwrap_error()
-                            )
-                        )
 
         # storage containers used for console log have to be cleaned up separately - they belong to a different
         # resource group and can't be tagged out of the box so need special treatment
@@ -926,31 +935,29 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
                 # TODO(ivasilev) Start tracking blobs usage?
 
         if resource_ids.instance_id is not None:
-            if resource_group == self.pool_config.get('guest-resource-group'):
-                r_delete = _delete_resource(resource_ids.instance_id)
+            r_delete = _delete_resource(resource_ids.instance_id)
 
-                if r_delete.is_error:
-                    return Error(
-                        Failure.from_failure(
-                            'failed to remove Azure resource',
-                            r_delete.unwrap_error(),
-                            resource_id=resource_ids.instance_id,
-                        )
+            if r_delete.is_error:
+                return Error(
+                    Failure.from_failure(
+                        'failed to remove Azure resource',
+                        r_delete.unwrap_error(),
+                        resource_id=resource_ids.instance_id,
                     )
+                )
 
             self.inc_costs(logger, ResourceType.VIRTUAL_MACHINE, resource_ids.ctime)
 
         if resource_ids.assorted_resource_ids is not None:
             for resource in resource_ids.assorted_resource_ids:
-                if resource_group == self.pool_config.get('guest-resource-group'):
-                    r_delete = _delete_resource(resource['id'])
+                r_delete = _delete_resource(resource['id'])
 
-                    if r_delete.is_error:
-                        return Error(
-                            Failure.from_failure(
-                                'failed to remove Azure resource', r_delete.unwrap_error(), resource_id=resource['id']
-                            )
+                if r_delete.is_error:
+                    return Error(
+                        Failure.from_failure(
+                            'failed to remove Azure resource', r_delete.unwrap_error(), resource_id=resource['id']
                         )
+                    )
 
                 self.inc_costs(logger, AZURE_RESOURCE_TYPE[resource['type']], resource_ids.ctime)
 
@@ -1036,9 +1043,11 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
         resource_ids: list[AzurePoolResourcesIDs] = []
 
         if pool_data.instance_id is not None:
-            resource_ids.append(
-                AzurePoolResourcesIDs(instance_id=pool_data.instance_id, resource_group=pool_data.resource_group)
-            )
+            # Resource group will be passed to cleanup only if it has been created for this vm only
+            instance_related_resources = AzurePoolResourcesIDs(instance_id=pool_data.instance_id)
+            if pool_data.resource_group and not pool_data.resource_group.is_shared:
+                instance_related_resources.resource_group = pool_data.resource_group.name
+            resource_ids.append(instance_related_resources)
 
         with AzureSession(logger, self) as az_session:
             r_tagged_resources = az_session.run_az(
@@ -1055,11 +1064,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
         ]
 
         if assorted_resource_ids:
-            resource_ids.append(
-                AzurePoolResourcesIDs(
-                    assorted_resource_ids=assorted_resource_ids, resource_group=pool_data.resource_group
-                )
-            )
+            resource_ids.append(AzurePoolResourcesIDs(assorted_resource_ids=assorted_resource_ids))
 
         r_boot_log_storage = self._find_boot_log_storage_container(logger, guest_request)
 
