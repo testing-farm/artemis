@@ -1031,29 +1031,34 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
         # will need to delete stuff manually. Lifehack: query for tag uid=name used during vm creation
         resource_ids: list[AzurePoolResourcesIDs] = []
 
-        if pool_data.instance_id is not None:
-            # Resource group will be passed to cleanup only if it has been created for this vm only
-            instance_related_resources = AzurePoolResourcesIDs(instance_id=pool_data.instance_id)
-            if pool_data.resource_group and pool_data.release_resource_group:
-                instance_related_resources.resource_group = pool_data.resource_group
-            resource_ids.append(instance_related_resources)
+        if pool_data.resource_group and pool_data.release_resource_group:
+            # A resource group has been created exclusively for this machine, so the cleanup is simple -> just remove
+            # it and everything (vm, secgroup, network interface etc, everything but boot log container) will be gone.
+            resource_ids.append(AzurePoolResourcesIDs(resource_group=pool_data.resource_group))
+        else:
+            # We are sharing a precreated resource group, so need to look up resources by tags and remove them.
+            # instance comes first
+            resource_ids.append(AzurePoolResourcesIDs(instance_id=pool_data.instance_id))
 
-        with AzureSession(logger, self) as az_session:
-            r_tagged_resources = az_session.run_az(
-                logger, ['resource', 'list', '--tag', f'uid={pool_data.instance_name}'], commandname='az.resource-list'
-            )
+            # Find other resources by tag
+            with AzureSession(logger, self) as az_session:
+                r_tagged_resources = az_session.run_az(
+                    logger,
+                    ['resource', 'list', '--tag', f'uid={pool_data.instance_name}'],
+                    commandname='az.resource-list',
+                )
 
-        if r_tagged_resources.is_error:
-            return Error(r_tagged_resources.unwrap_error())
+            if r_tagged_resources.is_error:
+                return Error(r_tagged_resources.unwrap_error())
 
-        assorted_resource_ids = [
-            res
-            for res in cast(list[dict[str, str]], r_tagged_resources.unwrap())
-            if res['type'] != 'Microsoft.Compute/virtualMachines'
-        ]
+            assorted_resource_ids = [
+                res
+                for res in cast(list[dict[str, str]], r_tagged_resources.unwrap())
+                if res['type'] != 'Microsoft.Compute/virtualMachines'
+            ]
 
-        if assorted_resource_ids:
-            resource_ids.append(AzurePoolResourcesIDs(assorted_resource_ids=assorted_resource_ids))
+            if assorted_resource_ids:
+                resource_ids.append(AzurePoolResourcesIDs(assorted_resource_ids=assorted_resource_ids))
 
         r_boot_log_storage = self._find_boot_log_storage_container(logger, guest_request)
 
