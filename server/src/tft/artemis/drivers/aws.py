@@ -10,7 +10,8 @@ import json
 import operator
 import os
 import re
-from collections.abc import Generator, Iterator, MutableSequence
+import string
+from collections.abc import Iterator, MutableSequence
 from typing import (
     Any,
     Callable,
@@ -79,6 +80,7 @@ from . import (
     create_error_cause_extractor,
     guest_log_updater,
     run_cli_tool,
+    sanitize_tags,
 )
 
 #
@@ -221,6 +223,14 @@ error_cause_extractor = create_error_cause_extractor(
         AWSErrorCauses.REQUEST_LIMIT_EXCEEDED: re.compile(r'.+\(RequestLimitExceeded\).+Request limit exceeded'),
     },
 )
+
+
+# AWS limits tag name to 128 chars and value to 256 chars. Additionally, EC2 supposedly allows any UTF-8 value within
+# tags but this is not necessarily true across all AWS services.
+# See https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Tags.html#tag-basics
+TAG_ALLOWED_CHARACTERS = string.ascii_letters + string.digits + '+-=._:/@ '
+TAG_KEY_MAX_LENGTH = 128
+TAG_VALUE_MAX_LENGTH = 256
 
 
 AWS_INSTANCE_SPECIFICATION = Template("""
@@ -1252,22 +1262,6 @@ def create_network_interfaces(
     return Ok(r_nics.unwrap())
 
 
-def _sanitize_tags(tags: Tags) -> Generator[tuple[str, str], None, None]:
-    """
-    Sanitize tags to make their values acceptable for AWS API and CLI.
-
-    Namely characters like a space (`` ``) and quotation marks (``"``) are rewritten.
-    """
-
-    for name, value in tags.items():
-        # Get rid of quotes and singlequotes, AWS won't accept those.
-        value = (value or '').replace('"', '<quote>').replace("'", '<singlequote>')
-
-        # Replace an empty string with double quotes representing an empty string. AWS won't
-        # accept `Value=`, but is willing to accept `Value=""`.
-        yield name, value or '""'
-
-
 def _serialize_tags(tags: Tags) -> list[str]:
     """
     Serialize tags to make them acceptable for AWS CLI.
@@ -1281,7 +1275,15 @@ def _serialize_tags(tags: Tags) -> list[str]:
     See https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Tags.html#create-tag-examples for more details.
     """
 
-    return [f'Key={name},Value={value}' for name, value in _sanitize_tags(tags)]
+    return [
+        f'Key={name},Value={value}'
+        for name, value in sanitize_tags(
+            tags,
+            allowed_charset=TAG_ALLOWED_CHARACTERS,
+            max_key_length=TAG_KEY_MAX_LENGTH,
+            max_value_length=TAG_VALUE_MAX_LENGTH,
+        )
+    ]
 
 
 def _tags_to_tag_specifications(tags: Tags, *resource_types: str) -> list[str]:

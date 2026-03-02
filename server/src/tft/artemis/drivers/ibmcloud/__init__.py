@@ -6,9 +6,8 @@ import dataclasses
 import datetime
 import functools
 import os
-import re
 import shutil
-from collections.abc import Generator
+import string
 from typing import Any, Generic, Optional, TypedDict, TypeVar, cast
 
 import gluetool.log
@@ -36,7 +35,7 @@ from tft.artemis.drivers import (
     Tags,
 )
 
-from ... import Failure, rewrap_to_gluetool
+from ... import Failure, rewrap_to_gluetool, sanitize_tags
 from ...db import GuestRequest
 from ...environment import Flavor
 
@@ -48,7 +47,7 @@ TAG_MAX_LENGTH = 128
 # NOTE(ivasilev) IBMCloud is petty about allowed characters in tags - only [A-Z][0-9] _-.: are allowed.
 # COLDSTORE_URL is the one of our typical tags that it doesn't play nice with, so will be replacing all
 # forbidden characters with prefixes.
-TAG_FORBIDDEN_CHARACTERS_PATTERN = re.compile(r'[^.a-zA-Z0-9 _\-]')
+TAG_ALLOWED_CHARACTERS = string.ascii_letters + string.digits + ' _-.:'
 
 IBMCLOUD_DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S.%fZ'
 
@@ -144,30 +143,6 @@ class InstanceCreationOutcome(ResourceCreationOutcome[IBMCloudInstanceT]):
     image: PoolImageInfo
 
 
-def _sanitize_tags(tags: Tags) -> Generator[tuple[str, str], None, None]:
-    """
-    Sanitize tags to make their values acceptable for IBM API and CLI.
-
-    Namely replace forbidden characters with more acceptable ones.
-    """
-
-    def _sanitize_string(s: str) -> str:
-        return TAG_FORBIDDEN_CHARACTERS_PATTERN.sub('_', s)
-
-    for name, value in tags.items():
-        name = _sanitize_string(name)
-        value = _sanitize_string(value or '')
-
-        if len(name) >= TAG_MAX_LENGTH:
-            yield name[:TAG_MAX_LENGTH], ''
-
-        elif value:
-            yield name, value[: TAG_MAX_LENGTH - len(name) - 1]
-
-        else:
-            yield name, ''
-
-
 def _serialize_tags(tags: Tags) -> list[str]:
     """
     Serialize tags to make them acceptable for IBM CLI.
@@ -181,7 +156,15 @@ def _serialize_tags(tags: Tags) -> list[str]:
     See https://cloud.ibm.com/docs/account?topic=account-tag&interface=ui for more details.
     """
 
-    return [f'{name}:{value}' if value else name for name, value in _sanitize_tags(tags)]
+    return [
+        f'{name}:{value}' if value else name
+        for name, value in sanitize_tags(
+            tags,
+            allowed_charset=TAG_ALLOWED_CHARACTERS,
+            max_key_value_length=TAG_MAX_LENGTH,
+            delim_len=1,
+        )
+    ]
 
 
 class IBMCloudSession(CLISessionPermanentDir):
@@ -420,13 +403,15 @@ class IBMCloudDriver(
                 )
             )
             .lash(
-                lambda failure: _Error(failure)
-                if failure.recoverable
-                else _Ok(
-                    ProvisioningProgress(
-                        state=ProvisioningState.CANCEL,
-                        pool_data=IBMCloudPoolData(),
-                        pool_failures=[failure],
+                lambda failure: (
+                    _Error(failure)
+                    if failure.recoverable
+                    else _Ok(
+                        ProvisioningProgress(
+                            state=ProvisioningState.CANCEL,
+                            pool_data=IBMCloudPoolData(),
+                            pool_failures=[failure],
+                        )
                     )
                 )
             )

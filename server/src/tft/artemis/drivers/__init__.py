@@ -14,10 +14,11 @@ import os
 import random
 import re
 import shlex
+import string
 import sys
 import tempfile
 import time
-from collections.abc import Iterable, Iterator
+from collections.abc import Generator, Iterable, Iterator
 from re import Pattern
 from typing import (
     Any,
@@ -1412,6 +1413,57 @@ def render_tags(
         tags[name] = r_rendered.unwrap()
 
     return _Ok(tags)
+
+
+TAG_CHARS_MAPPING = {
+    '"': '<quote>',
+    "'": '<singlequote>',
+}
+
+
+def sanitize_tags(
+    tags: Tags,
+    allowed_charset: str = string.printable,
+    max_key_length: Optional[int] = None,
+    max_value_length: Optional[int] = None,
+    max_key_value_length: Optional[int] = None,
+    delim_len: int = 1,
+) -> Generator[tuple[str, str], None, None]:
+    """
+    Sanitize tag value by replacing disallowed characters and .
+
+    :param tags:
+    :param allowed_charset: A string of allowed characters.
+    :param max_key_length: Maximum length of the tag name.
+    :param max_value_length: Maximum length of tag value.
+    :param max_key_value_length: Maximum length of key-delimiter-value string.
+    :param delim_len: Length of the delimiting sequence.
+    :return:
+    """
+
+    pattern = re.compile(f'[^{re.escape(allowed_charset)}]')
+
+    def _char_mapping(match: re.Match) -> str:
+        return TAG_CHARS_MAPPING.get(match.group(0), '_')
+
+    for name, value in tags.items():
+        value = pattern.sub(_char_mapping, value)
+
+        # Trim the tag name and value to comply with limits
+        if max_key_length is not None and len(name) > max_key_length:
+            name = name[:max_key_length]
+
+        if max_value_length is not None and len(value) > max_value_length:
+            value = value[:max_value_length]
+
+        if max_key_value_length is not None:
+            if len(name) + delim_len > max_key_value_length:
+                name = name[:max_key_value_length - delim_len]
+                value = ''
+            elif len(name) + len(value) + delim_len > max_key_value_length:
+                value = value[:max_key_value_length - len(value) - delim_len]
+
+        yield name, value
 
 
 InstanceT = TypeVar('InstanceT', bound='Instance', covariant=True)  # noqa: PLC0105
