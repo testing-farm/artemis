@@ -1435,7 +1435,7 @@ class BeakerDriver(PoolDriver[Instance]):
                 arch=None,
                 boot=FlavorBoot(),
                 ssh=PoolImageSSHInfo(),
-                supports_kickstart=groups['bootc_image'] is None,
+                supports_kickstart=True,
                 # beaker images don't have a concept of creation date
                 created_at=None,
             )
