@@ -169,26 +169,10 @@ class AzurePoolData(PoolData):
     # A long identificator '/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/providers/...'
     instance_id: Optional[str] = None
     instance_name: Optional[str] = None
-    resource_group: Optional[ResourceGroup] = None
+    resource_group: Optional[str] = None
+    release_resource_group: Optional[bool] = False
     # A uuid id
     vm_id: Optional[str] = None
-
-    @classmethod
-    def unserialize(cls, serialized: dict[str, Any]) -> 'AzurePoolData':
-        pool_data = super().unserialize(serialized)
-
-        if serialized.get('resource_group'):
-            pool_data.resource_group = ResourceGroup.unserialize(serialized['resource_group'])
-
-        return pool_data
-
-    def serialize(self) -> dict[str, Any]:
-        serialized = super().serialize()
-
-        if self.resource_group:
-            serialized['resource_group'] = ResourceGroup.serialize(self.resource_group)
-
-        return serialized
 
 
 @dataclasses.dataclass
@@ -1050,8 +1034,8 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
         if pool_data.instance_id is not None:
             # Resource group will be passed to cleanup only if it has been created for this vm only
             instance_related_resources = AzurePoolResourcesIDs(instance_id=pool_data.instance_id)
-            if pool_data.resource_group and not pool_data.resource_group.is_shared:
-                instance_related_resources.resource_group = pool_data.resource_group.name
+            if pool_data.resource_group and pool_data.release_resource_group:
+                instance_related_resources.resource_group = pool_data.resource_group
             resource_ids.append(instance_related_resources)
 
         with AzureSession(logger, self) as az_session:
@@ -1257,7 +1241,8 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
                             instance_id=instance_outcome.resource.id,
                             instance_name=instance_outcome.resource.name,
                             vm_id=instance_outcome.resource.vm_id,
-                            resource_group=instance_outcome.resource.resource_group,
+                            resource_group=instance_outcome.resource.resource_group.name,
+                            release_resource_group=not instance_outcome.resource.resource_group.is_shared,
                         ),
                         ssh_info=instance_outcome.image.ssh,
                     )
