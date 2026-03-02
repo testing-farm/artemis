@@ -155,7 +155,6 @@ class AzurePoolImageInfo(PoolImageInfo):
 @dataclasses.dataclass
 class ResourceGroup(Resource):
     # shared resource groups are not to be cleaned up on guest cancellation
-    id: str
     is_shared: bool
 
     def to_pool_resource_ids(self) -> AzurePoolResourcesIDs:
@@ -178,7 +177,7 @@ class AzurePoolData(PoolData):
     def unserialize(cls, serialized: dict[str, Any]) -> 'AzurePoolData':
         pool_data = super().unserialize(serialized)
 
-        if serialized['resource_group']:
+        if serialized.get('resource_group'):
             pool_data.resource_group = ResourceGroup.unserialize(serialized['resource_group'])
 
         return pool_data
@@ -447,15 +446,22 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
     ) -> Result[datetime.datetime, Failure]:
         try:
             return Ok(datetime.datetime.strptime(timestamp, ts_format))
-        except ValueError:
+        except ValueError as err:
             # Sometimes timestamps appear in a different format
-            return cls.timestamp_to_datetime(timestamp, AZURE_DATETIME_FORMAT_FALLBACK)
+            if ts_format != AZURE_DATETIME_FORMAT_FALLBACK:
+                return cls.timestamp_to_datetime(timestamp, AZURE_DATETIME_FORMAT_FALLBACK)
+            return Error(
+                Failure.from_exc(
+                    'failed to parse timestamp with fallback format',
+                    err,
+                    timestamp=timestamp,
+                    strptime_format=ts_format,
+                )
+            )
 
         except Exception as exc:
             return Error(
-                Failure.from_exc(
-                    'failed to parse timestamp', exc, timestamp=timestamp, strptime_format=AZURE_DATETIME_FORMAT
-                )
+                Failure.from_exc('failed to parse timestamp', exc, timestamp=timestamp, strptime_format=ts_format)
             )
 
     def _render_resource_group_name(self, guest_request: GuestRequest) -> _Result[str, Failure]:
@@ -550,7 +556,6 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
                 ResourceGroupCreationOutcome(
                     resource=ResourceGroup(
                         name=resource_group['name'],
-                        id=resource_group['id'],
                         is_shared=(resource_group['name'] == self.pool_config.get('guest-resource-group')),
                     )
                 )
@@ -574,7 +579,6 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
             return _Ok(
                 [
                     ResourceGroup(
-                        id=rg['id'],
                         name=rg['name'],
                         is_shared=(rg['name'] == self.pool_config.get('guest-resource-group')),
                     )
@@ -740,9 +744,9 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
             return _Error(Failure(can_acquire.reason.message))
 
         # XXX FIXME Figure out how to pass tags to resource group creation
-        r_resource_group = self.resource_group_resource_manager.acquire(logger, guest_request, session).lash(
-            lambda failure: _Error(failure)
-        )
+        r_resource_group = self.resource_group_resource_manager.acquire(logger, guest_request, session)
+        if not is_successful(r_resource_group):
+            return _Error(Failure.from_failure('Could not acquire resource group', r_resource_group.failure()))
 
         instance_request = InstanceCreationRequest(
             image=pairs[0][0],
@@ -815,7 +819,10 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
                         name=instance['name'],
                         created_at=created_at.unwrap(),
                         status=instance['provisioningState'],
-                        resource_group=instance['resourceGroup'],
+                        resource_group=ResourceGroup(
+                            name=instance['resourceGroup'],
+                            is_shared=(instance['resourceGroup'] == self.pool_config.get('guest-resource-group')),
+                        ),
                     )
                 )
 
