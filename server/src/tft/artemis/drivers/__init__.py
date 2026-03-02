@@ -14,10 +14,11 @@ import os
 import random
 import re
 import shlex
+import string
 import sys
 import tempfile
 import time
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Generator, Iterable, Iterator, Mapping
 from re import Pattern
 from typing import (
     Any,
@@ -1412,6 +1413,65 @@ def render_tags(
         tags[name] = r_rendered.unwrap()
 
     return _Ok(tags)
+
+
+def create_sanitize_tags(
+    *,
+    allowed_charset: str = string.printable,
+    max_key_length: Optional[int] = None,
+    max_value_length: Optional[int] = None,
+    max_key_value_length: Optional[int] = None,
+    tag_chars_mapping: Optional[Mapping[str, str]] = None,
+    delim_len: int = 1,
+    delim_optional: bool = False,
+) -> Callable[[Tags], Generator[tuple[str, str], None, None]]:
+    """
+    Create tag sanitization function.
+
+    :param allowed_charset: A string of allowed characters.
+    :param max_key_length: Maximum length of the tag name.
+    :param max_value_length: Maximum length of tag value.
+    :param max_key_value_length: Maximum length of key-delimiter-value string.
+    :param tag_chars_mapping: A mapping of replacements for special characters.
+    :param delim_len: Length of the delimiting sequence.
+    :param delim_optional: The delimiter is optional and only present iff. value is not empty
+    :return: tags sanitization function.
+    """
+
+    tag_chars_mapping = tag_chars_mapping or {}
+    pattern = re.compile(f'[^{re.escape(allowed_charset)}]')
+
+    def _char_mapping(match: re.Match[str]) -> str:
+        return tag_chars_mapping.get(match.group(0), '_')
+
+    def _sanitize_tags(tags: Tags) -> Generator[tuple[str, str], None, None]:
+        """Sanitize tags by replacing disallowed characters and truncating keys and values."""
+
+        for name, value in tags.items():
+            if value is None:
+                value = ''
+
+            value = pattern.sub(_char_mapping, value)
+
+            # Trim the tag name and value to comply with limits
+            if max_key_length is not None and len(name) > max_key_length:
+                name = name[:max_key_length]
+
+            if max_value_length is not None and len(value) > max_value_length:
+                value = value[:max_value_length]
+
+            if max_key_value_length is not None:
+                if len(name) + delim_len > max_key_value_length:
+                    # If tag delimiter is optional, we should ignore it in key truncation.
+                    key_len = min(len(name), max_key_value_length - (delim_len if not delim_optional else 0))
+                    name = name[:key_len]
+                    value = ''
+                elif len(name) + len(value) + delim_len > max_key_value_length:
+                    value = value[: max_key_value_length - len(name) - delim_len]
+
+            yield name, value
+
+    return _sanitize_tags
 
 
 InstanceT = TypeVar('InstanceT', bound='Instance', covariant=True)  # noqa: PLC0105
