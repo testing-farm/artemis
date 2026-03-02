@@ -211,7 +211,6 @@ class AzureInstance(Instance):
 
     def __post_init__(self) -> None:
         self.status = self.status.lower()
-        self.resource_group = self.resource_group
 
     @functools.cached_property
     def is_pending(self) -> bool:
@@ -850,7 +849,6 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
 
         res = [instance for instance in r_instances_list.unwrap() if instance.name.startswith(expected_name)]
 
-        # Now order result ourselves by creation date in case ibmcloud API changes, oldest come first
         try:
             res = sorted(res, key=lambda x: x.created_at)
         except ValueError:
