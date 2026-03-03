@@ -416,7 +416,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
             logger=logger,
             pool=self,
             resource_type='resource_group',
-            list_resources=self._query_resouce_groups_by_guest_request,
+            list_resources=self.query_resource_groups_by_guest_request,
             resource_name=self._render_resource_group_name,
             create_resource_request=self._create_resource_group_request,
             create_resource=self._create_resource_group,
@@ -544,16 +544,31 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
                 )
             )
 
-    def _query_resouce_groups_by_guest_request(
+    def _get_guest_resource_group(self) -> Optional[ResourceGroup]:
+        if not self.pool_config.get('guest-resource-group'):
+            return None
+
+        return ResourceGroup(name=self.pool_config['guest-resource-group'], is_shared=True)
+
+    def query_resource_groups_by_guest_request(
         self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
     ) -> _Result[list[ResourceGroup], Failure]:
+        # If there is a pool-defined resource group -> use it
+        predefined_rg = self._get_guest_resource_group()
+        if predefined_rg:
+            return _Ok([predefined_rg])
+
         # Let's get expected name to match against
         r_expected_name = self._render_resource_group_name(guest_request)
         if not is_successful(r_expected_name):
             return _Error(Failure.from_failure('failed to get expected resouce group name', r_expected_name.failure()))
 
         with AzureSession(logger, self) as session:
-            r_resource_groups_list = session.run_az(logger, ['group', 'list'], commandname='az.resource-groups-list')
+            r_resource_groups_list = session.run_az(
+                logger,
+                ['group', 'list', '--query', f"[?starts_with(name, '{r_expected_name.unwrap()}')]"],
+                commandname='az.resource-groups-list',
+            )
             if r_resource_groups_list.is_error:
                 return _Error(
                     Failure.from_failure('failed to list resource groups', r_resource_groups_list.unwrap_error())
@@ -566,7 +581,6 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
                         is_shared=(rg['name'] == self.pool_config.get('guest-resource-group')),
                     )
                     for rg in cast(list[dict[str, str]], r_resource_groups_list.unwrap())
-                    if rg['name'].startswith(r_expected_name.unwrap())
                 ]
             )
 
