@@ -472,11 +472,11 @@ The actual list of logs supported by a pool depends on the driver - this is a ha
 |Supported logs
 
 |`aws`
-|console/blob
-console/URL
+|console:dump/blob
+console:dump/URL
 
 |`azure`
-|console/blob
+|console:dump/blob
 
 |`beaker`
 |console:dump/blob
@@ -492,7 +492,7 @@ ks.cfg:dump/blob
 |-
 
 |`ibmcloud-power`
-|console/URL
+|console:dump/URL
 
 |`ibmcloud-vpc`
 |-
