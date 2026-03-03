@@ -170,7 +170,7 @@ class AzurePoolData(PoolData):
     instance_id: Optional[str] = None
     instance_name: Optional[str] = None
     resource_group: Optional[str] = None
-    release_resource_group: Optional[bool] = False
+    release_resource_group: bool = False
     # A uuid id
     vm_id: Optional[str] = None
 
