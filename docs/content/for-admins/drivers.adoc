@@ -520,42 +520,42 @@ Console support varies significantly across cloud providers. This section provid
 |`aws`
 |[green]#yes#
 |[green]#yes#
-|Interactive console uses AWS EC2 Instance Connect. Only available on instances with ENA (Elastic Network Adapter) support. Console URL is generated dynamically via a configurable template. See <<aws.adoc#_console_access,"AWS driver">> for configuration details.
+|See <<aws.adoc#_console_access,"AWS driver">> for configuration details.
 
 |`azure`
 |[red]#no#
-|[yellow]#partial#
-|Azure provides limited console log (blob) access. No interactive console URL is available.
+|[green]#yes#
+|See <<azure.adoc#_console_access,"Azure driver">> for configuration details.
 
 |`beaker`
 |[yellow]#external#
 |[green]#yes#
-|Console log available as blob or URL (pointing to Beaker's stored console output). System log (`sys.log`) also available. Interactive console available via conserver (external to Artemis).
+|See <<beaker.adoc#_console_access,"Beaker driver">> for details.
 
 |`gcp`
 |[red]#no#
 |[red]#no#
-|GCP driver does not support console access.
+|Not supported.
 
 |`ibmcloud-power`
 |[green]#yes#
 |[red]#no#
-|Interactive console URL available via IBM Power Virtual Server console. No console log blob. URL expires after a configurable time (default: 300 seconds).
+|Interactive console URL only. No console log blob.
 
 |`ibmcloud-vpc`
 |[red]#no#
 |[red]#no#
-|IBM Cloud VPC driver does not currently support console access.
+|Not supported.
 
 |`localhost`
 |[red]#no#
 |[red]#no#
-|Localhost driver does not support console access.
+|Not supported.
 
 |`openstack`
 |[green]#yes#
 |[green]#yes#
-|Full console support. Interactive console URL (VNC/SPICE, depending on OpenStack configuration) via `openstack console url show`. Console log blob via `openstack console log show`. URL expires after a configurable time (default: 600 seconds).
+|Full console support via OpenStack API.
 
 |===
 

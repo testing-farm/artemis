@@ -134,6 +134,11 @@ Console log is retrieved via the AWS `get-console-output` API.
 AWS limits console output to the most recent 64 KB. Older output is not available through this API.
 ====
 
+[WARNING]
+====
+For older, Xen-based instance types the retrieving of latest output is not possible, so it is more likely to get stale console output logs. Use Nitro-based instances if possible.
+====
+
 ==== Interactive console
 
 Interactive console uses AWS EC2 Instance Connect. The console URL template can be customized:
