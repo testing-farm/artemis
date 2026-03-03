@@ -607,7 +607,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
 
         # Let's expand default tag with a specific uid=instance_name which will link our VM and its resources. This
         # comes handy when we want to remove everything leaving no leaks, takes a simple resource-by-tag search.
-        tags = dict(instance_request.tags or {})
+        tags = instance_request.tags or {}
         tags['uid'] = instance_name
 
         tags_options = []
