@@ -407,8 +407,8 @@ class IBMCloudDriver(
         # Now order result ourselves by creation date in case ibmcloud API changes, oldest come first
         try:
             res = sorted(res, key=lambda x: x.created_at)
-        except ValueError:
-            return _Error(Failure('Double check time format, could not convert time data'))
+        except ValueError as exc:
+            return _Error(Failure.from_exc('Double check time format, could not convert time data', exc))
 
         return _Ok(res)
 

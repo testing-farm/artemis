@@ -1170,8 +1170,8 @@ class Constraint(ConstraintBase):
             try:
                 flavor_property = getattr(flavor_property, groups['property_name'])
 
-            except AttributeError:
-                return Error(Failure('unknown flavor property', property=groups['property_name']))
+            except AttributeError as exc:
+                return Error(Failure.from_exc('unknown flavor property', exc, property=groups['property_name']))
 
             if groups.get('index') is not None:
                 flavor_property_index = int(groups['index'])

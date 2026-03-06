@@ -460,8 +460,8 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance, BackendFlavor]):
 
             try:
                 vpc_id = cast(dict[str, Any], r_subnet_show.unwrap())['vpc']['id']
-            except KeyError:
-                return _Error(Failure('Subnet details have no vpc information'))
+            except KeyError as exc:
+                return _Error(Failure.from_exc('Subnet details have no vpc information', exc))
 
             root_disk_size: Optional[SizeType] = None
             # If disk size is defined in flavor -> let's use it, otherwise take defaults from pool config
@@ -578,7 +578,7 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance, BackendFlavor]):
         r_output = self._show_instance(logger, instance_id)
 
         if r_output.is_error:
-            return Error(Failure('no such guest'))
+            return Error(Failure.from_failure('no such instance', r_output.unwrap_error()))
 
         output = r_output.unwrap()
 

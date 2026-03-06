@@ -448,7 +448,7 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor, novaclient.v2
 
         output = r_output.unwrap()
         if not output['id']:
-            return Error(Failure('Instance id not found'))
+            return Error(Failure('Instance id not found', output=output))
         instance_id = output['id']
 
         status = output['status'].lower()
@@ -507,7 +507,7 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor, novaclient.v2
         r_instance = self._show_guest(guest_request)
 
         if r_instance.is_error:
-            return Error(Failure('no such guest'))
+            return Error(Failure.from_failure('no such instance', r_instance.unwrap_error()))
 
         instance = r_instance.unwrap()
 
@@ -665,13 +665,13 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor, novaclient.v2
         raw_limits_container = r_query_limits.unwrap()
 
         if not isinstance(raw_limits_container, list):
-            return Error(Failure('Invalid format of OpenStack limits report'))
+            return Error(Failure('Invalid format of OpenStack limits report', limits=raw_limits_container))
 
         for entry in raw_limits_container:
             name, value = entry.get('Name'), entry.get('Value')
 
             if not isinstance(entry, dict) or 'Name' not in entry or 'Value' not in entry:
-                return Error(Failure('Invalid format of OpenStack limits report'))
+                return Error(Failure('Invalid format of OpenStack limits report', limits=entry))
 
             if name == 'totalCoresUsed':
                 resources.usage.cores = int(value)
