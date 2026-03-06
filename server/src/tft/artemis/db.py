@@ -819,8 +819,8 @@ class GuestEvent(Base):
             sort_field_column = getattr(cls, sort_field)
             sort_field_direction = getattr(sort_field_column, sort_order)
 
-        except AttributeError:
-            return Error(Failure('cannot sort events', sort_field=sort_field, sort_order=sort_order))
+        except AttributeError as exc:
+            return Error(Failure.from_exc('cannot sort events', exc, sort_field=sort_field, sort_order=sort_order))
 
         # E.g. order_by(GuestEvent.updated.desc())  # noqa: ERA001
         query = query.order_by(sort_field_direction())

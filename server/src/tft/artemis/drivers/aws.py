@@ -2022,10 +2022,11 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor, BackendFlavor
         try:
             return Ok(cast(dict[str, Any], output.json)[key])
 
-        except KeyError:
+        except KeyError as exc:
             return Error(
-                Failure(
+                Failure.from_exc(
                     f"key '{key}' not found in CLI output",
+                    exc,
                     command_output=output.process_output,
                     scrubbed_command=command,
                 )
@@ -2059,10 +2060,10 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor, BackendFlavor
         try:
             current_price = float(prices[0]['SpotPrice'])
 
-        except (KeyError, IndexError):
+        except (KeyError, IndexError) as exc:
             PoolMetrics.inc_error(self.poolname, AWSErrorCauses.SPOT_PRICE_NOT_DETECTED)
 
-            return Error(Failure('failed to detect spot price'))
+            return Error(Failure.from_exc('failed to detect spot price', exc))
 
         # we bid some % to the price
         price = current_price + current_price * (float(self.pool_config['spot-price-bid-percentage']) / 100.0)
@@ -2246,7 +2247,11 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor, BackendFlavor
         # Get the name of the new group from the template
         r_security_group_template = KNOB_GUEST_SECURITY_GROUP_NAME_TEMPLATE.get_value(entityname=self.poolname)
         if r_security_group_template.is_error:
-            return Error(Failure('Could not get guest security group name template'))
+            return Error(
+                Failure.from_failure(
+                    'Could not get guest security group name template', r_security_group_template.unwrap_error()
+                )
+            )
 
         r_rendered = render_template(
             r_security_group_template.unwrap(),
@@ -2423,8 +2428,8 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor, BackendFlavor
 
         try:
             instance_id = instance_request[0]['InstanceId']
-        except (KeyError, IndexError):
-            return Error(Failure('Failed to find InstanceID in aws output', output=instance_request))
+        except (KeyError, IndexError) as exc:
+            return Error(Failure.from_exc('Failed to find InstanceID in aws output', exc, output=instance_request))
 
         # instance state is "pending" after launch
         # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-lifecycle.html

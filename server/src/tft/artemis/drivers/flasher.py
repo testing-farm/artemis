@@ -133,8 +133,8 @@ class FlasherDriver(PoolDriver[Instance]):
         flasher_id = response.text
         try:
             uuid.UUID(flasher_id, version=4)
-        except (ValueError, TypeError):
-            return Error(Failure('no UUID in acquire_guest response', response=flasher_id))
+        except (ValueError, TypeError) as exc:
+            return Error(Failure.from_exc('no UUID in acquire_guest response', exc, response=flasher_id))
 
         return Ok(
             ProvisioningProgress(

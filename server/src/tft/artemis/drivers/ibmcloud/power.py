@@ -488,7 +488,7 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance, None]):
         r_output = self._show_instance(logger, instance_id)
 
         if r_output.is_error:
-            return Error(Failure('no such guest'))
+            return Error(Failure.from_failure('no such instance', r_output.unwrap_error()))
 
         output = r_output.unwrap()
 

@@ -753,8 +753,8 @@ def actor_kwargs(
         try:
             priority_actual = int(priority_input)
 
-        except ValueError:
-            Failure('unknown task priority', priority=priority_input).handle(_ROOT_LOGGER)
+        except ValueError as exc:
+            Failure.from_exc('unknown task priority', exc, priority=priority_input).handle(_ROOT_LOGGER)
 
             priority_actual = TaskPriority.DEFAULT.value
 

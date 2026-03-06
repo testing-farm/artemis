@@ -1254,10 +1254,11 @@ class BeakerDriver(PoolDriver[Instance]):
         for pattern in r_patterns:
             try:
                 re.compile(pattern)
-            except Exception:
+            except Exception as exc:
                 return Error(
-                    Failure(
+                    Failure.from_exc(
                         'failed to re.compile the pattern',
+                        exc,
                         pattern=pattern,
                     )
                 )
@@ -1305,8 +1306,12 @@ class BeakerDriver(PoolDriver[Instance]):
             try:
                 patterns_out.append((re.compile(pattern), method))
 
-            except Exception:
-                return Error(Failure('failed to compile installation method pattern', pattern=pattern, method=method))
+            except Exception as exc:
+                return Error(
+                    Failure.from_exc(
+                        'failed to compile installation method pattern', exc, pattern=pattern, method=method
+                    )
+                )
 
         return Ok(patterns_out)
 

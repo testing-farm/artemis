@@ -450,7 +450,11 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
     def _render_resource_group_name(self, guest_request: GuestRequest) -> _Result[str, Failure]:
         r_resource_group_template = KNOB_RESOURCE_GROUP_NAME_TEMPLATE.get_value(entityname=self.poolname)
         if r_resource_group_template.is_error:
-            return _Error(Failure('Could not get resource group name template'))
+            return _Error(
+                Failure.from_failure(
+                    'Could not get resource group name template', r_resource_group_template.unwrap_error()
+                )
+            )
 
         return render_template(
             r_resource_group_template.unwrap(),
@@ -471,7 +475,11 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
 
         r_resource_group_template = KNOB_RESOURCE_GROUP_NAME_TEMPLATE.get_value(entityname=self.poolname)
         if r_resource_group_template.is_error:
-            return _Error(Failure('Could not get resource_group_name template'))
+            return _Error(
+                Failure.from_failure(
+                    'Could not get resource_group_name template', r_resource_group_template.unwrap_error()
+                )
+            )
 
         r_rendered = render_template(
             r_resource_group_template.unwrap(),
@@ -849,8 +857,8 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
 
         try:
             res = sorted(res, key=lambda x: x.created_at)
-        except ValueError:
-            return _Error(Failure('Double check time format, could not convert time data'))
+        except ValueError as exc:
+            return _Error(Failure.from_exc('Double check time format, could not convert time data', exc))
 
         return _Ok(res)
 
@@ -994,7 +1002,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
         r_output = self._show_guest(logger, guest_request)
 
         if r_output.is_error:
-            return Error(Failure('no such guest'))
+            return Error(Failure.from_failure('no such instance', r_output.unwrap_error()))
 
         output = r_output.unwrap()
 
@@ -1081,7 +1089,9 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
             # up. If we are killing the guest early (before it entered preparing/ready state) absence of log
             # storage container is to be expected. So let's log the error and move on, imho that's the best we
             # can do here.
-            Failure('Could not get the name of log storage container for cleanup').handle(logger)
+            Failure.from_failure(
+                'Could not get the name of log storage container for cleanup', r_boot_log_storage.unwrap_error()
+            ).handle(logger)
 
         else:
             resource_ids.append(AzurePoolResourcesIDs(boot_log_container=r_boot_log_storage.unwrap()['name']))
