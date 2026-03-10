@@ -318,6 +318,16 @@ KNOB_LOGGING_SLOW_CLI_COMMAND_PATTERN: Knob[str] = Knob(
     default=r'.*',
 )
 
+KNOB_ROUTE_POOL_LEAST_CROWDED_FLAVOR: Knob[bool] = Knob(
+    'route.pool.least-crowded-flavor',
+    'When enabled, prefer the least crowded (least used) flavor from suitable candidates.',
+    has_db=True,
+    per_entity=True,
+    envvar='ARTEMIS_ROUTE_POOL_LEAST_CROWDED_FLAVOR',
+    cast_from_str=gluetool.utils.normalize_bool_option,
+    default=False,
+)
+
 KNOB_UPDATE_GUEST_REQUEST_TICK: Knob[int] = Knob(
     'pool.update-guest-request-tick',
     'A delay, in seconds, between two calls of `update-guest-request` task checking provisioning progress.',
@@ -2818,6 +2828,42 @@ class FlavorBasedPoolDriver(
 
         return Ok([cast(FlavorT, r_default_flavor.unwrap())])
 
+    def _filter_flavors_least_crowded(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        image: PoolImageInfo,
+        suitable_flavors: list[FlavorT],
+    ) -> Result[list[FlavorT], Failure]:
+        """
+        Sort suitable flavors by their current usage count (ascending), so the least crowded flavor
+        comes first. Usage data is loaded from Redis via :py:class:`PoolResourcesUsage`.
+
+        This filter should only be included in the filter chain when the
+        :py:data:`KNOB_ROUTE_POOL_LEAST_CROWDED_FLAVOR` knob is enabled for the pool. The caller
+        is responsible for checking the knob before including this filter.
+        """
+
+        if not suitable_flavors:
+            return Ok(suitable_flavors)
+
+        usage = PoolResourcesUsage(self.poolname)
+        usage.do_sync()
+
+        sorted_flavors = sorted(
+            suitable_flavors,
+            key=lambda flavor: usage.flavors.get(flavor.name, 0),
+        )
+
+        log_dict_yaml(
+            logger.debug,
+            'flavor usage counts',
+            {flavor.name: usage.flavors.get(flavor.name, 0) for flavor in sorted_flavors},
+        )
+
+        return Ok(sorted_flavors)
+
     def _filter_suitable_flavors(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -2866,6 +2912,35 @@ class FlavorBasedPoolDriver(
 
         return Ok(filtered_suitable_flavors[0] if filtered_suitable_flavors else None)
 
+    def _do_guest_request_to_flavors(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        image: PoolImageInfo,
+        *flavor_filters: FlavorFilter[FlavorT],
+    ) -> Result[list[FlavorT], Failure]:
+        """
+        Like :py:meth:`_do_guest_request_to_flavor_or_none`, but returns all filtered suitable flavors
+        instead of just the first one. Used for flavor retry on provisioning failure.
+        """
+
+        r_suitable_flavors = self._map_environment_to_flavor_info_by_cache_by_constraints(
+            logger, guest_request.environment
+        )
+
+        if r_suitable_flavors.is_error:
+            return Error(r_suitable_flavors.unwrap_error())
+
+        r_filtered_suitable_flavors = self._filter_suitable_flavors(
+            logger, session, guest_request, image, cast(list[FlavorT], r_suitable_flavors.unwrap()), *flavor_filters
+        )
+
+        if r_filtered_suitable_flavors.is_error:
+            return Error(r_filtered_suitable_flavors.unwrap_error())
+
+        return Ok(r_filtered_suitable_flavors.unwrap())
+
     def _guest_request_to_flavor_or_none(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -2885,6 +2960,33 @@ class FlavorBasedPoolDriver(
         """
 
         return self._do_guest_request_to_flavor_or_none(
+            logger,
+            session,
+            guest_request,
+            image,
+            self._filter_flavors_image_arch,
+            self._filter_flavors_prefer_default_flavor,
+            self._filter_flavors_default_fallback,
+        )
+
+    def _guest_request_to_flavors(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        image: PoolImageInfoT,
+    ) -> Result[list[FlavorT], Failure]:
+        """
+        Map a guest request and image to all suitable flavors (ordered by preference).
+
+        :param logger: logger to use for logging.
+        :param session: DB session to use for DB access.
+        :param guest_request: guest request to map to flavors.
+        :param image: image selected for the provisioning.
+        :returns: list of suitable flavors, ordered by preference (best first), or empty list if none found.
+        """
+
+        return self._do_guest_request_to_flavors(
             logger,
             session,
             guest_request,
@@ -2924,23 +3026,17 @@ class FlavorBasedPoolDriver(
 
         return Ok(flavor)
 
-    def _collect_image_flavor_pairs(
+    def _collect_suitable_images(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
-    ) -> Result[tuple[CanAcquire, list[tuple[PoolImageInfoT, FlavorT]]], Failure]:
+    ) -> Result[tuple[CanAcquire, list[PoolImageInfoT]], Failure]:
         """
-        Find all possible image and flavor combinations for a given guest request.
+        Find all suitable images for a given guest request, including kickstart validation.
 
         :param logger: logger to use for logging.
         :param session: DB session to use for DB access.
-        :param guest_request: guest request to map to image/flavor pairs.
-        :returns: either a valid result, a tuple of :py:class:`CanAcquire` instance and a list of image/flavor tuples,
-            or an error with a :py:class:`Failure` describing the problem. If the list is empty,
-            :py:attr:`CanAcquire.reason` describes the cause.
-
-            .. warning::
-
-                Do not propagate failure stored in :py:attr:`CanAcquire.reason` as its :py:attr:`Failure.recoverable`
-                may be set. Propagating it of the :py:meth:`can_acquire` method may terminate the whole guest request.
+        :param guest_request: guest request to find images for.
+        :returns: either a valid result, a tuple of :py:class:`CanAcquire` instance and a list of suitable images,
+            or an error with a :py:class:`Failure` describing the problem.
         """
 
         r_images: Result[list[PoolImageInfoT], Failure] = self._guest_request_to_image_or_none(
@@ -2969,6 +3065,37 @@ class FlavorBasedPoolDriver(
 
             if not images:
                 return Ok((CanAcquire.cannot('compose does not support kickstart'), []))
+
+        return Ok((CanAcquire(), images))
+
+    def _collect_image_flavor_pairs(
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
+    ) -> Result[tuple[CanAcquire, list[tuple[PoolImageInfoT, FlavorT]]], Failure]:
+        """
+        Find all possible image and flavor combinations for a given guest request.
+
+        :param logger: logger to use for logging.
+        :param session: DB session to use for DB access.
+        :param guest_request: guest request to map to image/flavor pairs.
+        :returns: either a valid result, a tuple of :py:class:`CanAcquire` instance and a list of image/flavor tuples,
+            or an error with a :py:class:`Failure` describing the problem. If the list is empty,
+            :py:attr:`CanAcquire.reason` describes the cause.
+
+            .. warning::
+
+                Do not propagate failure stored in :py:attr:`CanAcquire.reason` as its :py:attr:`Failure.recoverable`
+                may be set. Propagating it of the :py:meth:`can_acquire` method may terminate the whole guest request.
+        """
+
+        r_images = self._collect_suitable_images(logger, session, guest_request)
+
+        if r_images.is_error:
+            return Error(r_images.unwrap_error())
+
+        can_acquire, images = r_images.unwrap()
+
+        if not can_acquire.can_acquire:
+            return Ok((can_acquire, []))
 
         pairs: list[tuple[PoolImageInfoT, FlavorT]] = []
 

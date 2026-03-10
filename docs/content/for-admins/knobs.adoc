@@ -1585,6 +1585,22 @@ avoid them.
 5+|A time, in seconds, after which a pool error during a guest provisioning is ignored and pool becomes eligible
 for said guest request again.
 
+|`route.pool.least-crowded-flavor`
+|`bool`
+|`ARTEMIS_ROUTE_POOL_LEAST_CROWDED_FLAVOR`
+|`no`
+|yes
+
+
+|`route.pool.least-crowded-flavor:$entityname`
+|
+|`ARTEMIS_ROUTE_POOL_LEAST_CROWDED_FLAVOR_$entityname`
+|
+|
+
+
+5+|When enabled, prefer the least crowded (least used) flavor from suitable candidates.
+
 |`route.pool.resource-threshold`
 |`float`
 |`ARTEMIS_ROUTE_POOL_RESOURCE_THRESHOLD`

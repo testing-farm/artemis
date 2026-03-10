@@ -60,8 +60,10 @@ from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from ..security_group_rules import SecurityGroupRule, SecurityGroupRules
 from . import (
+    KNOB_ROUTE_POOL_LEAST_CROWDED_FLAVOR,
     ConsoleUrlData,
     FlavorBasedPoolDriver,
+    FlavorFilter,
     GuestLogUpdateProgress,
     Instance,
     PoolCapabilities,
@@ -1899,6 +1901,36 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor, BackendFlavor
             )
         )
 
+    def _aws_flavor_filters(
+        self,
+        session: sqlalchemy.orm.session.Session,
+    ) -> list[FlavorFilter['AWSFlavor']]:
+        """
+        Assemble the list of flavor filters for AWS provisioning.
+
+        When the ``route.pool.least-crowded-flavor`` knob is enabled, the least-crowded filter is
+        included and the default flavor preference filter is skipped, so all suitable flavors remain
+        as candidates sorted by crowdedness. The default fallback filter is always kept as a safety net.
+        """
+
+        filters: list[FlavorFilter[AWSFlavor]] = [
+            self._filter_flavors_image_arch,
+            self._filter_flavors_console_url_support,
+            self._filter_flavors_image_ena_support,
+            self._filter_flavors_image_boot_method,
+        ]
+
+        r_least_crowded = KNOB_ROUTE_POOL_LEAST_CROWDED_FLAVOR.get_value(session=session, entityname=self.poolname)
+
+        if r_least_crowded.is_ok and r_least_crowded.unwrap():
+            filters.append(self._filter_flavors_least_crowded)
+        else:
+            filters.append(self._filter_flavors_prefer_default_flavor)
+
+        filters.append(self._filter_flavors_default_fallback)
+
+        return filters
+
     def _guest_request_to_flavor_or_none(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -1911,12 +1943,22 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor, BackendFlavor
             session,
             guest_request,
             image,
-            self._filter_flavors_image_arch,
-            self._filter_flavors_console_url_support,
-            self._filter_flavors_image_ena_support,
-            self._filter_flavors_image_boot_method,
-            self._filter_flavors_prefer_default_flavor,
-            self._filter_flavors_default_fallback,
+            *self._aws_flavor_filters(session),
+        )
+
+    def _guest_request_to_flavors(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        image: AWSPoolImageInfo,
+    ) -> Result[list[AWSFlavor], Failure]:
+        return self._do_guest_request_to_flavors(
+            logger,
+            session,
+            guest_request,
+            image,
+            *self._aws_flavor_filters(session),
         )
 
     def _describe_instance(self, guest_request: GuestRequest) -> Result[InstanceOwnerType, Failure]:
@@ -2803,35 +2845,61 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor, BackendFlavor
     def acquire_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
-        r_image_flavor_pairs = self._collect_image_flavor_pairs(logger, session, guest_request)
+        r_images = self._collect_suitable_images(logger, session, guest_request)
 
-        if r_image_flavor_pairs.is_error:
-            return Error(r_image_flavor_pairs.unwrap_error())
+        if r_images.is_error:
+            return Error(r_images.unwrap_error())
 
-        can_acquire, pairs = r_image_flavor_pairs.unwrap()
+        can_acquire, images = r_images.unwrap()
 
         if not can_acquire.can_acquire:
             assert can_acquire.reason is not None
 
             return Error(Failure(can_acquire.reason.message))
 
-        image, flavor = pairs[0]
+        # Collect all suitable flavors for the first suitable image, ordered by preference
+        # (e.g., least crowded first when the knob is enabled). Try each flavor on failure.
+        image = images[0]
 
-        # If this pool provides spot instances, we start the provisioning by submitting a spot instance request.
-        # After that, we request an update to be scheduled, to check progress of this spot request. If successfull,
-        # we extract instance ID, and proceed just like we do with non-spot instances.
-        #
-        # There is only one request in both cases: either we submit a spot instance request, and the instance gets
-        # created implicitly, or, when this pool don't provide spot instances, we submit an instance request. There
-        # is no explicit request to transition from spot instance request to instance updates - once spot request is
-        # fulfilled, we're given instance ID to work with.
+        r_flavors = self._guest_request_to_flavors(logger, session, guest_request, image)
 
-        self.log_acquisition_attempt(logger, session, guest_request, flavor=flavor, image=image)
+        if r_flavors.is_error:
+            return Error(r_flavors.unwrap_error())
 
-        if normalize_bool_option(self.pool_config.get('use-spot-request', False)):
-            return self._request_spot_instance(logger, session, guest_request, flavor, image)
+        flavors = r_flavors.unwrap()
 
-        return self._request_instance(logger, session, guest_request, flavor, image)
+        if not flavors:
+            return Error(Failure('no suitable flavors for selected image'))
+
+        use_spot = normalize_bool_option(self.pool_config.get('use-spot-request', False))
+
+        # Try each flavor in order. If provisioning fails for one, try the next.
+        last_failure: Optional[Failure] = None
+
+        for i, flavor in enumerate(flavors):
+            self.log_acquisition_attempt(logger, session, guest_request, flavor=flavor, image=image)
+
+            if use_spot:
+                result = self._request_spot_instance(logger, session, guest_request, flavor, image)
+            else:
+                result = self._request_instance(logger, session, guest_request, flavor, image)
+
+            if result.is_ok:
+                return result
+
+            last_failure = result.unwrap_error()
+
+            if i < len(flavors) - 1:
+                guest_request.log_warning_event(
+                    logger,
+                    session,
+                    f'provisioning failed with flavor {flavor.name}, trying next candidate',
+                    poolname=self.poolname,
+                )
+
+        assert last_failure is not None
+
+        return Error(last_failure)
 
     def release_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest

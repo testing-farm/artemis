@@ -17,9 +17,9 @@ from typing_extensions import Protocol, TypedDict
 
 from . import Failure, Sentry, SerializableContainer, TracingOp, partition
 from .db import GuestRequest
-from .drivers import CanAcquire, PoolCapabilities, PoolDriver, PoolLogger, Tags
+from .drivers import KNOB_ROUTE_POOL_LEAST_CROWDED_FLAVOR, CanAcquire, PoolCapabilities, PoolDriver, PoolLogger, Tags
 from .knobs import Knob
-from .metrics import PoolMetrics
+from .metrics import PoolMetrics, PoolResourcesUsage
 
 
 @dataclasses.dataclass(repr=False)
@@ -636,6 +636,73 @@ def policy_least_crowded(
             pools=[
                 PoolPolicyRuling(pool=pool, allowed=bool(metrics.current_guest_request_count == min_usage))
                 for pool, metrics in pool_metrics
+            ]
+        )
+    )
+
+
+@policy_boilerplate
+def policy_least_crowded_flavor(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    pools: list[PoolDriver[Any]],
+    guest_request: GuestRequest,
+) -> PolicyReturnType:
+    """
+    Among pools with the ``route.pool.least-crowded-flavor`` knob enabled, prefer those where the least used
+    flavor has the lowest usage count. Pools without the knob enabled are always allowed.
+
+    Note: this policy uses overall pool flavor usage, not request-specific flavor matching. The precise
+    flavor selection among actually suitable candidates happens at the driver level via
+    :py:meth:`FlavorBasedPoolDriver._filter_flavors_least_crowded`.
+    """
+
+    if len(pools) <= 1:
+        return Ok(PolicyRuling.from_pools(pools))
+
+    # Separate pools into two groups: those with the knob enabled and those without.
+    least_crowded_pools: list[tuple[PoolDriver[Any], int]] = []
+    other_pools: list[PoolDriver[Any]] = []
+
+    for pool in pools:
+        r_enabled = KNOB_ROUTE_POOL_LEAST_CROWDED_FLAVOR.get_value(session=session, entityname=pool.poolname)
+
+        if r_enabled.is_error or not r_enabled.unwrap():
+            other_pools.append(pool)
+            continue
+
+        usage = PoolResourcesUsage(pool.poolname)
+        usage.do_sync()
+
+        # The "crowdedness" of a pool is the minimum usage count among its flavors.
+        # A pool with a flavor at 0 usage is less crowded than one where all flavors have 2+ usage.
+        min_flavor_usage = min(usage.flavors.values()) if usage.flavors else 0
+
+        logger.debug(f'pool {pool.poolname}: min flavor usage = {min_flavor_usage}, flavors = {usage.flavors}')
+
+        least_crowded_pools.append((pool, min_flavor_usage))
+
+    # If no pools have the knob enabled, allow all.
+    if not least_crowded_pools:
+        return Ok(PolicyRuling.from_pools(pools))
+
+    # Among knob-enabled pools, keep only those with the lowest minimum flavor usage.
+    min_usage = min(usage for _, usage in least_crowded_pools)
+    knob_pool_usage = {pool.poolname: usage for pool, usage in least_crowded_pools}
+    allowed_knob_pools = {pool.poolname for pool, usage in least_crowded_pools if usage == min_usage}
+    other_poolnames = {pool.poolname for pool in other_pools}
+
+    return Ok(
+        PolicyRuling(
+            pools=[
+                PoolPolicyRuling(
+                    pool=pool,
+                    allowed=pool.poolname in other_poolnames or pool.poolname in allowed_knob_pools,
+                    note=None
+                    if pool.poolname in other_poolnames
+                    else f'min flavor usage: {knob_pool_usage.get(pool.poolname, "?")}',
+                )
+                for pool in pools
             ]
         )
     )
