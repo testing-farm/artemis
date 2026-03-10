@@ -2879,7 +2879,7 @@ class FlavorBasedPoolDriver(
 
         filtered_suitable_flavors = r_filtered_suitable_flavors.unwrap()
 
-        return Ok(filtered_suitable_flavors[0] if filtered_suitable_flavors else None)
+        return Ok(random.choice(filtered_suitable_flavors) if filtered_suitable_flavors else None)
 
     def _guest_request_to_flavor_or_none(
         self,
