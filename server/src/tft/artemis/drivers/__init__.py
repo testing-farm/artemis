@@ -2784,6 +2784,9 @@ class FlavorBasedPoolDriver(
         if not suitable_flavors:
             return Ok(suitable_flavors)
 
+        if 'default-flavor' not in self.pool_config:
+            return Ok(suitable_flavors)
+
         if not any(flavor.name == self.pool_config['default-flavor'] for flavor in suitable_flavors):
             return Ok(suitable_flavors)
 
@@ -2809,6 +2812,9 @@ class FlavorBasedPoolDriver(
         suitable_flavors: list[FlavorT],
     ) -> Result[list[FlavorT], Failure]:
         if suitable_flavors:
+            return Ok(suitable_flavors)
+
+        if 'default-flavor' not in self.pool_config:
             return Ok(suitable_flavors)
 
         if not self.pool_config.get('use-default-flavor-when-no-suitable', True):
