@@ -152,7 +152,6 @@ required:
 - access-key-id
 - availability-zone
 - command
-- default-flavor
 - default-region
 - master-key-name
 - secret-access-key
