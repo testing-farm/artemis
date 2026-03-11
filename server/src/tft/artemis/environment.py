@@ -636,6 +636,9 @@ class FlavorVirtualization(_FlavorSubsystemContainer):
     #: When flavors represents a virtual machine, this field carries a hypervisor name.
     hypervisor: Optional[str] = None
 
+    #: If set, the flavor supports confidential computing.
+    confidential: Optional[bool] = None
+
 
 @dataclasses.dataclass(repr=False)
 class Flavor(_FlavorSubsystemContainer):
@@ -1368,6 +1371,16 @@ def _parse_virtualization(spec: Spec) -> ConstraintBase:
     if 'hypervisor' in spec:
         group.constraints += [
             Constraint.from_specification('virtualization.hypervisor', spec['hypervisor'], as_quantity=False)
+        ]
+
+    if 'confidential' in spec:
+        group.constraints += [
+            Constraint.from_specification(
+                'virtualization.confidential',
+                str(spec['confidential']),
+                as_quantity=False,
+                as_cast=gluetool.utils.normalize_bool_option,
+            )
         ]
 
     if len(group.constraints) == 1:
