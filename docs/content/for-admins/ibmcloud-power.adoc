@@ -1,0 +1,150 @@
+---
+title: "IBM Cloud Power driver"
+date: 2026-03-11T00:00:00+00:00
+draft: false
+---
+:sectlinks:
+:showtitle:
+
+== IBM Cloud Power
+
+=== Authentication
+
+The IBM Cloud Power driver authenticates using an API key:
+
+.Specification
+[source,yaml]
+....
+api-key: <api-key>
+....
+
+=== Workspace
+
+The driver requires a Cloud Resource Name (CRN) identifying the Power Systems workspace:
+
+.Specification
+[source,yaml]
+....
+workspace-crn: <crn>
+....
+
+=== Image filters
+
+When searching for images, the driver queries the IBM Cloud Power image API. Image filters help narrow down the list of cached images.
+
+Each entry of `image-filters` enables one or more filters at once; all specified filters must match for an image to be included.
+
+.Specification
+[source,yaml]
+....
+image-filters:
+    # Image architecture must match a regular expression
+  - arch-regex: <pattern>
+
+    # Image name must match a regular expression
+    name-regex: <pattern>
+
+    # Image creation date must match a regular expression
+    creation-date-regex: <pattern>
+
+    # Image must be younger than this many seconds
+    max-age: <integer>
+....
+
+=== Flavors
+
+==== Default flavor
+
+A default flavor is used when the guest request does not specify HW requirements that would narrow down the flavor selection:
+
+.Specification
+[source,yaml]
+....
+default-flavor: <flavor-name>
+....
+
+==== Use default flavor as fallback
+
+When no suitable flavor matches the guest request, the default flavor can be used as a fallback:
+
+.Specification
+[source,yaml]
+....
+use-default-flavor-when-no-suitable: true  # default: true
+....
+
+=== Networking
+
+==== Subnet
+
+.Specification
+[source,yaml]
+....
+subnet-id: <subnet-id>
+....
+
+=== SSH key
+
+The driver requires a pre-existing SSH key pair for guest access:
+
+.Specification
+[source,yaml]
+....
+master-key-name: <key-name>
+....
+
+=== Region
+
+.Specification
+[source,yaml]
+....
+default-region: <region>
+....
+
+=== Expose public IP address
+
+By default, Artemis exposes the private IP address of the instance. To expose the public IP instead:
+
+.Specification
+[source,yaml]
+....
+use-public-ip: true
+....
+
+=== Available guest logs
+
+[NOTE]
+====
+For details on guest log support across all drivers, see <<drivers.adoc#_guest_logs,"Guest logs">>.
+====
+
+[%header,cols="1,1,2"]
+|===
+|Log type
+|Content type
+|Description
+
+|`console:interactive`
+|URL
+|URL to the interactive console.
+
+|===
+
+==== Interactive console
+
+Interactive console URL is retrieved via the IBM Cloud Power `pi instance console get` command. The URL expires after a configurable period:
+
+.Environment variable
+....
+ARTEMIS_IBMCLOUD_POWER_CONSOLE_URL_EXPIRES
+....
+
+.Default value
+....
+300
+....
+
+[NOTE]
+====
+The value is in seconds.
+====

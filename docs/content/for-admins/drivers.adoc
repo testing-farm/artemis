@@ -460,7 +460,7 @@ $ http POST https://$hostname/_cache/pools/$poolname/flavor-info
 
 === Guest logs
 
-Supported by: `aws` [line-through]#`azure`# [line-through]#`beaker`# [line-through]#`localhost`# `openstack`
+Supported by: `aws` `azure` `beaker` [line-through]#`gcp`# `ibmcloud-power` [line-through]#`ibmcloud-vpc`# [line-through]#`localhost`# `openstack`
 
 Besides the operational logs related to guest provisioning, drivers often expose additional logs, usually related to the provisioning service actions or guest VM operations (terminal or console, output of `dmesg`, etc.).
 
@@ -472,21 +472,37 @@ The actual list of logs supported by a pool depends on the driver - this is a ha
 |Supported logs
 
 |`aws`
-|console/blob
-console/URL
+|console:dump/blob
+console:interactive/URL
 
 |`azure`
-|-
+|console:dump/blob
 
 |`beaker`
+|console:dump/blob
+console:dump/URL
+sys.log:dump/URL
+anaconda.log:dump/blob
+storage.log:dump/blob
+program.log:dump/blob
+packaging.log:dump/blob
+ks.cfg:dump/blob
+
+|`gcp`
+|-
+
+|`ibmcloud-power`
+|console:interactive/URL
+
+|`ibmcloud-vpc`
 |-
 
 |`localhost`
 |-
 
 |`openstack`
-|console/blob
-console/URL
+|console:dump/blob
+console:interactive/URL
 
 |===
 
@@ -495,7 +511,7 @@ console/URL
 Disabling unsupported logs has no effect.
 ====
 
-==== Gust log tweaks
+==== Guest log tweaks
 
 Each pool can tune down the supported set of guest logs: while it is not possible to enable logs that are not already supported by pool's driver, it is still possible to disable supported logs, preventing users from accessing them.
 

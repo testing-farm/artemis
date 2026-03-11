@@ -1,0 +1,196 @@
+---
+title: "OpenStack driver"
+date: 2026-03-11T00:00:00+00:00
+draft: false
+---
+:sectlinks:
+:showtitle:
+
+== OpenStack
+
+=== Authentication
+
+The OpenStack driver authenticates using Keystone credentials.
+
+.Specification
+[source,yaml]
+....
+auth-url: <keystone-auth-url>
+api-version: <api-version>
+username: <username>
+password: <password>
+user-domain-name: <user-domain-name>
+project-name: <project-name>
+project-domain-name: <project-domain-name>
+# Or, alternatively:
+project-domain-id: <project-domain-id>
+....
+
+.Example
+[source,yaml]
+....
+auth-url: "https://openstack.example.com:5000/v3"
+api-version: "3"
+username: "artemis"
+password: "secret"
+user-domain-name: "Default"
+project-name: "artemis-project"
+project-domain-name: "Default"
+....
+
+[NOTE]
+====
+Either `project-domain-name` or `project-domain-id` must be specified.
+====
+
+=== Image filters
+
+When searching for images, the OpenStack driver queries the Glance image service. Image filters help narrow down the list of cached images.
+
+Each entry of `image-filters` enables one or more filters at once; all specified filters must match for an image to be included.
+
+.Specification
+[source,yaml]
+....
+image-filters:
+    # Image architecture must match a regular expression
+  - arch-regex: <pattern>
+
+    # Image name must match a regular expression
+    name-regex: <pattern>
+
+    # Image creation date must match a regular expression
+    creation-date-regex: <pattern>
+
+    # Image must be younger than this many seconds
+    max-age: <integer>
+....
+
+=== Flavors
+
+OpenStack flavors represent VM configurations (CPU, memory, disk). The driver fetches available flavors from the Nova API.
+
+==== Default flavor
+
+A default flavor is used when the guest request does not specify HW requirements that would narrow down the flavor selection:
+
+.Specification
+[source,yaml]
+....
+default-flavor: <flavor-name>
+....
+
+==== Flavor filtering
+
+To limit which flavors are available, use a regular expression:
+
+.Specification
+[source,yaml]
+....
+flavor-regex: <pattern>
+....
+
+==== Use default flavor as fallback
+
+When no suitable flavor matches the guest request, the default flavor can be used as a fallback:
+
+.Specification
+[source,yaml]
+....
+use-default-flavor-when-no-suitable: true  # default: true
+....
+
+=== Networking
+
+==== Network selection
+
+The driver selects a network based on a regular expression matched against available network names:
+
+.Specification
+[source,yaml]
+....
+network-regex: <pattern>
+ip-version: <'4' or '6'>
+....
+
+==== Security group
+
+.Specification
+[source,yaml]
+....
+security-group: <security-group-name>  # default: "default"
+....
+
+=== SSH key
+
+The driver requires a pre-existing SSH key pair in OpenStack for guest access:
+
+.Specification
+[source,yaml]
+....
+master-key-name: <key-name>
+....
+
+=== API versions
+
+The driver requires explicit API version configuration for Nova and Glance services:
+
+.Specification
+[source,yaml]
+....
+nova-version: <version>
+glance-version: <version>
+....
+
+.Example
+[source,yaml]
+....
+nova-version: "2.1"
+glance-version: "2"
+....
+
+=== Available guest logs
+
+[NOTE]
+====
+For details on guest log support across all drivers, see <<drivers.adoc#_guest_logs,"Guest logs">>.
+====
+
+[%header,cols="1,1,2"]
+|===
+|Log type
+|Content type
+|Description
+
+|`console:dump`
+|blob
+|Console output.
+
+|`console:interactive`
+|URL
+|URL to the interactive console.
+
+|===
+
+==== Console log
+
+Console log is retrieved via the OpenStack `console log show` command.
+
+==== Interactive console
+
+Interactive console URL is retrieved via the OpenStack `console url show` command. The URL expires after a configurable period:
+
+.Environment variable
+....
+ARTEMIS_OPENSTACK_CONSOLE_URL_EXPIRES
+....
+
+.Default value
+....
+600
+....
+
+[NOTE]
+====
+The value is in seconds.
+====
