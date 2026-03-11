@@ -113,6 +113,7 @@ class GCPDriver(PoolDriver[Instance]):
         capabilities.supported_architectures = ['x86_64']
         capabilities.supports_console_url = False
         capabilities.supports_spot_instances = False
+        capabilities.supports_confidential_computing = False
         capabilities.supports_native_post_install_script = False
         capabilities.supported_guest_logs = []
         capabilities.supports_hostnames = False
