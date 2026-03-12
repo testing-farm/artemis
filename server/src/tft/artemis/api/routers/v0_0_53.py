@@ -55,6 +55,26 @@ def get_pool_flavor_info(
     return manager.entry_pool_flavor_info(poolname=poolname, manager=manager, logger=logger)
 
 
+@router__cache.post('/pools/{poolname}/image-info', status_code=status.HTTP_204_NO_CONTENT)
+def refresh_pool_image_info(
+    poolname: str,
+    request: Request,
+    manager: Annotated[CacheManager, Depends(CacheManager)],
+    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
+) -> None:
+    return manager.entry_refresh_pool_image_info(poolname=poolname, manager=manager, logger=logger, request=request)
+
+
+@router__cache.post('/pools/{poolname}/flavor-info', status_code=status.HTTP_204_NO_CONTENT)
+def refresh_pool_flavor_info(
+    poolname: str,
+    request: Request,
+    manager: Annotated[CacheManager, Depends(CacheManager)],
+    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
+) -> None:
+    return manager.entry_refresh_pool_flavor_info(poolname=poolname, manager=manager, logger=logger, request=request)
+
+
 router_guests = APIRouter(
     prefix='/guests',
     tags=['guests'],
