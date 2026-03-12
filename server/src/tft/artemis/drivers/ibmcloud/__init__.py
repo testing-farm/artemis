@@ -62,6 +62,13 @@ KNOB_INSTANCE_NAME_TEMPLATE: Knob[str] = Knob(
 IBMCLOUD_DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S.%fZ'
 
 
+#: Represents a type of backend instance representation. It may be a data type based on JSON CLI output, or classes
+#: provided by 3rd party backend library, but in every case its structure is not defined by Artemis.
+#:
+#: Backend counterpart of our :py:class:`tft.artemis.drivers.Instance`.
+BackendInstanceT = TypeVar('BackendInstanceT')
+
+
 @dataclasses.dataclass
 class IBMCloudPoolData(PoolData):
     instance_id: Optional[str] = None
@@ -239,7 +246,7 @@ class IBMCloudSession(CLISessionPermanentDir):
 class IBMCloudDriver(
     FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor, BackendFlavorT, IBMCloudInstanceT],
     abc.ABC,
-    Generic[IBMCloudInstanceT, BackendFlavorT],
+    Generic[BackendInstanceT, IBMCloudInstanceT, BackendFlavorT],
 ):
     drivername = 'abstract-ibmcloud-driver'
 
@@ -443,8 +450,14 @@ class IBMCloudDriver(
         )
 
     @abc.abstractmethod
-    def _show_instance(self, logger: gluetool.log.ContextAdapter, instance_id: str) -> Result[Any, Failure]:
-        """This method will show a single instance details."""
+    def _query_backend_instance(
+        self, logger: gluetool.log.ContextAdapter, instance_id: str
+    ) -> _Result[BackendInstanceT, Failure]:
+        """
+        Fetch instance info from the backed infrastructure.
+
+        :returns: instance description.
+        """
 
         raise NotImplementedError
 
