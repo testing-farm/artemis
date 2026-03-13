@@ -267,6 +267,58 @@ would be converted into the following lines:
 /distribution/reservesys:New:Running:/distribution/reservesys:Pass
 ....
 
+=== Available guest logs
+
+[NOTE]
+====
+For details on guest log support across all drivers, see <<drivers.adoc#_guest_logs,"Guest logs">>.
+====
+
+[NOTE]
+====
+Beaker driver is currently the only driver providing additional logs next to console logs.
+====
+
+[%header,cols="1,1,2"]
+|===
+|Log type
+|Content type
+|Description
+
+|`console:dump`
+|blob
+|Console output.
+
+|`console:dump`
+|URL
+|URL pointing to the stored console output.
+
+|`sys.log:dump`
+|URL
+|Contains low-level system messages generated during the installation process.
+
+|`anaconda.log:dump`
+|blob
+|Anaconda installer application log.
+
+|`storage.log:dump`
+|blob
+|Anaconda disk-related subsystem log.
+
+|`program.log:dump`
+|blob
+|Records every external command Anaconda runs with output and exit codes.
+
+|`packaging.log:dump`
+|blob
+|Logs all package installation actions done by Anaconda.
+
+|`ks.cfg:dump`
+|blob
+|Kickstart configuration Anaconda generated.
+
+|===
+
 === Installation method
 
 With the help of `installation-method-map` key, it is possible to specify a custom installation method in the case of need. The key holds a mapping between regular expressions, matching compose/distro, and corresponding methods. If the compose/distro of a request matches one of the patterns, its method is added to Beaker job XML.

@@ -1,0 +1,198 @@
+---
+title: "Azure driver"
+date: 2026-03-02T00:00:00+00:00
+draft: false
+---
+:sectlinks:
+:showtitle:
+
+== Azure
+
+=== Authentication
+
+The Azure driver supports two authentication modes, controlled by the `login` pool configuration key.
+
+==== Service principal
+
+Authenticate as a service principal (recommended for automation):
+
+.Specification
+[source,yaml]
+....
+login: service-principal
+tenant: <tenant-id>
+username: <client-id>
+password: <client-secret>
+....
+
+.Example
+[source,yaml]
+....
+login: service-principal
+tenant: "00000000-0000-0000-0000-000000000000"
+username: "00000000-0000-0000-0000-000000000000"
+password: "your-client-secret"
+....
+
+==== Username and password
+
+Authenticate with an Azure user account:
+
+.Specification
+[source,yaml]
+....
+username: <username>
+password: <password>
+....
+
+=== Image filters
+
+When searching for images, the Azure driver queries the Azure Marketplace. The list can be large, and image filters help narrow it down.
+
+Each entry of `image-filters` enables one or more filters at once; all specified filters must match for an image to be included.
+
+.Specification
+[source,yaml]
+....
+image-filters:
+    # Image URN must match a regular expression
+  - name-regex: <pattern>
+
+    # Image offer must match exactly
+    offer: <string>
+
+    # Image publisher must match exactly
+    publisher: <string>
+
+    # Image SKU must match exactly
+    sku: <string>
+....
+
+.Example
+[source,yaml]
+....
+image-filters:
+  # Include all RHEL 7, 8 and 9 images from Red Hat
+  - publisher: "RedHat"
+    name-regex: "(.*RHEL:7_.*)|(.*RHEL:8_.*)|(.*RHEL:9_.*)"
+
+  # Include a specific Fedora image
+  - publisher: "tunnelbiz"
+    offer: "fedora"
+....
+
+[NOTE]
+====
+`name-regex` is matched against the full image URN in the form `publisher:offer:sku:version`.
+====
+
+=== Resource groups
+
+Azure resources are organized into resource groups. The driver uses two resource group concepts.
+
+==== Default resource group
+
+Used for shared resources that persist across multiple guest creations, such as the boot log storage account:
+
+.Specification
+[source,yaml]
+....
+default-resource-group: <string>
+....
+
+.Default value
+....
+artemis-internals
+....
+
+==== Guest resource group
+
+By default, the driver creates a dedicated resource group for each guest VM, making cleanup fast and simple (the entire group is deleted on release). The resource group name is generated from a configurable template:
+
+.Environment variable
+....
+ARTEMIS_AZURE_RESOURCE_GROUP_NAME_TEMPLATE
+....
+
+.Default value
+....
+{{ TAGS.ArtemisGuestLabel }}-{{ GUESTNAME }}
+....
+
+Alternatively, a fixed pre-created resource group can be used for all guests:
+
+.Specification
+[source,yaml]
+....
+guest-resource-group: <string>
+....
+
+[NOTE]
+====
+When `guest-resource-group` is set, all guest VMs share the same resource group. Cleanup is done by removing individual resources tagged with the guest's `uid` tag, rather than deleting the resource group.
+====
+
+=== Expose public IP address
+
+By default, Artemis exposes the private IP address of the instance. To expose the public IP instead:
+
+.Specification
+[source,yaml]
+....
+use-public-ip: true
+....
+
+=== Available guest logs
+
+[NOTE]
+====
+For details on guest log support across all drivers, see <<drivers.adoc#_guest_logs,"Guest logs">>.
+====
+
+[%header,cols="1,1,2"]
+|===
+|Log type
+|Content type
+|Description
+
+|`console:dump`
+|blob
+|Console output.
+
+|===
+
+==== Console log
+
+Console log is retrieved from Azure Blob Storage using the boot diagnostics serial console log (`.serialconsole.log`).
+
+To enable console log support, configure a storage account for boot diagnostics:
+
+.Specification
+[source,yaml]
+....
+boot-log-storage: <storage-account-name>
+....
+
+.Example
+[source,yaml]
+....
+boot-log-storage: "myartemisbootlogs"
+....
+
+When `boot-log-storage` is set, the driver:
+
+1. Creates the storage account in `default-resource-group` if it does not exist.
+2. Passes `--boot-diagnostics-storage` to `az vm create` to enable boot diagnostics on the VM.
+3. Fetches the `.serialconsole.log` blob from the VM-specific storage container when the console log is requested.
+
+[NOTE]
+====
+Boot diagnostics must be enabled on the VM for serial console logs to be available. This is done automatically when `boot-log-storage` is configured.
+====
+
+[NOTE]
+====
+The storage container for boot logs belongs to a separate resource group and is cleaned up independently during guest release.
+====
+
+See https://learn.microsoft.com/en-us/azure/virtual-machines/boot-diagnostics[Azure boot diagnostics documentation] for more details.

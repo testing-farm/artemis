@@ -120,3 +120,59 @@ By default, Artemis will expose the private IP address of the instance. In case 
 ....
 use-public-ip: true
 ....
+
+=== Available guest logs
+
+[NOTE]
+====
+For details on guest log support across all drivers, see <<drivers.adoc#_guest_logs,"Guest logs">>.
+====
+
+[%header,cols="1,1,2"]
+|===
+|Log type
+|Content type
+|Description
+
+|`console:dump`
+|blob
+|Console output.
+
+|`console:interactive`
+|URL
+|URL to the interactive console.
+
+|===
+
+==== Console log
+
+Console log is retrieved via the AWS `get-console-output` API.
+
+[NOTE]
+====
+AWS limits console output to the most recent 64 KB. Older output is not available through this API.
+====
+
+[WARNING]
+====
+For older, Xen-based instance types the retrieving of latest output is not possible, so it is more likely to get stale console output logs. Use Nitro-based instances if possible.
+====
+
+==== Interactive console
+
+Interactive console uses AWS EC2 Instance Connect. The console URL template can be customized:
+
+.Environment variable
+....
+ARTEMIS_AWS_LOGS_CONSOLE_INTERACTIVE_URL
+....
+
+.Default value
+....
+https://console.aws.amazon.com/ec2/v2/connect/ec2-user/{instance_id}?connection-type=isc&serial-port=0
+....
+
+[NOTE]
+====
+Interactive console is only available on instances with ENA (Elastic Network Adapter) support. When a guest requests `console:interactive` with URL content type, flavors without ENA support are automatically filtered out.
+====
