@@ -1209,6 +1209,11 @@ class BeakerDriver(PoolDriver[Instance]):
             ('console:dump', GuestLogContentType.URL),
             ('console:dump', GuestLogContentType.BLOB),
             ('sys.log:dump', GuestLogContentType.URL),
+            ('anaconda.log:dump', GuestLogContentType.BLOB),
+            ('storage.log:dump', GuestLogContentType.BLOB),
+            ('program.log:dump', GuestLogContentType.BLOB),
+            ('packaging.log:dump', GuestLogContentType.BLOB),
+            ('ks.cfg:dump', GuestLogContentType.BLOB),
         ]
 
         return _Ok(capabilities)
