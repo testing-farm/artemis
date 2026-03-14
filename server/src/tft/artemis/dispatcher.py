@@ -175,6 +175,7 @@ def pick_task_request(
             r_pending_task = (
                 SafeQuery.from_session(session, TaskRequest)
                 .filter(TaskRequest.task_sequence_request_id.is_(None))
+                .order_by(TaskRequest.id.asc())
                 .limit(1)
                 .with_skip_locked()
                 .one_or_none()
@@ -217,7 +218,13 @@ def pick_task_sequence_request(
             Sentry.start_span(TracingOp.FUNCTION, 'handle_task_sequence_request'),
             transaction(logger, session) as transaction_result,
         ):
-            r_pending_task_sequence = SafeQuery.from_session(session, TaskSequenceRequest).limit(1).one_or_none()
+            r_pending_task_sequence = (
+                SafeQuery.from_session(session, TaskSequenceRequest)
+                .order_by(TaskSequenceRequest.id.asc())
+                .limit(1)
+                .with_skip_locked()
+                .one_or_none()
+            )
 
             if r_pending_task_sequence.is_error:
                 Failure.from_failure(
@@ -256,7 +263,7 @@ def main() -> None:
     while True:
         logger.info('tick...')
 
-        with db.get_session(logger) as session:
+        with db.get_session(logger, lower_isolation=True) as session:
             SESSION.set(session)
 
             while pick_task_sequence_request(logger, session):
