@@ -803,7 +803,10 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
 
     def list_instances(self, logger: gluetool.log.ContextAdapter) -> Result[list[AzureInstance], Failure]:
         with AzureSession(logger, self) as session:
-            r_instances_list = session.run_az(logger, ['vm', 'list'], commandname='az.vm-list')
+            list_cmd = ['vm', 'list']
+            if self.pool_config.get('guest-resource-group'):
+                list_cmd += ['--resource-group', self.pool_config['guest-resource-group']]
+            r_instances_list = session.run_az(logger, list_cmd, commandname='az.vm-list')
 
             if r_instances_list.is_error:
                 return Error(Failure.from_failure('failed to list instances', r_instances_list.unwrap_error()))
