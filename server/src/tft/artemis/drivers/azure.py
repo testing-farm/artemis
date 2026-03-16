@@ -547,7 +547,11 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
                 ResourceGroupCreationOutcome(
                     resource=ResourceGroup(
                         name=resource_group['name'],
-                        is_shared=(resource_group['name'] == self.pool_config.get('guest-resource-group')),
+                        is_shared=(
+                            # NOTE(ivasilev) Having been burnt twice by resource group accidental deletion let's
+                            # force lower() conversion even though it may not be needed here.
+                            resource_group['name'].lower() == self.pool_config.get('guest-resource-group', '').lower()
+                        ),
                     )
                 )
             )
@@ -586,7 +590,10 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
                 [
                     ResourceGroup(
                         name=rg['name'],
-                        is_shared=(rg['name'] == self.pool_config.get('guest-resource-group')),
+                        # NOTE(ivasilev) Having been burnt twice by resource group accidental deletion let's
+                        # force lower() conversion even though it may not be needed here as resource group list puts
+                        # resource group name as lowercase.
+                        is_shared=(rg['name'].lower() == self.pool_config.get('guest-resource-group', '').lower()),
                     )
                     for rg in cast(list[dict[str, str]], r_resource_groups_list.unwrap())
                 ]
@@ -826,7 +833,13 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
                         status=instance['provisioningState'],
                         resource_group=ResourceGroup(
                             name=instance['resourceGroup'],
-                            is_shared=(instance['resourceGroup'] == self.pool_config.get('guest-resource-group')),
+                            # NOTE(ivasilev) Having been burnt twice by resource group accidental deletion:
+                            # instance details show resource group as uppercase, so without lowercase conversion and
+                            # is_shared may be improperly set
+                            is_shared=(
+                                instance['resourceGroup'].lower()
+                                == self.pool_config.get('guest-resource-group', '').lower()
+                            ),
                         ),
                     )
                 )
