@@ -546,12 +546,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
             return _Ok(
                 ResourceGroupCreationOutcome(
                     resource=ResourceGroup(
-                        name=resource_group['name'],
-                        is_shared=(
-                            # NOTE(ivasilev) Having been burnt twice by resource group accidental deletion let's
-                            # force lower() conversion even though it may not be needed here.
-                            resource_group['name'].lower() == self.pool_config.get('guest-resource-group', '').lower()
-                        ),
+                        name=resource_group['name'], is_shared=self._is_resource_group_shared(resource_group['name'])
                     )
                 )
             )
@@ -590,10 +585,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
                 [
                     ResourceGroup(
                         name=rg['name'],
-                        # NOTE(ivasilev) Having been burnt twice by resource group accidental deletion let's
-                        # force lower() conversion even though it may not be needed here as resource group list puts
-                        # resource group name as lowercase.
-                        is_shared=(rg['name'].lower() == self.pool_config.get('guest-resource-group', '').lower()),
+                        is_shared=self._is_resource_group_shared(rg['name']),
                     )
                     for rg in cast(list[dict[str, str]], r_resource_groups_list.unwrap())
                 ]
@@ -806,6 +798,9 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
             ENVIRONMENT=guest_request.environment,
         ).alt(lambda failure: Failure.from_failure('Could not render instance name template', failure))
 
+    def _is_resource_group_shared(self, resource_group_name: str) -> bool:
+        return bool(resource_group_name.lower() == self.pool_config.get('guest-resource-group', '').lower())
+
     def list_instances(self, logger: gluetool.log.ContextAdapter) -> Result[list[AzureInstance], Failure]:
         with AzureSession(logger, self) as session:
             r_instances_list = session.run_az(logger, ['vm', 'list'], commandname='az.vm-list')
@@ -833,13 +828,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
                         status=instance['provisioningState'],
                         resource_group=ResourceGroup(
                             name=instance['resourceGroup'],
-                            # NOTE(ivasilev) Having been burnt twice by resource group accidental deletion:
-                            # instance details show resource group as uppercase, so without lowercase conversion and
-                            # is_shared may be improperly set
-                            is_shared=(
-                                instance['resourceGroup'].lower()
-                                == self.pool_config.get('guest-resource-group', '').lower()
-                            ),
+                            is_shared=self._is_resource_group_shared(instance['resourceGroup']),
                         ),
                     )
                 )
