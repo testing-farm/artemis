@@ -546,8 +546,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
             return _Ok(
                 ResourceGroupCreationOutcome(
                     resource=ResourceGroup(
-                        name=resource_group['name'],
-                        is_shared=(resource_group['name'] == self.pool_config.get('guest-resource-group')),
+                        name=resource_group['name'], is_shared=self._is_resource_group_shared(resource_group['name'])
                     )
                 )
             )
@@ -586,7 +585,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
                 [
                     ResourceGroup(
                         name=rg['name'],
-                        is_shared=(rg['name'] == self.pool_config.get('guest-resource-group')),
+                        is_shared=self._is_resource_group_shared(rg['name']),
                     )
                     for rg in cast(list[dict[str, str]], r_resource_groups_list.unwrap())
                 ]
@@ -799,9 +798,15 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
             ENVIRONMENT=guest_request.environment,
         ).alt(lambda failure: Failure.from_failure('Could not render instance name template', failure))
 
+    def _is_resource_group_shared(self, resource_group_name: str) -> bool:
+        return bool(resource_group_name.lower() == self.pool_config.get('guest-resource-group', '').lower())
+
     def list_instances(self, logger: gluetool.log.ContextAdapter) -> Result[list[AzureInstance], Failure]:
         with AzureSession(logger, self) as session:
-            r_instances_list = session.run_az(logger, ['vm', 'list'], commandname='az.vm-list')
+            list_cmd = ['vm', 'list']
+            if self.pool_config.get('guest-resource-group'):
+                list_cmd += ['--resource-group', self.pool_config['guest-resource-group']]
+            r_instances_list = session.run_az(logger, list_cmd, commandname='az.vm-list')
 
             if r_instances_list.is_error:
                 return Error(Failure.from_failure('failed to list instances', r_instances_list.unwrap_error()))
@@ -826,7 +831,7 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
                         status=instance['provisioningState'],
                         resource_group=ResourceGroup(
                             name=instance['resourceGroup'],
-                            is_shared=(instance['resourceGroup'] == self.pool_config.get('guest-resource-group')),
+                            is_shared=self._is_resource_group_shared(instance['resourceGroup']),
                         ),
                     )
                 )
