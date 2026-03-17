@@ -29,7 +29,7 @@ from jinja2 import Template
 from returns.pipeline import is_successful
 from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS, Operator
-from typing_extensions import Literal, TypedDict
+from typing_extensions import Literal, TypeAlias, TypedDict
 
 from .. import (
     Failure,
@@ -180,7 +180,7 @@ ConfigImageFilter = TypedDict(
 
 
 #: A type of AWS instance type description as provided by the output of ``ec2 describe-instance-types``.
-BackendFlavor = dict[str, Any]
+BackendFlavor: TypeAlias = dict[str, Any]
 
 
 AWS_VM_HYPERVISORS = ('nitro', 'xen')

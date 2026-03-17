@@ -10,8 +10,10 @@ from typing import Any, Optional, TypedDict, cast
 import gluetool.log
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
+from returns.pipeline import is_successful
 from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
+from typing_extensions import TypeAlias
 
 from tft.artemis.drivers import PoolDriver, PoolImageInfo, PoolImageInfoT, create_tempfile
 from tft.artemis.drivers.ibmcloud import (
@@ -71,6 +73,8 @@ KNOB_CONSOLE_URL_EXPIRES: Knob[int] = Knob(
     default=300,
 )
 
+#: A type of instance description as provided by the output of the CLI ``pi instance get`` command.
+BackendInstance: TypeAlias = dict[str, Any]
 
 ConfigImageFilter = TypedDict(
     'ConfigImageFilter',
@@ -167,7 +171,7 @@ class IBMCloudPowerPoolImageInfo(PoolImageInfo):
     href: str
 
 
-class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance, None]):
+class IBMCloudPowerDriver(IBMCloudDriver[BackendInstance, IBMCloudPowerInstance, None]):
     drivername = 'ibmcloud-power'
 
     image_info_class = IBMCloudPowerPoolImageInfo
@@ -335,18 +339,18 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance, None]):
 
                 for raw_instance_entry in r_list_instances.unwrap():
                     # To get network details need to additionally get instance details
-                    r_show_instance = self._show_instance(logger, raw_instance_entry.id)
+                    r_instance = self._query_backend_instance(logger, raw_instance_entry.id)
 
-                    if r_show_instance.is_error:
+                    if not is_successful(r_instance):
                         return Error(
                             Failure.from_failure(
                                 'Could not get instance details',
-                                r_show_instance.unwrap_error(),
+                                r_instance.failure(),
                                 raw_instance_entry=raw_instance_entry,
                             )
                         )
 
-                    raw_instance = r_show_instance.unwrap()
+                    raw_instance = r_instance.unwrap()
 
                     # Filter out instances not on pool network
                     if subnet_id not in raw_instance['networkIDs']:
@@ -486,12 +490,12 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance, None]):
         if not instance_id:
             return Error(Failure('Need an instance id to fetch any information about a guest'))
 
-        r_output = self._show_instance(logger, instance_id)
+        r_instance = self._query_backend_instance(logger, instance_id)
 
-        if r_output.is_error:
-            return Error(Failure.from_failure('no such instance', r_output.unwrap_error()))
+        if not is_successful(r_instance):
+            return Error(Failure.from_failure('no such instance', r_instance.failure()))
 
-        output = r_output.unwrap()
+        output = r_instance.unwrap()
 
         if not output:
             return Error(Failure('Server show commmand output is empty'))
@@ -549,20 +553,23 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerInstance, None]):
             )
         )
 
-    def _show_instance(self, logger: gluetool.log.ContextAdapter, instance_id: str) -> Result[dict[str, Any], Failure]:
+    # Note: the output of this method matches what `pi instance get` returns. In general, `instance get` and
+    # `instance list` differ in the output structure significantly, this method may not fit all use cases it
+    # fits in other drivers. Be careful when using it.
+    def _query_backend_instance(
+        self, logger: gluetool.log.ContextAdapter, instance_id: str
+    ) -> _Result[BackendInstance, Failure]:
         with IBMCloudPowerSession(logger, self) as session:
             r_instance_info = session.run(
                 logger, ['pi', 'instance', 'get', instance_id, '--json'], commandname='ibmcloud.pi.vm-show'
             )
 
             if r_instance_info.is_error:
-                return Error(
+                return _Error(
                     Failure.from_failure('failed to fetch instance information', r_instance_info.unwrap_error())
                 )
 
-            res = cast(dict[str, Any], r_instance_info.unwrap())
-
-            return Ok(res)
+            return _Ok(cast(BackendInstance, r_instance_info.unwrap()))
 
     def list_instances(self, logger: gluetool.log.ContextAdapter) -> Result[list[IBMCloudPowerInstance], Failure]:
         with IBMCloudPowerSession(logger, self) as session:

@@ -17,6 +17,7 @@ from gluetool.utils import normalize_bool_option
 from returns.pipeline import is_successful
 from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
+from typing_extensions import TypeAlias
 
 from tft.artemis.drivers.aws import awscli_error_cause_extractor
 
@@ -133,6 +134,9 @@ class APIImageType(TypedDict):
 
 #: A type of Azure instance size description as provided by the output of ``vm list-sizes`` command.
 BackendFlavor = dict[str, Any]
+
+#: A type of instance description as provided by the output of the CLI ``vm show`` command.
+BackendInstance: TypeAlias = dict[str, Any]
 
 
 @dataclasses.dataclass
@@ -1005,10 +1009,15 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
         address would schedule yet another call to this method in the future.
         """
 
-        r_output = self._show_guest(logger, guest_request)
+        pool_data = guest_request.pool_data.mine(self, AzurePoolData)
 
-        if r_output.is_error:
-            return Error(Failure.from_failure('no such instance', r_output.unwrap_error()))
+        if not pool_data.instance_id:
+            return Error(Failure('cannot update guest without instance ID'))
+
+        r_output = self._query_backend_instance(logger, pool_data.instance_id)
+
+        if not is_successful(r_output):
+            return Error(Failure.from_failure('no such instance', r_output.failure()))
 
         output = r_output.unwrap()
 
@@ -1104,18 +1113,15 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
 
         return self.dispatch_resource_cleanup(logger, session, *resource_ids, guest_request=guest_request)
 
-    def _show_guest(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[Any, Failure]:
-        instance_id = guest_request.pool_data.mine(self, AzurePoolData).instance_id
-
-        if not instance_id:
-            return Error(Failure('Need an instance ID to fetch any information about a guest'))
-
+    def _query_backend_instance(
+        self, logger: gluetool.log.ContextAdapter, instance_id: str
+    ) -> _Result[BackendInstance, Failure]:
         with AzureSession(logger, self) as session:
             r_output = session.run_az(logger, ['vm', 'show', '-d', '--ids', instance_id], commandname='az.vm-show')
 
         if r_output.is_error:
-            return Error(Failure.from_failure('failed to fetch instance information', r_output.unwrap_error()))
-        return Ok(r_output.unwrap())
+            return _Error(Failure.from_failure('failed to fetch instance information', r_output.unwrap_error()))
+        return _Ok(cast(BackendInstance, r_output.unwrap()))
 
     def fetch_pool_resources_metrics(
         self, logger: gluetool.log.ContextAdapter

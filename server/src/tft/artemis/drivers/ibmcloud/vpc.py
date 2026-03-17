@@ -11,8 +11,10 @@ from typing import Any, Optional, TypedDict, cast
 import gluetool.log
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
+from returns.pipeline import is_successful
 from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
+from typing_extensions import TypeAlias
 
 from tft.artemis.drivers import PoolDriver, PoolImageInfo, create_tempfile
 from tft.artemis.drivers.ibmcloud import (
@@ -77,6 +79,10 @@ IBMCLOUD_RESOURCE_TYPE: dict[str, ResourceType] = {
     'floating-ip': ResourceType.STATIC_IP,
     'security-group': ResourceType.SECURITY_GROUP,
 }
+
+
+#: A type of instance description as provided by the output of the CLI ``is instance`` command.
+BackendInstance: TypeAlias = dict[str, Any]
 
 
 @dataclasses.dataclass
@@ -169,7 +175,7 @@ class IBMCloudVPCPoolImageInfo(PoolImageInfo):
     user_data_format: str
 
 
-class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance, BackendFlavor]):
+class IBMCloudVPCDriver(IBMCloudDriver[BackendInstance, IBMCloudVPCInstance, BackendFlavor]):
     drivername = 'ibmcloud-vpc'
 
     image_info_class = IBMCloudVPCPoolImageInfo
@@ -534,9 +540,10 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance, BackendFlavor]):
             )
         )
 
-    def _show_instance(self, logger: gluetool.log.ContextAdapter, instance_id: str) -> Result[Any, Failure]:
-        """This method will show a single instance details."""
-        res: dict[str, Any] = {}
+    def _query_backend_instance(
+        self, logger: gluetool.log.ContextAdapter, instance_id: str
+    ) -> _Result[BackendInstance, Failure]:
+        res: BackendInstance = {}
 
         with IBMCloudSession(logger, self) as session:
             r_instance_info = session.run(
@@ -544,7 +551,7 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance, BackendFlavor]):
             )
 
             if r_instance_info.is_error:
-                return Error(
+                return _Error(
                     Failure.from_failure('failed to fetch instance information', r_instance_info.unwrap_error())
                 )
 
@@ -554,13 +561,13 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance, BackendFlavor]):
             r_resource_tags = self.get_instance_tags(logger, instance_id)
 
             if r_resource_tags.is_error:
-                return Error(
+                return _Error(
                     Failure.from_failure('failed to fetch resource tags information', r_resource_tags.unwrap_error())
                 )
 
             res['tags'] = r_resource_tags.unwrap()
 
-        return Ok(res)
+        return _Ok(res)
 
     def update_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
@@ -575,10 +582,10 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCInstance, BackendFlavor]):
         if not instance_id:
             return Error(Failure('Need an instance ID to fetch any information about a guest'))
 
-        r_output = self._show_instance(logger, instance_id)
+        r_output = self._query_backend_instance(logger, instance_id)
 
-        if r_output.is_error:
-            return Error(Failure.from_failure('no such instance', r_output.unwrap_error()))
+        if not is_successful(r_output):
+            return Error(Failure.from_failure('no such instance', r_output.failure()))
 
         output = r_output.unwrap()
 
