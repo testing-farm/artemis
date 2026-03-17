@@ -11,12 +11,26 @@ import sqlalchemy.orm.session
 from . import Failure, Sentry, TracingOp, get_db, get_logger, get_worker_name, log_dict_yaml
 from .context import DATABASE, LOGGER, SESSION
 from .db import DMLResult, SafeQuery, TaskRequest, TaskSequenceRequest, execute_dml, transaction
+from .knobs import Knob
 from .metrics import DispatcherMetrics
 from .tasks import TaskCall, TaskLogger, dispatch_sequence, dispatch_task
 
 # Some tasks may seem to be unused, but they *must* be imported and known to broker
 # for transactional outbox to work correctly.
 from .tasks import update_guest_log  # noqa: F401, isort:skip
+
+KNOB_DISPATCHER_USE_LOWER_ISOLATION_LEVEL: Knob[bool] = Knob(
+    'dispatcher.use-lower-isolation-level',
+    """
+    If set, a lower isolation level, ``READ COMMITTED``, would be used for dispatcher DB sessions instead of the default
+    ``REPEATABLE READ``. ``READ COMMITTED`` should be more resilient to synchronization errors in high-traffic
+    deployments.
+    """,
+    has_db=False,
+    envvar='ARTEMIS_DISPATCHER_USE_LOWER_ISOLATION_LEVEL',
+    cast_from_str=gluetool.utils.normalize_bool_option,
+    default=False,
+)
 
 
 def handle_task_request(
@@ -175,6 +189,7 @@ def pick_task_request(
             r_pending_task = (
                 SafeQuery.from_session(session, TaskRequest)
                 .filter(TaskRequest.task_sequence_request_id.is_(None))
+                .order_by(TaskRequest.id.asc())
                 .limit(1)
                 .with_skip_locked()
                 .one_or_none()
@@ -217,7 +232,13 @@ def pick_task_sequence_request(
             Sentry.start_span(TracingOp.FUNCTION, 'handle_task_sequence_request'),
             transaction(logger, session) as transaction_result,
         ):
-            r_pending_task_sequence = SafeQuery.from_session(session, TaskSequenceRequest).limit(1).one_or_none()
+            r_pending_task_sequence = (
+                SafeQuery.from_session(session, TaskSequenceRequest)
+                .order_by(TaskSequenceRequest.id.asc())
+                .limit(1)
+                .with_skip_locked()
+                .one_or_none()
+            )
 
             if r_pending_task_sequence.is_error:
                 Failure.from_failure(
@@ -256,7 +277,7 @@ def main() -> None:
     while True:
         logger.info('tick...')
 
-        with db.get_session(logger) as session:
+        with db.get_session(logger, lower_isolation=KNOB_DISPATCHER_USE_LOWER_ISOLATION_LEVEL.value) as session:
             SESSION.set(session)
 
             while pick_task_sequence_request(logger, session):

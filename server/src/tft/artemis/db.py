@@ -1695,24 +1695,24 @@ class DB:
     #: "Root" engine, with the setup dictated by DB configuration.
     engine: sqlalchemy.engine.Engine
 
-    #: Engine derived from :py:attr:`engine`, configured to use no transactions in an auto-commit fashion.
-    engine_autocommit: sqlalchemy.engine.Engine
-    #: Session factory on top of auto-commit :py:attr:`engine_autocommit` engine: ``AUTOCOMMIT`` isolation level
-    #: is applied to each and every query.
-    sessionmaker_autocommit: sessionmaker[sqlalchemy.orm.session.Session]
-
-    #: Engine derived from :py:attr:`engine`, configured to transactions with ``REPEATABLE READ`` isolation level.
-    engine_transactional: sqlalchemy.engine.Engine
+    #: Engine derived from :py:attr:`engine`, configured to transactions with ``READ COMMITTED`` isolation level.
+    engine_committed: sqlalchemy.engine.Engine
     #: Session factory on top of auto-commit :py:attr:`engine_treansactional` engine: every session spawns
     #: a transaction with ``REPEATABLE READ`` isolation level.
-    sessionmaker_transactional: sessionmaker[sqlalchemy.orm.session.Session]
+    sessionmaker_committed: sessionmaker[sqlalchemy.orm.session.Session]
+
+    #: Engine derived from :py:attr:`engine`, configured to transactions with ``REPEATABLE READ`` isolation level.
+    engine_repeatable: sqlalchemy.engine.Engine
+    #: Session factory on top of auto-commit :py:attr:`engine_treansactional` engine: every session spawns
+    #: a transaction with ``REPEATABLE READ`` isolation level.
+    sessionmaker_repeatable: sessionmaker[sqlalchemy.orm.session.Session]
 
     #: Engine derived from :py:attr:`engine`, configured to transactions with ``REPEATABLE READ`` isolation level
     #: in read-only mode.
-    engine_transactional_read_only: sqlalchemy.engine.Engine
+    engine_repeatable_read_only: sqlalchemy.engine.Engine
     #: Session factory on top of auto-commit :py:attr:`engine_treansactional_read_only` engine: every session spawns
     #: a read-only transaction with ``REPEATABLE READ`` isolation level.
-    sessionmaker_transactional_read_only: sessionmaker[sqlalchemy.orm.session.Session]
+    sessionmaker_repeatable_read_only: sessionmaker[sqlalchemy.orm.session.Session]
 
     def _setup_instance(
         self, logger: gluetool.log.ContextAdapter, url: str, application_name: Optional[str] = None
@@ -1783,32 +1783,36 @@ class DB:
         # TODO: hopefully, with better sqlalchemy stubs, cast() wouldn't be needed anymore
         _engine_execution_options = cast(Callable[..., sqlalchemy.engine.Engine], self.engine.execution_options)
 
-        self.engine_autocommit = _engine_execution_options(isolation_level='AUTOCOMMIT')
-        self.sessionmaker_autocommit = sqlalchemy.orm.sessionmaker(bind=self.engine_autocommit)
-
         if url.startswith('postgresql://'):
-            self.engine_transactional = _engine_execution_options(
+            self.engine_committed = _engine_execution_options(
+                isolation_level='READ COMITTED', autobegin=False, autocommit=False
+            )
+
+            self.engine_repeatable = _engine_execution_options(
                 isolation_level='REPEATABLE READ', autobegin=False, autocommit=False
             )
 
-            self.engine_transactional_read_only = _engine_execution_options(
+            self.engine_repeatable_read_only = _engine_execution_options(
                 isolation_level='REPEATABLE READ', autobegin=False, autocommit=False, postgresql_readonly=True
             )
 
         else:
-            self.engine_transactional = _engine_execution_options(
+            self.engine_committed = _engine_execution_options(
+                isolation_level='SERIALIZABLE', autobegin=False, autocommit=False
+            )
+
+            self.engine_repeatable = _engine_execution_options(
                 isolation_level='SERIALIZABLE', autobegin=False, autocommit=False
             )
 
             # No read-only support for SQLite at this point.
-            self.engine_transactional_read_only = _engine_execution_options(
+            self.engine_repeatable_read_only = _engine_execution_options(
                 isolation_level='SERIALIZABLE', autobegin=False, autocommit=False
             )
 
-        self.sessionmaker_transactional = sqlalchemy.orm.sessionmaker(bind=self.engine_transactional)
-        self.sessionmaker_transactional_read_only = sqlalchemy.orm.sessionmaker(
-            bind=self.engine_transactional_read_only
-        )
+        self.sessionmaker_committed = sqlalchemy.orm.sessionmaker(bind=self.engine_committed)
+        self.sessionmaker_repeatable = sqlalchemy.orm.sessionmaker(bind=self.engine_repeatable)
+        self.sessionmaker_repeatable_read_only = sqlalchemy.orm.sessionmaker(bind=self.engine_repeatable_read_only)
 
     def __new__(cls, logger: gluetool.log.ContextAdapter, url: str, application_name: Optional[str] = None) -> 'DB':
         with cls._lock:
@@ -1824,7 +1828,11 @@ class DB:
 
     @contextmanager
     def get_session(
-        self, logger: gluetool.log.ContextAdapter, *, read_only: bool = False
+        self,
+        logger: gluetool.log.ContextAdapter,
+        *,
+        lower_isolation: bool = False,
+        read_only: bool = False,
     ) -> Iterator[sqlalchemy.orm.session.Session]:
         """
         Create new DB session.
@@ -1835,13 +1843,18 @@ class DB:
 
         from . import Sentry, TracingOp
 
+        if lower_isolation:
+            session_factory = sqlalchemy.orm.scoped_session(self.sessionmaker_committed)
+
+            _log_db_statement('BEGIN SESSION')
+
         if read_only:
-            session_factory = sqlalchemy.orm.scoped_session(self.sessionmaker_transactional_read_only)
+            session_factory = sqlalchemy.orm.scoped_session(self.sessionmaker_repeatable_read_only)
 
             _log_db_statement('BEGIN SESSION READ ONLY')
 
         else:
-            session_factory = sqlalchemy.orm.scoped_session(self.sessionmaker_transactional)
+            session_factory = sqlalchemy.orm.scoped_session(self.sessionmaker_repeatable)
 
             _log_db_statement('BEGIN SESSION')
 

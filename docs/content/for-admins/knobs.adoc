@@ -1031,6 +1031,18 @@ for full list of connection parameters that can be specified via URL.
 
 5+|When enabled, Artemis would disable HTTPS certificate verification when talking to remote URLs.
 
+|`dispatcher.use-lower-isolation-level`
+|`bool`
+|`ARTEMIS_DISPATCHER_USE_LOWER_ISOLATION_LEVEL`
+|`no`
+|no
+
+
+
+5+|If set, a lower isolation level, ``READ COMMITTED``, would be used for dispatcher DB sessions instead of the default
+``REPEATABLE READ``. ``READ COMMITTED`` should be more resilient to synchronization errors in high-traffic
+deployments.
+
 |`gc.events.schedule`
 |`str`
 |`ARTEMIS_GC_EVENTS_SCHEDULE`
