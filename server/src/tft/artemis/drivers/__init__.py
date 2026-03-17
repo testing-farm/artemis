@@ -249,6 +249,7 @@ ConfigCapabilitiesType = TypedDict(
         'supported-architectures': Union[Literal['any'], list[str]],
         'supports-hostnames': Union[str, bool],
         'supports-spot-instances': Union[str, bool],
+        'supports-confidential-computing': Union[str, bool],
         'disable-guest-logs': list[ConfigCapabilitiesDisableGuestLogType],
     },
 )
@@ -608,6 +609,9 @@ class PoolCapabilities:
 
     #: If set, the pool provides spot instances. Otherwise, only regular instances are supported.
     supports_spot_instances: bool = False
+
+    #: If set, the pool supports confidential computing.
+    supports_confidential_computing: bool = False
 
     #: If set, the driver can handle the post-installation script on its own. Otherwise, Artemis core will
     #: execute it in the preparation stage.
@@ -1995,6 +1999,11 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[InstanceT]):
         if 'supports-spot-instances' in capabilities_config:
             capabilities.supports_spot_instances = gluetool.utils.normalize_bool_option(
                 capabilities_config['supports-spot-instances']
+            )
+
+        if 'supports-confidential-computing' in capabilities_config:
+            capabilities.supports_confidential_computing = gluetool.utils.normalize_bool_option(
+                capabilities_config['supports-confidential-computing']
             )
 
         if 'supports-hostnames' in capabilities_config:

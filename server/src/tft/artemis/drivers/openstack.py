@@ -230,6 +230,7 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor, novaclient.v2
 
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> _Result[PoolCapabilities, Failure]:
         capabilities.supports_hostnames = False
+        capabilities.supports_confidential_computing = False
         capabilities.supports_native_post_install_script = True
         capabilities.supports_console_url = True
         capabilities.supported_guest_logs = [

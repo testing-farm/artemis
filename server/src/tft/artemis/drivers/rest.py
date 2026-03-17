@@ -64,6 +64,7 @@ class RestDriver(PoolDriver[Instance]):
         self.url = self.pool_config['url']
 
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> _Result[PoolCapabilities, Failure]:
+        capabilities.supports_confidential_computing = False
         capabilities.supported_guest_logs = [
             ('console:dump', GuestLogContentType.BLOB),
             ('flasher-debug:dump', GuestLogContentType.URL),

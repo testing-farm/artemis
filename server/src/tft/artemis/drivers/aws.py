@@ -2373,6 +2373,26 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor, BackendFlavor
         if self.pool_config.get('expose-instance-tags-in-metadata', False):
             command += ['--metadata-options', 'InstanceMetadataTags=enabled']
 
+        # Check if confidential computing is requested
+        r_span = _get_constraint_span(logger, guest_request, instance_type)
+
+        if r_span.is_error:
+            return Error(r_span.unwrap_error())
+
+        span = r_span.unwrap()
+
+        confidential_computing_requested = False
+
+        for constraint in span:
+            property_name, _, child_property, _ = (constraint.original_constraint or constraint).expand_name()
+
+            if property_name == 'virtualization' and child_property == 'confidential':
+                confidential_computing_requested = constraint.value is True
+                break
+
+        if confidential_computing_requested:
+            command += ['--cpu-options', 'AmdSevSnp=enabled']
+
         if 'subnet-id' in self.pool_config:
             command.extend(['--subnet-id', self.pool_config['subnet-id']])
 
