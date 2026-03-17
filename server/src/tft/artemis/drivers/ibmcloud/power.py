@@ -553,6 +553,9 @@ class IBMCloudPowerDriver(IBMCloudDriver[BackendInstance, IBMCloudPowerInstance,
             )
         )
 
+    # Note: the output of this method matches what `pi instance get` returns. In general, `instance get` and
+    # `instance list` differ in the output structure significantly, this method may not fit all use cases it
+    # fits in other drivers. Be careful when using it.
     def _query_backend_instance(
         self, logger: gluetool.log.ContextAdapter, instance_id: str
     ) -> _Result[BackendInstance, Failure]:

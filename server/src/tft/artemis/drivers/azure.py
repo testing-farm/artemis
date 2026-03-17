@@ -1123,19 +1123,6 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
             return _Error(Failure.from_failure('failed to fetch instance information', r_output.unwrap_error()))
         return _Ok(cast(BackendInstance, r_output.unwrap()))
 
-    def _show_guest(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[Any, Failure]:
-        instance_id = guest_request.pool_data.mine(self, AzurePoolData).instance_id
-
-        if not instance_id:
-            return Error(Failure('Need an instance ID to fetch any information about a guest'))
-
-        with AzureSession(logger, self) as session:
-            r_output = session.run_az(logger, ['vm', 'show', '-d', '--ids', instance_id], commandname='az.vm-show')
-
-        if r_output.is_error:
-            return Error(Failure.from_failure('failed to fetch instance information', r_output.unwrap_error()))
-        return Ok(r_output.unwrap())
-
     def fetch_pool_resources_metrics(
         self, logger: gluetool.log.ContextAdapter
     ) -> Result[PoolResourcesMetrics, Failure]:
