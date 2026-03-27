@@ -63,16 +63,6 @@ from . import (
     vm_info_to_ip,
 )
 
-KNOB_INSTANCE_NAME_TEMPLATE: Knob[str] = Knob(
-    'azure.mapping.instance-name.template',
-    'A pattern for artemis guest name',
-    has_db=False,
-    per_entity=True,
-    envvar='ARTEMIS_AZURE_INSTANCE_NAME_TEMPLATE',
-    cast_from_str=str,
-    default='artemis-{{ GUESTNAME }}',
-)
-
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
     'azure.mapping.environment-to-image.pattern-map.filepath',
     'Path to a pattern map file with environment to image mapping.',
@@ -787,20 +777,6 @@ class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, Backend
         instance_request.tags = tags
 
         return _Ok(instance_request)
-
-    # XXX FIXME Should be imho moved to FlavorBasedDriver class
-    def _render_instance_name(self, guest_request: GuestRequest) -> _Result[str, Failure]:
-        r_instance_name_template = KNOB_INSTANCE_NAME_TEMPLATE.get_value(entityname=self.poolname)
-        if r_instance_name_template.is_error:
-            return _Error(
-                Failure.from_failure('Could not get instance_name template', r_instance_name_template.unwrap_error())
-            )
-
-        return render_template(
-            r_instance_name_template.unwrap(),
-            GUESTNAME=guest_request.guestname,
-            ENVIRONMENT=guest_request.environment,
-        ).alt(lambda failure: Failure.from_failure('Could not render instance name template', failure))
 
     def _is_resource_group_shared(self, resource_group_name: str) -> bool:
         return bool(resource_group_name.lower() == self.pool_config.get('guest-resource-group', '').lower())

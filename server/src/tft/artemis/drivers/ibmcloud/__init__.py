@@ -34,10 +34,9 @@ from tft.artemis.drivers import (
     Tags,
 )
 
-from ... import Failure, render_template, rewrap_to_gluetool
+from ... import Failure, rewrap_to_gluetool
 from ...db import GuestRequest
 from ...environment import Flavor
-from ...knobs import Knob
 
 # Limits imposed on tags in IBM cloud.
 # https://cloud.ibm.com/docs/account?topic=account-tag&interface=ui#limits
@@ -48,16 +47,6 @@ TAG_MAX_LENGTH = 128
 # COLDSTORE_URL is the one of our typical tags that it doesn't play nice with, so will be replacing all
 # forbidden characters with prefixes.
 TAG_FORBIDDEN_CHARACTERS_PATTERN = re.compile(r'[^.a-zA-Z0-9 _\-]')
-
-KNOB_INSTANCE_NAME_TEMPLATE: Knob[str] = Knob(
-    'ibmcloud.mapping.instance-name.template',
-    'A pattern for artemis guest name',
-    has_db=False,
-    per_entity=True,
-    envvar='ARTEMIS_IBMCLOUD_INSTANCE_NAME_TEMPLATE',
-    cast_from_str=str,
-    default='artemis-{{ GUESTNAME }}',
-)
 
 IBMCLOUD_DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S.%fZ'
 
@@ -342,19 +331,6 @@ class IBMCloudDriver(
             return Error(Failure(f'Unexpected output of ibmcloud resource show command for {instance_name}: {tags}'))
 
         return Ok(tags['items'][0].get('tags', []))
-
-    def _render_instance_name(self, guest_request: GuestRequest) -> _Result[str, Failure]:
-        r_instance_name_template = KNOB_INSTANCE_NAME_TEMPLATE.get_value(entityname=self.poolname)
-        if r_instance_name_template.is_error:
-            return _Error(
-                Failure.from_failure('Could not get instance_name template', r_instance_name_template.unwrap_error())
-            )
-
-        return render_template(
-            r_instance_name_template.unwrap(),
-            GUESTNAME=guest_request.guestname,
-            ENVIRONMENT=guest_request.environment,
-        ).alt(lambda failure: Failure.from_failure('Could not render instance name template', failure))
 
     def _create_instance_request(
         self,
