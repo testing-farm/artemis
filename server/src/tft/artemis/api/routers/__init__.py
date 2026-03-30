@@ -1182,7 +1182,7 @@ class CacheManager:
 
     def _get_pool(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, poolname: str
-    ) -> PoolDriver[Instance]:
+    ) -> PoolDriver[Any, Instance]:
         r_pool = PoolDriver.load_or_none(logger, session, poolname)
 
         if r_pool.is_error:

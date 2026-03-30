@@ -19,8 +19,6 @@ from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
 from typing_extensions import TypeAlias
 
-from tft.artemis.drivers.aws import awscli_error_cause_extractor
-
 from .. import Failure, JSONType, render_template, rewrap_to_gluetool
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
 from ..environment import (
@@ -38,6 +36,7 @@ from ..knobs import Knob
 from ..metrics import PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from . import (
     CanAcquire,
+    CommonErrorCauses,
     ConsoleUrlData,
     FlavorBasedPoolDriver,
     GuestLogUpdateProgress,
@@ -57,6 +56,7 @@ from . import (
     ResourceManager,
     SerializedPoolResourcesIDs,
     Tags,
+    create_error_cause_extractor,
     create_tempfile,
     guest_log_updater,
     run_cli_tool,
@@ -92,6 +92,11 @@ KNOB_RESOURCE_GROUP_NAME_TEMPLATE: Knob[str] = Knob(
     cast_from_str=str,
     default='artemis-{{ GUESTNAME }}',
 )
+
+
+AzureErrorCauses = CommonErrorCauses
+
+error_cause_extractor = create_error_cause_extractor(AzureErrorCauses)
 
 
 AZURE_RESOURCE_TYPE: dict[str, ResourceType] = {
@@ -329,7 +334,7 @@ class AzureSession:
             guestname=guestname,
             poolname=self.pool.poolname,
             commandname=commandname,
-            cause_extractor=awscli_error_cause_extractor,
+            cause_extractor=self.pool.error_cause_extractor,
         )
 
         if r_run.is_error:
@@ -373,12 +378,16 @@ class AzureSession:
         return self._run_cmd(logger, options, json_format=json_format, commandname=commandname)
 
 
-class AzureDriver(FlavorBasedPoolDriver[AzurePoolImageInfo, AzureFlavor, BackendFlavor, AzureInstance]):
+class AzureDriver(
+    FlavorBasedPoolDriver[AzureErrorCauses, AzurePoolImageInfo, AzureFlavor, BackendFlavor, AzureInstance]
+):
     drivername = 'azure'
 
     image_info_class = AzurePoolImageInfo
     flavor_info_class = AzureFlavor
     pool_data_class = AzurePoolData
+
+    error_cause_extractor = staticmethod(error_cause_extractor)
 
     datetime_format = AZURE_DATETIME_FORMAT
 

@@ -72,7 +72,7 @@ class Workspace(_Workspace):
                     guestname=self.guestname,
                     poolname=self.pool.poolname,
                     commandname='prepare-post-install-script.copy-to-remote',
-                    cause_extractor=self.pool.cli_error_cause_extractor,
+                    cause_extractor=self.pool.error_cause_extractor,
                 )
 
             if r_upload.is_error:
@@ -88,7 +88,7 @@ class Workspace(_Workspace):
                 guestname=self.guestname,
                 poolname=self.pool.poolname,
                 commandname='prepare-post-install-script.execute',
-                cause_extractor=self.pool.cli_error_cause_extractor,
+                cause_extractor=self.pool.error_cause_extractor,
             )
 
             if r_ssh.is_error:

@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import dataclasses
+import enum
 import functools
 import json
 import re
@@ -16,7 +17,7 @@ from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
 from typing_extensions import TypeAlias
 
-from tft.artemis.drivers import PoolDriver, PoolImageInfo, create_tempfile
+from tft.artemis.drivers import PoolDriver, PoolImageInfo, create_error_cause_extractor, create_tempfile
 from tft.artemis.drivers.ibmcloud import (
     IBMCloudDriver,
     IBMCloudFlavor,
@@ -28,7 +29,7 @@ from tft.artemis.drivers.ibmcloud import (
     InstanceCreationRequest,
 )
 
-from ... import Failure, process_output_to_str
+from ... import Failure
 from ...db import GuestRequest
 from ...environment import (
     Flavor,
@@ -44,7 +45,6 @@ from ...environment import (
 from ...knobs import Knob
 from ...metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from .. import (
-    PoolErrorCauses,
     PoolImageSSHInfo,
     ProvisioningProgress,
     ProvisioningState,
@@ -100,36 +100,24 @@ class IBMCloudVPCInstance(IBMCloudInstance):
         return self.status == 'failed'
 
 
-class IBMCloudVPCErrorCauses(PoolErrorCauses):
+class IBMCloudVPCErrorCauses(enum.Enum):
+    # From CommonErrorCauses
     NONE = 'none'
+    RESOURCE_METRICS_REFRESH_FAILED = 'resource-metrics-refresh-failed'
+    FLAVOR_INFO_REFRESH_FAILED = 'flavor-info-refresh-failed'
+    IMAGE_INFO_REFRESH_FAILED = 'image-info-refresh-failed'
 
+    # IBM Cloud VPC specific
     UNEXPECTED_INSTANCE_STATE = 'unexpected-instance-state'
     MISSING_INSTANCE = 'missing-instance'
 
 
-CLI_ERROR_PATTERNS = {
-    IBMCloudVPCErrorCauses.MISSING_INSTANCE: re.compile(r'Instance not found'),
-}
-
-
-def ibm_cloud_vpc_error_cause_extractor(output: gluetool.utils.ProcessOutput) -> IBMCloudVPCErrorCauses:
-    if output.exit_code == 0:
-        return IBMCloudVPCErrorCauses.NONE
-
-    stdout = process_output_to_str(output, stream='stdout')
-    stderr = process_output_to_str(output, stream='stderr')
-
-    stdout = stdout.strip() if stdout is not None else None
-    stderr = stderr.strip() if stderr is not None else None
-
-    for cause, pattern in CLI_ERROR_PATTERNS.items():
-        if stdout and pattern.search(stdout):
-            return cause
-
-        if stderr and pattern.search(stderr):
-            return cause
-
-    return IBMCloudVPCErrorCauses.NONE
+error_cause_extractor = create_error_cause_extractor(
+    IBMCloudVPCErrorCauses,
+    patterns={
+        IBMCloudVPCErrorCauses.MISSING_INSTANCE: re.compile(r'Instance not found'),
+    },
+)
 
 
 class APIImageType(TypedDict):
@@ -175,12 +163,14 @@ class IBMCloudVPCPoolImageInfo(PoolImageInfo):
     user_data_format: str
 
 
-class IBMCloudVPCDriver(IBMCloudDriver[BackendInstance, IBMCloudVPCInstance, BackendFlavor]):
+class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, IBMCloudVPCInstance, BackendFlavor]):
     drivername = 'ibmcloud-vpc'
 
     image_info_class = IBMCloudVPCPoolImageInfo
     flavor_info_class = IBMCloudFlavor
     pool_data_class = IBMCloudPoolData
+
+    error_cause_extractor = staticmethod(error_cause_extractor)
 
     _image_map_hook_name = 'IBMCLOUD_VPC_ENVIRONMENT_TO_IMAGE'
 
@@ -679,7 +669,7 @@ class IBMCloudVPCDriver(IBMCloudDriver[BackendInstance, IBMCloudVPCInstance, Bac
                     failure = r_delete_instance.unwrap_error()
 
                     if failure.command_output:
-                        cause = ibm_cloud_vpc_error_cause_extractor(failure.command_output)
+                        cause = self.error_cause_extractor(output=failure.command_output)
 
                         if cause == IBMCloudVPCErrorCauses.MISSING_INSTANCE:
                             failure.recoverable = False

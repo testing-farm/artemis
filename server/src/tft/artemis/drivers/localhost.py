@@ -11,6 +11,7 @@ from gluetool.result import Error, Ok, Result
 from .. import Failure
 from ..db import GuestRequest
 from . import (
+    CommonErrorCauses,
     ConfigImageFilter,
     ConsoleUrlData,
     Instance,
@@ -22,15 +23,22 @@ from . import (
     ProvisioningState,
     ReleasePoolResourcesState,
     SerializedPoolResourcesIDs,
+    create_error_cause_extractor,
 )
 
+LocalhostErrorCauses = CommonErrorCauses
 
-class LocalhostDriver(PoolDriver[Instance]):
+error_cause_extractor = create_error_cause_extractor(LocalhostErrorCauses)
+
+
+class LocalhostDriver(PoolDriver[LocalhostErrorCauses, Instance]):
     """
     A dummy driver always "provisioning" a localhost for the given guest.
     """
 
     drivername = 'localhost'
+
+    error_cause_extractor = staticmethod(error_cause_extractor)
 
     def list_images(
         self, logger: gluetool.log.ContextAdapter, filters: Optional[ConfigImageFilter] = None

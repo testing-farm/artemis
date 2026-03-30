@@ -25,6 +25,7 @@ from ..knobs import Knob
 from ..metrics import PoolResourcesMetrics, PoolResourcesUsage
 from . import (
     CanAcquire,
+    CommonErrorCauses,
     ConfigImageFilter,
     ConsoleUrlData,
     Instance,
@@ -38,6 +39,7 @@ from . import (
     ProvisioningState,
     ReleasePoolResourcesState,
     SerializedPoolResourcesIDs,
+    create_error_cause_extractor,
 )
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
@@ -65,6 +67,11 @@ DEFAULT_DISK_SIZE: SizeType = UNITS('20 GiB')
 GCP_DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S.%f%z'
 
 
+GCPErrorCauses = CommonErrorCauses
+
+error_cause_extractor = create_error_cause_extractor(GCPErrorCauses)
+
+
 @dataclasses.dataclass
 class GCPPoolData(PoolData):
     name: str
@@ -80,10 +87,12 @@ class GCPPoolResourcesIDs(PoolResourcesIDs):
     zone: Optional[str] = None
 
 
-class GCPDriver(PoolDriver[Instance]):
+class GCPDriver(PoolDriver[GCPErrorCauses, Instance]):
     drivername = 'gcp'
 
     pool_data_class = GCPPoolData
+
+    error_cause_extractor = staticmethod(error_cause_extractor)
 
     datetime_format = GCP_DATETIME_FORMAT
 

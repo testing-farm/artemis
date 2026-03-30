@@ -20,6 +20,7 @@ from ..knobs import KNOB_DISABLE_CERT_VERIFICATION, KNOB_HTTP_TIMEOUT
 from ..metrics import PoolResourcesMetrics
 from . import (
     CanAcquire,
+    CommonErrorCauses,
     ConfigImageFilter,
     ConsoleUrlData,
     GuestLogUpdateProgress,
@@ -33,10 +34,15 @@ from . import (
     ProvisioningState,
     ReleasePoolResourcesState,
     SerializedPoolResourcesIDs,
+    create_error_cause_extractor,
     guest_log_updater,
 )
 
 ARTEMIS_GUESTNAME_HEADER = 'Artemis-guestname'
+
+RestErrorCauses = CommonErrorCauses
+
+error_cause_extractor = create_error_cause_extractor(RestErrorCauses)
 
 
 @dataclasses.dataclass
@@ -50,7 +56,7 @@ class RestPoolResourcesIDs(PoolResourcesIDs):
     guestname: Optional[str] = None
 
 
-class RestDriver(PoolDriver[Instance]):
+class RestDriver(PoolDriver[RestErrorCauses, Instance]):
     """
     A generic driver that communicates with REST-based middleman.
     """
@@ -58,6 +64,8 @@ class RestDriver(PoolDriver[Instance]):
     drivername = 'rest'
 
     pool_data_class = RestPoolData
+
+    error_cause_extractor = staticmethod(error_cause_extractor)
 
     def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str, pool_config: dict[str, Any]) -> None:
         super().__init__(logger, poolname, pool_config)
