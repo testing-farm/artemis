@@ -522,6 +522,22 @@ for the requested action.
 
 5+|Number of threads to spawn in each process for servicing API requests.
 
+|`artemis.mapping.instance-name.template`
+|`str`
+|`ARTEMIS_INSTANCE_NAME_TEMPLATE`
+|`artemis-{{ GUESTNAME }}`
+|no
+
+
+|`artemis.mapping.instance-name.template:$entityname`
+|
+|`ARTEMIS_INSTANCE_NAME_TEMPLATE_$entityname`
+|
+|
+
+
+5+|A pattern for artemis guest name
+
 |`aws.logs.console.interactive.url`
 |`str`
 |`ARTEMIS_AWS_LOGS_CONSOLE_INTERACTIVE_URL`
@@ -643,22 +659,6 @@ until cancelled and reprovisioned.
 
 
 5+|A pattern for needle to match in environment to image mapping file.
-
-|`azure.mapping.instance-name.template`
-|`str`
-|`ARTEMIS_AZURE_INSTANCE_NAME_TEMPLATE`
-|`artemis-{{ GUESTNAME }}`
-|no
-
-
-|`azure.mapping.instance-name.template:$entityname`
-|
-|`ARTEMIS_AZURE_INSTANCE_NAME_TEMPLATE_$entityname`
-|
-|
-
-
-5+|A pattern for artemis guest name
 
 |`azure.mapping.resource-group-name.template`
 |`str`
@@ -1198,22 +1198,6 @@ deployments.
 
 
 5+|A pattern for needle to match in environment to image mapping file.
-
-|`ibmcloud.mapping.instance-name.template`
-|`str`
-|`ARTEMIS_IBMCLOUD_INSTANCE_NAME_TEMPLATE`
-|`artemis-{{ GUESTNAME }}`
-|no
-
-
-|`ibmcloud.mapping.instance-name.template:$entityname`
-|
-|`ARTEMIS_IBMCLOUD_INSTANCE_NAME_TEMPLATE_$entityname`
-|
-|
-
-
-5+|A pattern for artemis guest name
 
 |`logging.cli.command-pattern`
 |`str`

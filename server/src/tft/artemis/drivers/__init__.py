@@ -258,6 +258,17 @@ ConfigCapabilitiesType = TypedDict(
 IP_ADDRESS_PATTERN = re.compile(r'((?:[0-9]{1,3}\.){3}[0-9]{1,3})')  # noqa: FS003
 
 
+KNOB_INSTANCE_NAME_TEMPLATE: Knob[str] = Knob(
+    'artemis.mapping.instance-name.template',
+    'A pattern for artemis guest name',
+    has_db=False,
+    per_entity=True,
+    envvar='ARTEMIS_INSTANCE_NAME_TEMPLATE',
+    cast_from_str=str,
+    default='artemis-{{ GUESTNAME }}',
+)
+
+
 KNOB_DISPATCH_RESOURCE_CLEANUP_DELAY: Knob[int] = Knob(
     'pool.dispatch-resource-cleanup',
     """
@@ -1511,6 +1522,19 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[InstanceT]):
 
         return Ok(image_info)
 
+    def _render_instance_name(self, guest_request: GuestRequest) -> _Result[str, Failure]:
+        r_instance_name_template = KNOB_INSTANCE_NAME_TEMPLATE.get_value(entityname=self.poolname)
+        if r_instance_name_template.is_error:
+            return _Error(
+                Failure.from_failure('Could not get instance_name template', r_instance_name_template.unwrap_error())
+            )
+
+        return render_template(
+            r_instance_name_template.unwrap(),
+            GUESTNAME=guest_request.guestname,
+            ENVIRONMENT=guest_request.environment,
+        ).alt(lambda failure: Failure.from_failure('Could not render instance name template', failure))
+
     def _guest_request_to_image_or_none(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -2085,8 +2109,12 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[InstanceT]):
             )
 
         tags['ArtemisGuestName'] = guest_request.guestname
-        # TODO: drivers could accept a template for the name, to allow custom naming schemes
-        tags['ArtemisGuestLabel'] = f'artemis-guest-{guest_request.guestname}'
+
+        r_guest_name = self._render_instance_name(guest_request)
+        if not is_successful(r_guest_name):
+            return Error(Failure.from_failure('failed to get expected instance name', r_guest_name.failure()))
+
+        tags['ArtemisGuestLabel'] = r_guest_name.unwrap()
 
         r_rendered_tags = render_tags(
             logger, tags, {'GUESTNAME': guest_request.guestname, 'ENVIRONMENT': guest_request.environment}
