@@ -285,8 +285,6 @@ error_cause_extractor = create_error_cause_extractor(
     },
 )
 
-print(f'beaker: {error_cause_extractor=}')
-
 
 INSTALLATION_ERROR_PATTERNS = {
     BeakerErrorCauses.JOB_INSTALLATION_KICKSTART_ERROR: re.compile(
@@ -1341,9 +1339,6 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
 
         # ... and the rest are its options.
         bkr_command += options[1:]
-
-        print(f'BeakerDriver._run_bkr: {error_cause_extractor=}')
-        print(f'BeakerDriver._run_bkr: {self.error_cause_extractor=}')
 
         r_run = run_cli_tool(
             logger,
