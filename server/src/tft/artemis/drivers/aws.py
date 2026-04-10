@@ -6,9 +6,17 @@ import dataclasses
 import datetime
 import ipaddress
 import json
+import operator
 import os
 import re
-from typing import Any, Dict, Generator, Iterator, List, MutableSequence, Optional, Pattern, Tuple, Union, cast
+from collections.abc import Generator, Iterator, MutableSequence
+from typing import (
+    Any,
+    Callable,
+    Optional,
+    Union,
+    cast,
+)
 
 import gluetool.log
 import gluetool.utils
@@ -18,27 +26,65 @@ from gluetool.log import ContextAdapter, log_dict
 from gluetool.result import Error, Ok, Result
 from gluetool.utils import normalize_bool_option
 from jinja2 import Template
-from typing_extensions import Literal, TypedDict
+from returns.pipeline import is_successful
+from returns.result import Failure as _Error, Result as _Result, Success as _Ok
+from tmt.hardware import UNITS, Operator
+from typing_extensions import Literal, TypeAlias, TypedDict
 
-from .. import Failure, JSONType, SerializableContainer, log_dict_yaml, logging_filter, process_output_to_str, \
-    render_template
+from .. import (
+    Failure,
+    JSONType,
+    Sentry,
+    SerializableContainer,
+    TracingOp,
+    log_dict_yaml,
+    logging_filter,
+    process_output_to_str,
+    render_template,
+)
 from ..cache import get_cached_mapping_item, get_cached_mapping_values
 from ..context import CACHE
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
-from ..environment import UNITS, Constraint, Flavor, FlavorBoot, FlavorBootMethodType, FlavorCpu, FlavorNetwork, \
-    FlavorNetworks, FlavorVirtualization, Operator, SizeType
+from ..environment import (
+    Constraint,
+    Flavor,
+    FlavorBoot,
+    FlavorBootMethodType,
+    FlavorCpu,
+    FlavorNetwork,
+    FlavorNetworks,
+    FlavorVirtualization,
+    SizeType,
+)
 from ..knobs import Knob
-from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, ResourceType
+from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from ..security_group_rules import SecurityGroupRule, SecurityGroupRules
-from . import KNOB_UPDATE_GUEST_REQUEST_TICK, CLIErrorCauses, GuestLogUpdateProgress, GuestTagsType, \
-    HookImageInfoMapper, ImageInfoMapperResultType, PoolCapabilities, PoolData, PoolDriver, PoolImageInfo, \
-    PoolImageSSHInfo, PoolResourcesIDs, ProvisioningProgress, ProvisioningState, SerializedPoolResourcesIDs, \
-    WatchdogState, guest_log_updater, run_cli_tool
+from . import (
+    ConsoleUrlData,
+    FlavorBasedPoolDriver,
+    GuestLogUpdateProgress,
+    Instance,
+    PoolCapabilities,
+    PoolData,
+    PoolDriver,
+    PoolErrorCauses,
+    PoolImageInfo,
+    PoolImageSSHInfo,
+    PoolResourcesIDs,
+    ProvisioningProgress,
+    ProvisioningState,
+    ReleasePoolResourcesState,
+    SerializedPoolResourcesIDs,
+    Tags,
+    WatchdogState,
+    guest_log_updater,
+    run_cli_tool,
+)
 
 #
 # Custom typing types
 #
-InstanceOwnerType = Tuple[Dict[str, Any], str]
+InstanceOwnerType = tuple[dict[str, Any], str]
 
 # EBS volume types.
 #
@@ -75,7 +121,7 @@ class APIBlockDeviceMappingType(TypedDict, total=True):
 # https://docs.aws.amazon.com/cli/latest/reference/ec2/describe-instance-types.html
 # https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_ProcessorInfo.html
 class APIInstanceTypeProcessorInfo(TypedDict):
-    SupportedArchitectures: List[str]
+    SupportedArchitectures: list[str]
     SustainedClockSpeedInGhz: float
 
 
@@ -87,16 +133,15 @@ DEFAULT_VOLUME_TYPE: EBSVolumeTypeType = 'gp3'
 # Type of container holding block device mappings.
 #
 # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-ec2-instance.html
-APIBlockDeviceMappingsType = List[APIBlockDeviceMappingType]
+APIBlockDeviceMappingsType = list[APIBlockDeviceMappingType]
 
 
 #: Device names allowed or recommended by AWS EC2.
 #:
 #: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/device_naming.html#available-ec2-device-names
-EBS_DEVICE_NAMES = [
-    f'/dev/sd{letter}'
-    for letter in 'fghijklmnop'
-]
+EBS_DEVICE_NAMES = [f'/dev/sd{letter}' for letter in 'fghijklmnop']
+
+AWS_DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S.%fZ'
 
 
 # Type of container holding network interface info.
@@ -104,11 +149,11 @@ class APINetworkInterfaceType(TypedDict, total=True):
     DeviceIndex: int
     SubnetId: str
     DeleteOnTermination: bool
-    Groups: List[str]
+    Groups: list[str]
     AssociatePublicIpAddress: bool
 
 
-APINetworkInterfacesType = List[APINetworkInterfaceType]
+APINetworkInterfacesType = list[APINetworkInterfaceType]
 
 
 class APINetworkInfo(TypedDict, total=False):
@@ -129,49 +174,58 @@ class APIImageType(TypedDict):
 
 ConfigImageFilter = TypedDict(
     'ConfigImageFilter',
-    {
-        'name-wildcard': str,
-        'name-regex': str,
-        'creation-date-regex': str,
-        'owner': str,
-        'max-age': int
-    },
-    total=False
+    {'name-wildcard': str, 'name-regex': str, 'creation-date-regex': str, 'owner': str, 'max-age': int},
+    total=False,
 )
+
+
+#: A type of AWS instance type description as provided by the output of ``ec2 describe-instance-types``.
+BackendFlavor: TypeAlias = dict[str, Any]
 
 
 AWS_VM_HYPERVISORS = ('nitro', 'xen')
 
 
-class AWSCLIErrorCauses(CLIErrorCauses):
+class AWSErrorCauses(PoolErrorCauses):
     NONE = 'none'
+    RESOURCE_METRICS_REFRESH_FAILED = 'resource-metrics-refresh-failed'
+    FLAVOR_INFO_REFRESH_FAILED = 'flavor-info-refresh-failed'
+    IMAGE_INFO_REFRESH_FAILED = 'image-info-refresh-failed'
     MISSING_INSTANCE = 'missing-instance'
     MISSING_SPOT_INSTANCE_REQUEST = 'missing-spot-instance-request'
+    MISSING_SECURITY_GROUP = 'missing-security-group'
     REQUEST_LIMIT_EXCEEDED = 'request-limit-exceeded'
+    SPOT_PRICE_NOT_DETECTED = 'spot-price-not-detected'
+    INSTANCE_BUILDING_TOO_LONG = 'instance-building-too-long'
+    INSTANCE_TERMINATED_PREMATURELY = 'instance-terminated-prematurely'
+    SPOT_INSTANCE_TERMINATED_PREMATURELY = 'spot-instance-terminated-prematurely'
+    SPOT_INSTANCE_TERMINATED_NO_CAPACITY = 'spot-instance-terminated-no-capacity'
+    SPOT_INSTANCE_TERMINATED_UNEXPECTEDLY = 'spot-instance-terminated-unexpectedly'
 
 
 CLI_ERROR_PATTERNS = {
-    AWSCLIErrorCauses.MISSING_INSTANCE: re.compile(
+    AWSErrorCauses.MISSING_INSTANCE: re.compile(
         r'.+\(InvalidInstanceID\.NotFound\).+The instance ID \'.+\' does not exist'
     ),
-    AWSCLIErrorCauses.MISSING_SPOT_INSTANCE_REQUEST: re.compile(
+    AWSErrorCauses.MISSING_SPOT_INSTANCE_REQUEST: re.compile(
         r'.+\(InvalidSpotInstanceRequestID\.NotFound\).+The spot instance request ID \'.+\' does not exist'
     ),
-    AWSCLIErrorCauses.REQUEST_LIMIT_EXCEEDED: re.compile(
-        r'.+\(RequestLimitExceeded\).+Request limit exceeded'
-    )
+    AWSErrorCauses.MISSING_SECURITY_GROUP: re.compile(
+        r'.+\(InvalidGroup\.NotFound\).+The security group \'.+\' does not exist'
+    ),
+    AWSErrorCauses.REQUEST_LIMIT_EXCEEDED: re.compile(r'.+\(RequestLimitExceeded\).+Request limit exceeded'),
 }
 
 
-def awscli_error_cause_extractor(output: gluetool.utils.ProcessOutput) -> AWSCLIErrorCauses:
+def awscli_error_cause_extractor(output: gluetool.utils.ProcessOutput) -> AWSErrorCauses:
     if output.exit_code == 0:
-        return AWSCLIErrorCauses.NONE
+        return AWSErrorCauses.NONE
 
     stderr = process_output_to_str(output, stream='stderr')
     stderr = stderr.strip() if stderr is not None else None
 
     if stderr is None:
-        return AWSCLIErrorCauses.NONE
+        return AWSErrorCauses.NONE
 
     for cause, pattern in CLI_ERROR_PATTERNS.items():
         if not pattern.match(stderr):
@@ -179,7 +233,7 @@ def awscli_error_cause_extractor(output: gluetool.utils.ProcessOutput) -> AWSCLI
 
         return cause
 
-    return AWSCLIErrorCauses.NONE
+    return AWSErrorCauses.NONE
 
 
 AWS_INSTANCE_SPECIFICATION = Template("""
@@ -223,6 +277,8 @@ JQ_QUERY_FLAVOR_SUPPORTED_BOOT_MODES = jq.compile('.SupportedBootModes | .[]')
 #: Extract supported boot mode of an instance, as available from ``describe-images``.
 JQ_QUERY_IMAGE_SUPPORTED_BOOT_MODE = jq.compile('.BootMode')
 
+JQ_QUERY_SECURITY_GROUP_IDS = jq.compile('.SecurityGroups | .[] | .GroupId')
+
 
 KNOB_SPOT_OPEN_TIMEOUT: Knob[int] = Knob(
     'aws.spot-open-timeout',
@@ -233,7 +289,7 @@ KNOB_SPOT_OPEN_TIMEOUT: Knob[int] = Knob(
     has_db=False,
     envvar='ARTEMIS_AWS_SPOT_OPEN_TIMEOUT',
     cast_from_str=int,
-    default=60
+    default=60,
 )
 
 KNOB_PENDING_TIMEOUT: Knob[int] = Knob(
@@ -242,16 +298,7 @@ KNOB_PENDING_TIMEOUT: Knob[int] = Knob(
     has_db=False,
     envvar='ARTEMIS_AWS_PENDING_TIMEOUT',
     cast_from_str=int,
-    default=600
-)
-
-KNOB_CONSOLE_DUMP_BLOB_UPDATE_TICK: Knob[int] = Knob(
-    'aws.logs.console.dump.blob.update-tick',
-    'How long, in seconds, to take between updating guest console log.',
-    has_db=False,
-    envvar='ARTEMIS_AWS_LOGS_CONSOLE_LATEST_BLOB_UPDATE_TICK',
-    cast_from_str=int,
-    default=300
+    default=600,
 )
 
 KNOB_CONSOLE_INTERACTIVE_URL: Knob[str] = Knob(
@@ -260,7 +307,7 @@ KNOB_CONSOLE_INTERACTIVE_URL: Knob[str] = Knob(
     has_db=False,
     envvar='ARTEMIS_AWS_LOGS_CONSOLE_INTERACTIVE_URL',
     cast_from_str=str,
-    default="https://console.aws.amazon.com/ec2/v2/connect/ec2-user/{instance_id}?connection-type=isc&serial-port=0"  # noqa: FS003,E501
+    default='https://console.aws.amazon.com/ec2/v2/connect/ec2-user/{instance_id}?connection-type=isc&serial-port=0',  # noqa: FS003,E501
 )
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
@@ -270,7 +317,7 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
     per_entity=True,
     envvar='ARTEMIS_AWS_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH',
     cast_from_str=str,
-    default='artemis-image-map-aws.yaml'
+    default='artemis-image-map-aws.yaml',
 )
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
@@ -280,7 +327,7 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
     per_entity=True,
     envvar='ARTEMIS_AWS_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE',
     cast_from_str=str,
-    default='{{ os.compose }}'
+    default='{{ os.compose }}',
 )
 
 KNOB_GUEST_SECURITY_GROUP_NAME_TEMPLATE: Knob[str] = Knob(
@@ -290,7 +337,7 @@ KNOB_GUEST_SECURITY_GROUP_NAME_TEMPLATE: Knob[str] = Knob(
     per_entity=True,
     envvar='ARTEMIS_AWS_GUEST_SECURITY_GROUP_NAME_TEMPLATE',
     cast_from_str=str,
-    default='{{ TAGS.ArtemisGuestLabel }}-{{ GUESTNAME }}'
+    default='artemis-guest-{{ GUESTNAME }}',
 )
 
 KNOB_REMOVE_SECURITY_GROUP_DELAY: Knob[int] = Knob(
@@ -302,17 +349,12 @@ KNOB_REMOVE_SECURITY_GROUP_DELAY: Knob[int] = Knob(
     has_db=False,
     envvar='ARTEMIS_AWS_REMOVE_SECURITY_GROUP_DELAY',
     cast_from_str=int,
-    default=150
+    default=150,
 )
 
 
 class FailedSpotRequest(Failure):
-    def __init__(
-        self,
-        message: str,
-        spot_instance_id: str,
-        **kwargs: Any
-    ):
+    def __init__(self, message: str, spot_instance_id: str, **kwargs: Any) -> None:
         super().__init__(message, **kwargs)
         self.spot_instance_id = spot_instance_id
 
@@ -338,7 +380,7 @@ class AWSPoolImageInfo(PoolImageInfo):
     #: Carries original `BootMode` image field.
     boot_mode: Optional[str]
 
-    def serialize_scrubbed(self) -> Dict[str, Any]:
+    def serialize_scrubbed(self) -> dict[str, Any]:
         serialized = super().serialize_scrubbed()
 
         for bd_mapping in serialized['block_device_mappings']:
@@ -361,31 +403,6 @@ class AWSPoolResourcesIDs(PoolResourcesIDs):
     security_group: Optional[str] = None
 
 
-class AWSHookImageInfoMapper(HookImageInfoMapper[AWSPoolImageInfo]):
-    def map_or_none(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest_request: GuestRequest
-    ) -> ImageInfoMapperResultType[AWSPoolImageInfo]:
-        r_images = super().map_or_none(logger, guest_request)
-
-        if r_images.is_error:
-            return r_images
-
-        images = r_images.unwrap()
-
-        # console/URL logs require ENA support
-        if guest_request.requests_guest_log('console:interactive', GuestLogContentType.URL):
-            images = list(logging_filter(
-                logger,
-                images,
-                'console.interactive requires image ENA support',
-                lambda logger, image: image.ena_support
-            ))
-
-        return Ok(images)
-
-
 def _base64_encode(data: str) -> str:
     """
     Encode a given string into Base64.
@@ -397,20 +414,12 @@ def _base64_encode(data: str) -> str:
     return base64.b64encode(data.encode('utf-8')).decode('utf-8')
 
 
-def is_old_enough(logger: gluetool.log.ContextAdapter, timestamp: str, threshold: int) -> bool:
-    try:
-        parsed_timestamp = datetime.datetime.strptime(timestamp, '%Y-%m-%dT%H:%M:%S.%fZ')
-
-    except Exception as exc:
-        Failure.from_exc(
-            'failed to parse timestamp',
-            exc,
-            timestamp=timestamp
-        ).handle(logger)
-
+def is_old_enough(timestamp: str, threshold: int) -> bool:
+    parsed_timestamp = AWSDriver.timestamp_to_datetime(timestamp)
+    if parsed_timestamp.is_error:
         return False
 
-    diff = datetime.datetime.utcnow() - parsed_timestamp
+    diff = datetime.datetime.utcnow() - parsed_timestamp.unwrap()
 
     return diff.total_seconds() >= threshold
 
@@ -421,7 +430,7 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
     host helper methods we use for modifications of mappings.
     """
 
-    def __init__(self, mappings: Optional[List[APIBlockDeviceMappingType]] = None):
+    def __init__(self, mappings: Optional[list[APIBlockDeviceMappingType]] = None) -> None:
         super().__init__()
 
         self.data = mappings[:] if mappings else []
@@ -431,8 +440,7 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
         del self.data[index]
 
     def __getitem__(  # type: ignore[override]  # does not match supertype, but it's correct
-        self,
-        index: int
+        self, index: int
     ) -> APIBlockDeviceMappingType:
         return self.data[index]
 
@@ -440,9 +448,7 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
         return len(self.data)
 
     def __setitem__(  # type: ignore[override]  # does not match supertype, but it's correct
-        self,
-        index: int,
-        value: APIBlockDeviceMappingType
+        self, index: int, value: APIBlockDeviceMappingType
     ) -> None:
         self.data[index] = value
 
@@ -450,11 +456,11 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
         self[index] = value
 
     # Override serialization - we're fine with quite a trivial approach.
-    def serialize(self) -> Dict[str, Any]:
-        return cast(Dict[str, Any], self.data)
+    def serialize(self) -> dict[str, Any]:
+        return cast(dict[str, Any], self.data)
 
     @classmethod
-    def unserialize(cls, serialized: Dict[str, Any]) -> 'BlockDeviceMappings':
+    def unserialize(cls, serialized: dict[str, Any]) -> 'BlockDeviceMappings':
         cast_serialized = cast(APIBlockDeviceMappingsType, serialized)
 
         return BlockDeviceMappings(cast_serialized)
@@ -474,11 +480,12 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
     @staticmethod
     def create_mapping(
         device_name: str,
+        *,
         # common volume properties
         delete_on_termination: Optional[bool] = None,
         encrypted: Optional[bool] = None,
         size: Optional[SizeType] = None,
-        volume_type: Optional[EBSVolumeTypeType] = None
+        volume_type: Optional[EBSVolumeTypeType] = None,
     ) -> Result[APIBlockDeviceMappingType, Failure]:
         """
         Create block device mapping.
@@ -497,28 +504,26 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
         :returns: newly created mapping.
         """
 
-        mapping: APIBlockDeviceMappingType = {
-            'DeviceName': device_name,
-            'Ebs': {}
-        }
+        mapping: APIBlockDeviceMappingType = {'DeviceName': device_name, 'Ebs': {}}
 
         return BlockDeviceMappings.update_mapping(
             mapping,
             delete_on_termination=delete_on_termination,
             encrypted=encrypted,
             size=size,
-            volume_type=volume_type
+            volume_type=volume_type,
         )
 
     @staticmethod
     def update_mapping(
         mapping: APIBlockDeviceMappingType,
+        *,
         device_name: Optional[str] = None,
         # common volume properties
         delete_on_termination: Optional[bool] = None,
         encrypted: Optional[bool] = None,
         size: Optional[SizeType] = None,
-        volume_type: Optional[EBSVolumeTypeType] = None
+        volume_type: Optional[EBSVolumeTypeType] = None,
     ) -> Result[APIBlockDeviceMappingType, Failure]:
         """
         Update given block device mapping.
@@ -554,10 +559,7 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
 
         return Ok(mapping)
 
-    def _get_mapping(
-        self,
-        index: int
-    ) -> Optional[APIBlockDeviceMappingType]:
+    def _get_mapping(self, index: int) -> Optional[APIBlockDeviceMappingType]:
         """
         Return block device mapping with a given index if it exists.
 
@@ -589,11 +591,12 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
     def enlarge(
         self,
         count: int,
+        *,
         # common volume properties
         delete_on_termination: Optional[bool] = None,
         encrypted: Optional[bool] = None,
         size: Optional[SizeType] = None,
-        volume_type: Optional[EBSVolumeTypeType] = None
+        volume_type: Optional[EBSVolumeTypeType] = None,
     ) -> Result[None, Failure]:
         """
         Make sure mappings contain at least ``count`` items.
@@ -624,7 +627,7 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
                 delete_on_termination=delete_on_termination,
                 encrypted=encrypted,
                 size=size,
-                volume_type=volume_type
+                volume_type=volume_type,
             )
 
             if r_append.is_error:
@@ -635,11 +638,12 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
     def append_mapping(
         self,
         device_name: str,
+        *,
         # common volume properties
         delete_on_termination: Optional[bool] = None,
         encrypted: Optional[bool] = None,
         size: Optional[SizeType] = None,
-        volume_type: Optional[EBSVolumeTypeType] = None
+        volume_type: Optional[EBSVolumeTypeType] = None,
     ) -> Result[APIBlockDeviceMappingType, Failure]:
         """
         Append new block device mapping.
@@ -663,7 +667,7 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
             delete_on_termination=delete_on_termination,
             encrypted=encrypted,
             size=size,
-            volume_type=volume_type
+            volume_type=volume_type,
         )
 
         if r_create.is_ok:
@@ -673,11 +677,12 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
 
     def update_root_volume(
         self,
+        *,
         # common volume properties
         delete_on_termination: Optional[bool] = None,
         encrypted: Optional[bool] = None,
         size: Optional[SizeType] = None,
-        volume_type: Optional[EBSVolumeTypeType] = None
+        volume_type: Optional[EBSVolumeTypeType] = None,
     ) -> Result[APIBlockDeviceMappingType, Failure]:
         """
         :param delete_on_termination: whether or not the volume should be removed automatically with the instance.
@@ -693,18 +698,18 @@ class BlockDeviceMappings(SerializableContainer, MutableSequence[APIBlockDeviceM
         mapping = self._get_mapping(0)
 
         if mapping is None:
-            return Error(Failure(
-                'block device mapping does not exist',
-                block_device_mappings=self.data,
-                block_device_mapping_index=0
-            ))
+            return Error(
+                Failure(
+                    'block device mapping does not exist', block_device_mappings=self.data, block_device_mapping_index=0
+                )
+            )
 
         return self.update_mapping(
             mapping,
             delete_on_termination=delete_on_termination,
             encrypted=encrypted,
             size=size,
-            volume_type=volume_type
+            volume_type=volume_type,
         )
 
 
@@ -718,7 +723,7 @@ def _honor_constraint_disk(
 ) -> Result[bool, Failure]:
     logger.debug(f'honor-constraint-disk: {constraint}')
 
-    property_name, index, child_property_name, _ = constraint.expand_name()
+    _, index, child_property_name, _ = constraint.expand_name()
 
     if child_property_name == 'size':
         log_dict_yaml(logger.debug, '  mappings before', mappings.serialize())
@@ -729,7 +734,7 @@ def _honor_constraint_disk(
             index + 1,
             delete_on_termination=DEFAULT_VOLUME_DELETE_ON_TERMINATION,
             encrypted=DEFAULT_VOLUME_ENCRYPTED,
-            volume_type=DEFAULT_VOLUME_TYPE
+            volume_type=DEFAULT_VOLUME_TYPE,
         )
 
         if r_enlarge.is_error:
@@ -740,58 +745,45 @@ def _honor_constraint_disk(
         current_size = mappings.mapping_size(mapping)
         desired_size = cast(SizeType, constraint.value)
 
-        if constraint.operator in (Operator.EQ, Operator.GTE):
-            # Current size is unset, we must set the size.
-            if current_size is None:
-                r_update = mappings.update_mapping(
-                    mapping,
-                    size=desired_size
-                )
+        def _check_and_set(op: Callable[[float, float], bool], actual_desired_size: SizeType) -> Result[bool, Failure]:
+            # Either the current size is undefined, or it does not pass the test. In such cases, force the desired size.
+            if current_size is None or not op(current_size.to('GiB').magnitude, desired_size.to('GiB').magnitude):
+                r_update = mappings.update_mapping(mapping, size=actual_desired_size)
 
                 if r_update.is_error:
                     return Error(r_update.unwrap_error())
 
-            # Current size is smaller than the desired one, we need to set the size.
-            elif current_size.to('GiB').magnitude < desired_size.to('GiB').magnitude:
-                r_update = mappings.update_mapping(
-                    mapping,
-                    size=desired_size
-                )
+            # At this point, the size has been either already fine, or it's forced to be.
+            return Ok(True)
 
-                if r_update.is_error:
-                    return Error(r_update.unwrap_error())
+        if constraint.operator is Operator.EQ:
+            r_update = _check_and_set(operator.eq, desired_size)
 
-            # Current size is set, and it's equal or bigger than desired size, no need to do anything.
-            else:
-                pass
+        elif constraint.operator is Operator.GTE:
+            r_update = _check_and_set(operator.ge, desired_size)
 
-        elif constraint.operator == Operator.GT:
-            # Current size is unset, we must set the size.
-            if current_size is None:
-                r_update = mappings.update_mapping(
-                    mapping,
-                    size=desired_size + UNITS.Quantity(1, 'gibibyte')
-                )
+        elif constraint.operator is Operator.LTE:
+            r_update = _check_and_set(operator.le, desired_size)
 
-                if r_update.is_error:
-                    return Error(r_update.unwrap_error())
+        elif constraint.operator is Operator.GT:
+            r_update = _check_and_set(
+                operator.gt, UNITS.Quantity(desired_size.to('GiB').magnitude + 1, UNITS.gibibytes)
+            )
 
-            # Current size is smaller or equal to the desired one, we need to set the size.
-            elif current_size.to('GiB').magnitude <= desired_size.to('GiB').magnitude:
-                r_update = mappings.update_mapping(
-                    mapping,
-                    size=desired_size + UNITS.Quantity(1, 'gibibyte')
-                )
-
-                if r_update.is_error:
-                    return Error(r_update.unwrap_error())
-
-            # Current size is set, and it's bigger than desired size, no need to do anything.
-            else:
-                pass
+        elif constraint.operator is Operator.LT:
+            r_update = _check_and_set(
+                operator.lt, UNITS.Quantity(desired_size.to('GiB').magnitude - 1, UNITS.gibibytes)
+            )
 
         else:
             return Error(Failure('cannot honor disk.size constraint', constraint=repr(constraint)))
+
+        if r_update.is_error:
+            Error(
+                Failure.from_failure(
+                    'cannot honor disk.size constraint', r_update.unwrap_error(), constraint=repr(constraint)
+                )
+            )
 
         log_dict_yaml(logger.debug, '  mappings after', mappings.serialize())
 
@@ -801,11 +793,8 @@ def _honor_constraint_disk(
 
 
 def _get_constraint_spans(
-    logger: ContextAdapter,
-    guest_request: GuestRequest,
-    image: AWSPoolImageInfo,
-    flavor: Flavor
-) -> Result[List[List[Constraint]], Failure]:
+    logger: ContextAdapter, guest_request: GuestRequest, flavor: Flavor
+) -> Result[list[list[Constraint]], Failure]:
     if not guest_request.environment.has_hw_constraints:
         return Ok([])
 
@@ -841,12 +830,9 @@ def _get_constraint_spans(
 
 
 def _get_constraint_span(
-    logger: ContextAdapter,
-    guest_request: GuestRequest,
-    image: AWSPoolImageInfo,
-    flavor: Flavor
-) -> Result[List[Constraint], Failure]:
-    r_spans = _get_constraint_spans(logger, guest_request, image, flavor)
+    logger: ContextAdapter, guest_request: GuestRequest, flavor: Flavor
+) -> Result[list[Constraint], Failure]:
+    r_spans = _get_constraint_spans(logger, guest_request, flavor)
 
     if r_spans.is_error:
         return Error(r_spans.unwrap_error())
@@ -869,7 +855,7 @@ def setup_extra_volumes(
     mappings: BlockDeviceMappings,
     guest_request: GuestRequest,
     image: AWSPoolImageInfo,
-    flavor: Flavor
+    flavor: Flavor,
 ) -> Result[BlockDeviceMappings, Failure]:
     """
     Setup additional volumes, if required by HW constraints.
@@ -881,7 +867,7 @@ def setup_extra_volumes(
     :param flavor: a flavor that would serve as a basis for the provisioned instance.
     """
 
-    r_span = _get_constraint_span(logger, guest_request, image, flavor)
+    r_span = _get_constraint_span(logger, guest_request, flavor)
 
     if r_span.is_error:
         return Error(r_span.unwrap_error())
@@ -901,12 +887,7 @@ def setup_extra_volumes(
             continue
 
         r_consumed = _honor_constraint_disk(
-            logger,
-            constraint.original_constraint or constraint,
-            mappings,
-            guest_request,
-            image,
-            flavor
+            logger, constraint.original_constraint or constraint, mappings, guest_request, image, flavor
         )
 
         if r_consumed.is_error:
@@ -915,10 +896,7 @@ def setup_extra_volumes(
         if r_consumed.unwrap() is True:
             continue
 
-        return Error(Failure(
-            'cannot honor disk constraint',
-            constraint=repr(constraint)
-        ))
+        return Error(Failure('cannot honor disk constraint', constraint=repr(constraint)))
 
     return Ok(mappings)
 
@@ -930,11 +908,12 @@ def setup_root_volume(
     image: AWSPoolImageInfo,
     flavor: Flavor,
     default_root_disk_size: Optional[SizeType] = None,
+    *,
     # common volume properties
     delete_on_termination: Optional[bool] = None,
     encrypted: Optional[bool] = None,
     size: Optional[SizeType] = None,
-    volume_type: Optional[EBSVolumeTypeType] = None
+    volume_type: Optional[EBSVolumeTypeType] = None,
 ) -> Result[BlockDeviceMappings, Failure]:
     """
     Setup a root disk of given set of mappings.
@@ -964,10 +943,7 @@ def setup_root_volume(
             size = default_root_disk_size
 
     r_bdms = mappings.update_root_volume(
-        delete_on_termination=delete_on_termination,
-        encrypted=encrypted,
-        size=size,
-        volume_type=volume_type
+        delete_on_termination=delete_on_termination, encrypted=encrypted, size=size, volume_type=volume_type
     )
 
     if r_bdms.is_error:
@@ -981,7 +957,7 @@ def create_block_device_mappings(
     guest_request: GuestRequest,
     image: AWSPoolImageInfo,
     flavor: Flavor,
-    default_root_disk_size: Optional[SizeType] = None
+    default_root_disk_size: Optional[SizeType] = None,
 ) -> Result[BlockDeviceMappings, Failure]:
     """
     Prepare block device mapping according to match requested environment, image and flavor.
@@ -999,12 +975,7 @@ def create_block_device_mappings(
     mappings = BlockDeviceMappings(image.block_device_mappings)
 
     r_mappings = setup_root_volume(
-        logger,
-        mappings,
-        guest_request,
-        image,
-        flavor,
-        default_root_disk_size=default_root_disk_size
+        logger, mappings, guest_request, image, flavor, default_root_disk_size=default_root_disk_size
     )
 
     if r_mappings.is_error:
@@ -1032,7 +1003,7 @@ class NetworkInterfaces(SerializableContainer, MutableSequence[APINetworkInterfa
     host helper methods we use for modifications of network interface list.
     """
 
-    def __init__(self, interfaces: Optional[List[APINetworkInterfaceType]] = None):
+    def __init__(self, interfaces: Optional[list[APINetworkInterfaceType]] = None) -> None:
         super().__init__()
 
         self.data = interfaces[:] if interfaces else []
@@ -1042,8 +1013,7 @@ class NetworkInterfaces(SerializableContainer, MutableSequence[APINetworkInterfa
         del self.data[index]
 
     def __getitem__(  # type: ignore[override]  # does not match supertype, but it's correct
-        self,
-        index: int
+        self, index: int
     ) -> APINetworkInterfaceType:
         return self.data[index]
 
@@ -1051,9 +1021,7 @@ class NetworkInterfaces(SerializableContainer, MutableSequence[APINetworkInterfa
         return len(self.data)
 
     def __setitem__(  # type: ignore[override]  # does not match supertype, but it's correct
-        self,
-        index: int,
-        value: APINetworkInterfaceType
+        self, index: int, value: APINetworkInterfaceType
     ) -> None:
         self.data[index] = value
 
@@ -1061,11 +1029,11 @@ class NetworkInterfaces(SerializableContainer, MutableSequence[APINetworkInterfa
         self[index] = value
 
     # Override serialization - we're fine with quite a trivial approach.
-    def serialize(self) -> Dict[str, Any]:
-        return cast(Dict[str, Any], self.data)
+    def serialize(self) -> dict[str, Any]:
+        return cast(dict[str, Any], self.data)
 
     @classmethod
-    def unserialize(cls, serialized: Dict[str, Any]) -> 'NetworkInterfaces':
+    def unserialize(cls, serialized: dict[str, Any]) -> 'NetworkInterfaces':
         cast_serialized = cast(APINetworkInterfacesType, serialized)
 
         return NetworkInterfaces(cast_serialized)
@@ -1077,16 +1045,17 @@ class NetworkInterfaces(SerializableContainer, MutableSequence[APINetworkInterfa
     def create_nic(
         device_index: int,
         subnet_id: str,
-        security_groups: List[str],
+        security_groups: list[str],
+        *,
         delete_on_termination: bool = True,
-        associate_public_ip_address: bool = False
+        associate_public_ip_address: bool = False,
     ) -> Result[APINetworkInterfaceType, Failure]:
         nic: APINetworkInterfaceType = {
             'DeviceIndex': device_index,
             'SubnetId': subnet_id,
             'DeleteOnTermination': delete_on_termination,
             'Groups': security_groups,
-            'AssociatePublicIpAddress': associate_public_ip_address
+            'AssociatePublicIpAddress': associate_public_ip_address,
         }
 
         return Ok(nic)
@@ -1094,11 +1063,12 @@ class NetworkInterfaces(SerializableContainer, MutableSequence[APINetworkInterfa
     @staticmethod
     def update_nic(
         nic: APINetworkInterfaceType,
+        *,
         device_index: Optional[int] = None,
         subnet_id: Optional[str] = None,
-        security_groups: Optional[List[str]] = None,
+        security_groups: Optional[list[str]] = None,
         delete_on_termination: Optional[bool] = None,
-        associate_public_ip_address: Optional[bool] = None
+        associate_public_ip_address: Optional[bool] = None,
     ) -> Result[APINetworkInterfaceType, Failure]:
         if device_index is not None:
             nic['DeviceIndex'] = device_index
@@ -1117,10 +1087,7 @@ class NetworkInterfaces(SerializableContainer, MutableSequence[APINetworkInterfa
 
         return Ok(nic)
 
-    def _get_nic(
-        self,
-        index: int
-    ) -> Optional[APINetworkInterfaceType]:
+    def _get_nic(self, index: int) -> Optional[APINetworkInterfaceType]:
         try:
             return self.data[index]
 
@@ -1128,7 +1095,7 @@ class NetworkInterfaces(SerializableContainer, MutableSequence[APINetworkInterfa
             return None
 
     def find_free_device_index(self) -> int:
-        indices = [i for i in range(len(self.data) + 1)]
+        indices = list(range(len(self.data) + 1))
 
         for nic in self.data:
             if nic['DeviceIndex'] in indices:
@@ -1140,9 +1107,10 @@ class NetworkInterfaces(SerializableContainer, MutableSequence[APINetworkInterfa
         self,
         count: int,
         subnet_id: str,
-        security_groups: List[str],
-        delete_on_termination: bool,
-        associate_public_ip_address: bool
+        security_groups: list[str],
+        *,
+        delete_on_termination: bool = True,
+        associate_public_ip_address: bool = False,
     ) -> Result[None, Failure]:
         current_count = len(self)
 
@@ -1154,7 +1122,7 @@ class NetworkInterfaces(SerializableContainer, MutableSequence[APINetworkInterfa
                 subnet_id,
                 security_groups,
                 delete_on_termination=delete_on_termination,
-                associate_public_ip_address=associate_public_ip_address
+                associate_public_ip_address=associate_public_ip_address,
             )
 
             if r_append.is_error:
@@ -1166,16 +1134,17 @@ class NetworkInterfaces(SerializableContainer, MutableSequence[APINetworkInterfa
         self,
         device_index: int,
         subnet_id: str,
-        security_groups: List[str],
+        security_groups: list[str],
+        *,
         delete_on_termination: bool = True,
-        associate_public_ip_address: bool = False
+        associate_public_ip_address: bool = False,
     ) -> Result[APINetworkInterfaceType, Failure]:
         r_create = NetworkInterfaces.create_nic(
             device_index,
             subnet_id,
             security_groups,
             delete_on_termination=delete_on_termination,
-            associate_public_ip_address=associate_public_ip_address
+            associate_public_ip_address=associate_public_ip_address,
         )
 
         if r_create.is_ok:
@@ -1192,7 +1161,7 @@ def _honor_constraint_network(
     guest_request: GuestRequest,
     image: AWSPoolImageInfo,
     flavor: Flavor,
-    security_groups: List[str]
+    security_groups: list[str],
 ) -> Result[bool, Failure]:
     _, index, child_property_name, _ = constraint.expand_name()
 
@@ -1204,7 +1173,7 @@ def _honor_constraint_network(
             pool.pool_config['subnet-id'],
             security_groups,
             delete_on_termination=True,
-            associate_public_ip_address=pool.use_public_ip
+            associate_public_ip_address=pool.use_public_ip,
         )
 
         if r_enlarge.is_error:
@@ -1222,9 +1191,9 @@ def setup_extra_network_interfaces(
     guest_request: GuestRequest,
     image: AWSPoolImageInfo,
     flavor: Flavor,
-    security_groups: List[str]
+    security_groups: list[str],
 ) -> Result[NetworkInterfaces, Failure]:
-    r_spans = _get_constraint_spans(logger, guest_request, image, flavor)
+    r_spans = _get_constraint_spans(logger, guest_request, flavor)
 
     if r_spans.is_error:
         return Error(r_spans.unwrap_error())
@@ -1256,7 +1225,7 @@ def setup_extra_network_interfaces(
             guest_request,
             image,
             flavor,
-            security_groups
+            security_groups,
         )
 
         if r_consumed.is_error:
@@ -1265,10 +1234,7 @@ def setup_extra_network_interfaces(
         if r_consumed.unwrap() is True:
             continue
 
-        return Error(Failure(
-            'cannot honor network constraint',
-            constraint=repr(constraint)
-        ))
+        return Error(Failure('cannot honor network constraint', constraint=repr(constraint)))
 
     return Ok(nics)
 
@@ -1279,7 +1245,7 @@ def create_network_interfaces(
     guest_request: GuestRequest,
     image: AWSPoolImageInfo,
     flavor: AWSFlavor,
-    security_groups: List[str]
+    security_groups: list[str],
 ) -> Result[NetworkInterfaces, Failure]:
     nics = NetworkInterfaces()
 
@@ -1288,18 +1254,10 @@ def create_network_interfaces(
         pool.pool_config['subnet-id'],
         security_groups,
         delete_on_termination=True,
-        associate_public_ip_address=pool.use_public_ip
+        associate_public_ip_address=pool.use_public_ip,
     )
 
-    r_nics = setup_extra_network_interfaces(
-        logger,
-        pool,
-        nics,
-        guest_request,
-        image,
-        flavor,
-        security_groups
-    )
+    r_nics = setup_extra_network_interfaces(logger, pool, nics, guest_request, image, flavor, security_groups)
 
     if r_nics.is_error:
         return r_nics
@@ -1307,7 +1265,7 @@ def create_network_interfaces(
     return Ok(r_nics.unwrap())
 
 
-def _sanitize_tags(tags: GuestTagsType) -> Generator[Tuple[str, str], None, None]:
+def _sanitize_tags(tags: Tags) -> Generator[tuple[str, str], None, None]:
     """
     Sanitize tags to make their values acceptable for AWS API and CLI.
 
@@ -1316,14 +1274,14 @@ def _sanitize_tags(tags: GuestTagsType) -> Generator[Tuple[str, str], None, None
 
     for name, value in tags.items():
         # Get rid of quotes and singlequotes, AWS won't accept those.
-        value = (value or '').replace('"', '<quote>').replace('\'', '<singlequote>')
+        value = (value or '').replace('"', '<quote>').replace("'", '<singlequote>')
 
         # Replace an empty string with double quotes representing an empty string. AWS won't
         # accept `Value=`, but is willing to accept `Value=""`.
         yield name, value or '""'
 
 
-def _serialize_tags(tags: GuestTagsType) -> List[str]:
+def _serialize_tags(tags: Tags) -> list[str]:
     """
     Serialize tags to make them acceptable for AWS CLI.
 
@@ -1336,13 +1294,10 @@ def _serialize_tags(tags: GuestTagsType) -> List[str]:
     See https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Tags.html#create-tag-examples for more details.
     """
 
-    return [
-        f'Key={name},Value={value}'
-        for name, value in _sanitize_tags(tags)
-    ]
+    return [f'Key={name},Value={value}' for name, value in _sanitize_tags(tags)]
 
 
-def _tags_to_tag_specifications(tags: GuestTagsType, *resource_types: str) -> List[str]:
+def _tags_to_tag_specifications(tags: Tags, *resource_types: str) -> list[str]:
     """
     Serialize tags to make them acceptable for ``--tag-specifications`` CLI option.
 
@@ -1355,14 +1310,9 @@ def _tags_to_tag_specifications(tags: GuestTagsType, *resource_types: str) -> Li
     See https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Tags.html#tag-on-create-examples for more details.
     """
 
-    serialized_tags = ','.join([
-        f'{{{tag}}}' for tag in _serialize_tags(tags)
-    ])
+    serialized_tags = ','.join([f'{{{tag}}}' for tag in _serialize_tags(tags)])
 
-    return [
-        f'ResourceType={resource_type},Tags=[{serialized_tags}]'
-        for resource_type in resource_types
-    ]
+    return [f'ResourceType={resource_type},Tags=[{serialized_tags}]' for resource_type in resource_types]
 
 
 def _aws_arch_to_arch(arch: str) -> str:
@@ -1386,9 +1336,9 @@ def _aws_arch_to_arch(arch: str) -> str:
     return arch
 
 
-def _aws_boot_to_boot(boot_method: str) -> FlavorBootMethodType:
+def _aws_boot_mode_to_boot_method(boot_mode: str) -> FlavorBootMethodType:
     """
-    Convert image/instance type boot method as known to AWS EC2 API to boot method as tracked by Artemis.
+    Convert image/instance type boot mode as known to AWS EC2 API to boot method as tracked by Artemis.
 
     There is at least one difference, AWS' ``legacy-bios`` is usually called just ``bios`` by other
     drivers supported by Artemis. This function serves as a small compatibility layer.
@@ -1397,276 +1347,512 @@ def _aws_boot_to_boot(boot_method: str) -> FlavorBootMethodType:
     :returns: boot method as known to Artemis.
     """
 
-    if boot_method == 'legacy-bios':
+    if boot_mode == 'legacy-bios':
         return 'bios'
 
-    if boot_method == 'uefi':
+    if boot_mode == 'uefi':
         return 'uefi'
 
-    if boot_method == 'uefi-preffered':
+    if boot_mode == 'uefi-preferred':
         return 'uefi-preferred'
 
-    return cast(FlavorBootMethodType, boot_method)
+    return cast(FlavorBootMethodType, boot_mode)
 
 
-class AWSDriver(PoolDriver):
+def _aws_ami_boot_mode_to_boot_method(aws_boot_mode: str, arch: str) -> list[FlavorBootMethodType]:
+    if aws_boot_mode:
+        boot_method = _aws_boot_mode_to_boot_method(aws_boot_mode)
+
+        if boot_method == 'uefi-preferred':
+            return ['bios', 'uefi']
+
+        return [boot_method]
+
+    # When boot method is unset, default to `bios` for x86_64 and `uefi` for aarch64.
+    # See https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/launch-instance-boot-mode.html
+    return ['bios' if arch == 'x86_64' else 'uefi']
+
+
+# Table at https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/launch-instance-boot-mode.html
+# describes the following combinations:
+#
+# | Image         | OS      | Flavor        | Resulting |
+# +---------------+---------+---------------+-----------+
+# | UEFI          | UEFI    | UEFI          | UEFI      |
+# | BIOS          | BIOS    | BIOS          | BIOS      |
+# | BIOS, UEFI    | UEFI    | UEFI          | UEFI      |
+# | BIOS, UEFI    | UEFI    | BIOS, UEFI    | UEFI      |
+# | BIOS, UEFI    | BIOS    | BIOS          | BIOS      |
+# | BIOS, UEFI    | BIOS    | BIOS, UEFI    | BIOS      |
+#
+# Let's assume that OS is not important as it always supports both BIOS and UEFI modes. A table without
+# the OS column would look like this:
+#
+# | Image         | OS      | Flavor        | Resulting |
+# +---------------+---------+---------------+-----------+
+# | UEFI          |         | UEFI          | UEFI      |
+# | UEFI          |         | BIOS          | ....      |
+# | UEFI          |         | BIOS, UEFI    | UEFI      |
+# | BIOS          |         | BIOS          | BIOS      |
+# | BIOS          |         | UEFI          | ....      |
+# | BIOS          |         | BIOS, UEFI    | BIOS      |
+# | BIOS, UEFI    |         | UEFI          | UEFI      |
+# | BIOS, UEFI    |         | BIOS, UEFI    | UEFI      |
+# | BIOS, UEFI    |         | BIOS          | BIOS      |
+# | BIOS, UEFI    |         | BIOS, UEFI    | UEFI      |
+#
+# Notice:
+#
+# * The change in the last row, it becomes equivalent to the third row as OS supports both UEFI and BIOS, and it is not
+#   told to prefer any of the options.
+# * Several new rows. The original table does not define these combinations, they are obviously incompatible, but we can
+#   encounter such combinations, and we need to define their outcome.
+#
+# The table with constraint & expected outcome:
+#
+# | Image         | OS      | Flavor        | Resulting | Requested | Allowed |
+# +---------------+---------+---------------+-----------+-----------+---------+
+#
+# | UEFI          |         | UEFI          | UEFI      | + BIOS    | No
+# | UEFI          |         | BIOS          | ....      | + BIOS    | No
+# | UEFI          |         | BIOS, UEFI    | UEFI      | + BIOS    | No
+# | BIOS          |         | BIOS          | BIOS      | + BIOS    | Yes
+# | BIOS          |         | UEFI          | ....      | + BIOS    | No
+# | BIOS          |         | BIOS, UEFI    | BIOS      | + BIOS    | Yes
+# | BIOS, UEFI    |         | UEFI          | UEFI      | + BIOS    | No
+# | BIOS, UEFI    |         | BIOS, UEFI    | UEFI      | + BIOS    | No
+# | BIOS, UEFI    |         | BIOS          | BIOS      | + BIOS    | Yes
+#
+# | UEFI          |         | UEFI          | UEFI      | - BIOS    | Yes
+# | UEFI          |         | BIOS          | ....      | - BIOS    | No
+# | UEFI          |         | BIOS, UEFI    | UEFI      | - BIOS    | Yes
+# | BIOS          |         | BIOS          | BIOS      | - BIOS    | No
+# | BIOS          |         | UEFI          | ....      | - BIOS    | No
+# | BIOS          |         | BIOS, UEFI    | BIOS      | - BIOS    | No
+# | BIOS, UEFI    |         | UEFI          | UEFI      | - BIOS    | Yes
+# | BIOS, UEFI    |         | BIOS, UEFI    | UEFI      | - BIOS    | Yes
+# | BIOS, UEFI    |         | BIOS          | BIOS      | - BIOS    | No
+#
+# | UEFI          |         | UEFI          | UEFI      | + UEFI    | Yes
+# | UEFI          |         | BIOS          | ....      | + UEFI    | No
+# | UEFI          |         | BIOS, UEFI    | UEFI      | + UEFI    | Yes
+# | BIOS          |         | BIOS          | BIOS      | + UEFI    | No
+# | BIOS          |         | UEFI          | ....      | + UEFI    | No
+# | BIOS          |         | BIOS, UEFI    | BIOS      | + UEFI    | No
+# | BIOS, UEFI    |         | UEFI          | UEFI      | + UEFI    | Yes
+# | BIOS, UEFI    |         | BIOS, UEFI    | UEFI      | + UEFI    | Yes
+# | BIOS, UEFI    |         | BIOS          | BIOS      | + UEFI    | No
+#
+# | UEFI          |         | UEFI          | UEFI      | - UEFI    | No
+# | UEFI          |         | BIOS          | ....      | - UEFI    | No
+# | UEFI          |         | BIOS, UEFI    | UEFI      | - UEFI    | No
+# | BIOS          |         | BIOS          | BIOS      | - UEFI    | Yes
+# | BIOS          |         | UEFI          | ....      | - UEFI    | No
+# | BIOS          |         | BIOS, UEFI    | BIOS      | - UEFI    | Yes
+# | BIOS, UEFI    |         | UEFI          | UEFI      | - UEFI    | No
+# | BIOS, UEFI    |         | BIOS, UEFI    | UEFI      | - UEFI    | No
+# | BIOS, UEFI    |         | BIOS          | BIOS      | - UEFI    | Yes
+
+#: Matrix of supported boot modes: (image boot mode, flavor boot mode, constraint, supported)
+_AWS_BOOT_MODE_MATRIX = [
+    ('uefi', 'uefi', 'contains bios', False),
+    ('uefi', 'bios', 'contains bios', False),
+    ('uefi', 'bios, uefi', 'contains bios', False),
+    ('bios', 'bios', 'contains bios', True),
+    ('bios', 'uefi', 'contains bios', False),
+    ('bios', 'bios, uefi', 'contains bios', True),
+    ('bios, uefi', 'uefi', 'contains bios', False),
+    ('bios, uefi', 'bios, uefi', 'contains bios', False),
+    ('bios, uefi', 'bios', 'contains bios', True),
+    ('uefi', 'uefi', 'not contains exclusive bios', True),
+    ('uefi', 'bios', 'not contains exclusive bios', False),
+    ('uefi', 'bios, uefi', 'not contains exclusive bios', True),
+    ('bios', 'bios', 'not contains exclusive bios', False),
+    ('bios', 'uefi', 'not contains exclusive bios', False),
+    ('bios', 'bios, uefi', 'not contains exclusive bios', False),
+    ('bios, uefi', 'uefi', 'not contains exclusive bios', True),
+    ('bios, uefi', 'bios, uefi', 'not contains exclusive bios', True),
+    ('bios, uefi', 'bios', 'not contains exclusive bios', False),
+    ('uefi', 'uefi', 'contains uefi', True),
+    ('uefi', 'bios', 'contains uefi', False),
+    ('uefi', 'bios, uefi', 'contains uefi', True),
+    ('bios', 'bios', 'contains uefi', False),
+    ('bios', 'uefi', 'contains uefi', False),
+    ('bios', 'bios, uefi', 'contains uefi', False),
+    ('bios, uefi', 'uefi', 'contains uefi', True),
+    ('bios, uefi', 'bios, uefi', 'contains uefi', True),
+    ('bios, uefi', 'bios', 'contains uefi', False),
+    ('uefi', 'uefi', 'not contains exclusive uefi', False),
+    ('uefi', 'bios', 'not contains exclusive uefi', False),
+    ('uefi', 'bios, uefi', 'not contains exclusive uefi', False),
+    ('bios', 'bios', 'not contains exclusive uefi', True),
+    ('bios', 'uefi', 'not contains exclusive uefi', False),
+    ('bios', 'bios, uefi', 'not contains exclusive uefi', True),
+    ('bios, uefi', 'uefi', 'not contains exclusive uefi', False),
+    ('bios, uefi', 'bios, uefi', 'not contains exclusive uefi', False),
+    ('bios, uefi', 'bios', 'not contains exclusive uefi', True),
+]
+
+
+class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor, BackendFlavor, Instance]):
     drivername = 'aws'
 
     image_info_class = AWSPoolImageInfo
     flavor_info_class = AWSFlavor
     pool_data_class = AWSPoolData
 
-    def __init__(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        poolname: str,
-        pool_config: Dict[str, Any]
-    ) -> None:
+    datetime_format = AWS_DATETIME_FORMAT
+
+    _image_map_hook_name = 'AWS_ENVIRONMENT_TO_IMAGE'
+
+    def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str, pool_config: dict[str, Any]) -> None:
         super().__init__(logger, poolname, pool_config)
         self.environ = {
             **os.environ,
-            "AWS_ACCESS_KEY_ID": self.pool_config['access-key-id'],
-            "AWS_SECRET_ACCESS_KEY": self.pool_config['secret-access-key'],
-            "AWS_DEFAULT_REGION": self.pool_config['default-region'],
-            "AWS_DEFAULT_OUTPUT": 'json'
+            'AWS_ACCESS_KEY_ID': self.pool_config['access-key-id'],
+            'AWS_SECRET_ACCESS_KEY': self.pool_config['secret-access-key'],
+            'AWS_DEFAULT_REGION': self.pool_config['default-region'],
+            'AWS_DEFAULT_OUTPUT': 'json',
         }
 
-    # TODO: return value does not match supertype - it should, it does, but mypy ain't happy: why?
     @property
-    def image_info_mapper(self) -> AWSHookImageInfoMapper:  # type: ignore[override]  # does not match supertype
-        return AWSHookImageInfoMapper(self, 'AWS_ENVIRONMENT_TO_IMAGE')
+    def _image_owners(self) -> list[str]:
+        return cast(list[str], self.pool_config.get('image-owners', ['self']))
 
     @property
-    def _image_owners(self) -> List[str]:
-        return cast(
-            List[str],
-            self.pool_config.get('image-owners', ['self'])
-        )
+    def _pool_security_groups(self) -> list[str]:
+        """Get security groups from pool config as a list."""
+        security_group_config = self.pool_config.get('security-group', [])
+
+        if isinstance(security_group_config, list):
+            return security_group_config
+
+        return [security_group_config]
 
     @property
     def use_public_ip(self) -> bool:
         return normalize_bool_option(self.pool_config.get('use-public-ip', False))
 
-    def adjust_capabilities(self, capabilities: PoolCapabilities) -> Result[PoolCapabilities, Failure]:
+    @classmethod
+    def timestamp_to_datetime(cls, timestamp: str) -> Result[datetime.datetime, Failure]:
+        try:
+            return Ok(datetime.datetime.strptime(timestamp, AWS_DATETIME_FORMAT))
+        except Exception as exc:
+            return Error(
+                Failure.from_exc(
+                    'failed to parse timestamp', exc, timestamp=timestamp, strptime_format=AWS_DATETIME_FORMAT
+                )
+            )
+
+    def _query_backend_flavors(self, logger: gluetool.log.ContextAdapter) -> _Result[list[BackendFlavor], Failure]:
+        r_raw_flavors = self._aws_command(
+            ['ec2', 'describe-instance-types'], key='InstanceTypes', commandname='aws.ec2-describe-instance-types'
+        )
+
+        if r_raw_flavors.is_error:
+            return _Error(r_raw_flavors.unwrap_error())
+
+        return _Ok(cast(list[BackendFlavor], r_raw_flavors.unwrap()))
+
+    # ignore[override]: mismatch with PoolImageInfoT in the parent, will be resolved with later patches focusing on
+    # the deduplication.
+    def _guest_request_to_image_or_none(  # type: ignore[override]
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+    ) -> Result[list[AWSPoolImageInfo], Failure]:
+        r_images: Result[list[AWSPoolImageInfo], Failure] = super()._guest_request_to_image_or_none(
+            logger, session, guest_request
+        )
+
+        if r_images.is_error:
+            return r_images
+
+        images = r_images.unwrap()
+
+        # console/URL logs require ENA support
+        if guest_request.requests_guest_log('console:interactive', GuestLogContentType.URL):
+            images = list(
+                logging_filter(
+                    logger,
+                    images,
+                    'console.interactive requires image ENA support',
+                    lambda logger, image: image.ena_support,
+                )
+            )
+
+        return Ok(images)
+
+    def adjust_capabilities(self, capabilities: PoolCapabilities) -> _Result[PoolCapabilities, Failure]:
         capabilities.supports_hostnames = False
         capabilities.supports_native_post_install_script = True
         capabilities.supported_guest_logs = [
             ('console:dump', GuestLogContentType.BLOB),
-            ('console:interactive', GuestLogContentType.URL)
+            ('console:interactive', GuestLogContentType.URL),
         ]
 
-        return Ok(capabilities)
+        return _Ok(capabilities)
 
-    def release_pool_resources(
+    def list_images(
         self,
         logger: gluetool.log.ContextAdapter,
-        raw_resource_ids: SerializedPoolResourcesIDs
-    ) -> Result[None, Failure]:
+        filters: Optional[ConfigImageFilter] = None,  # type: ignore[override]
+    ) -> Result[list[PoolImageInfo], Failure]:
+        """
+        This method will issue a cloud guest list command and return a list of pool image info objects for this
+        particular cloud.
+        Filters argument contains optional filtering options to be applied on the cloud side.
+        """
+        raw_images: list[APIImageType] = []
+        cli_options = ['ec2', 'describe-images']
+        filters = filters or {}
+
+        if 'owner' in filters:
+            cli_options += ['--owners', filters['owner']]
+        else:
+            cli_options += ['--owners', 'self']
+
+        if 'name-wildcard' in filters:
+            cli_options += ['--filter', f'Name=name,Values={filters["name-wildcard"]}']
+
+        r_raw_images = self._aws_command(cli_options, key='Images', commandname='aws.ec2-describe-images')
+        if r_raw_images.is_error:
+            return Error(Failure.from_failure('failed to fetch image information', r_raw_images.unwrap_error()))
+
+        raw_images = cast(list[APIImageType], r_raw_images.unwrap())
+
+        def _from_raw_image(image: APIImageType) -> Result[PoolImageInfo, Failure]:
+            try:
+                aws_boot_mode = cast(Optional[str], JQ_QUERY_IMAGE_SUPPORTED_BOOT_MODE.input(image).first())
+
+            except Exception as exc:
+                return Error(Failure.from_exc('failed to parse AWS output', exc))
+
+            try:
+                arch = _aws_arch_to_arch(image['Architecture'])
+                created_at = self.timestamp_to_datetime(image['CreationDate'])
+                if created_at.is_error:
+                    return Error(
+                        Failure.from_failure(
+                            'Could not convert timestamp', created_at.unwrap_error(), image=image['ImageId']
+                        )
+                    )
+
+                return Ok(
+                    AWSPoolImageInfo(
+                        # .Name is optional and may be undefined or missing - use .ImageId in such a case
+                        name=image.get('Name') or image['ImageId'],
+                        id=image['ImageId'],
+                        arch=arch,
+                        boot=FlavorBoot(method=_aws_ami_boot_mode_to_boot_method(aws_boot_mode, arch))
+                        if aws_boot_mode is not None
+                        else FlavorBoot(),
+                        ssh=PoolImageSSHInfo(),
+                        supports_kickstart=False,
+                        platform_details=image['PlatformDetails'],
+                        block_device_mappings=image['BlockDeviceMappings'],
+                        # some AMI lack this field, and we need to make sure it's really a boolean, not `null` or
+                        # `None`
+                        ena_support=image.get('EnaSupport', False) or False,
+                        boot_mode=aws_boot_mode,
+                        created_at=created_at.unwrap(),
+                    )
+                )
+            except KeyError as exc:
+                return Error(Failure.from_exc('malformed image description', exc, image_info=image))
+
+        res = []
+        for image_raw in raw_images:
+            r_image = _from_raw_image(image_raw)
+            if r_image.is_error:
+                return Error(
+                    Failure.from_failure(
+                        'Failed converting image data to a PoolImageInfo object', r_image.unwrap_error()
+                    )
+                )
+            res.append(r_image.unwrap())
+
+        return Ok(res)
+
+    def release_pool_resources(
+        self, logger: gluetool.log.ContextAdapter, raw_resource_ids: SerializedPoolResourcesIDs
+    ) -> Result[ReleasePoolResourcesState, Failure]:
         resource_ids = AWSPoolResourcesIDs.unserialize_from_json(raw_resource_ids)
 
         if resource_ids.spot_instance_id is not None:
-            r_output = self._aws_command([
-                'ec2', 'cancel-spot-instance-requests',
-                f'--spot-instance-request-ids={resource_ids.spot_instance_id}'
-            ], commandname='aws.ec2-cancel-spot-instance-requests')
+            r_output = self._aws_command(
+                [
+                    'ec2',
+                    'cancel-spot-instance-requests',
+                    f'--spot-instance-request-ids={resource_ids.spot_instance_id}',
+                ],
+                commandname='aws.ec2-cancel-spot-instance-requests',
+            )
 
             if r_output.is_error:
-                return Error(Failure.from_failure(
-                    'failed to cancel spot instance request',
-                    r_output.unwrap_error()
-                ))
+                return Error(Failure.from_failure('failed to cancel spot instance request', r_output.unwrap_error()))
 
             self.inc_costs(logger, ResourceType.VIRTUAL_MACHINE, resource_ids.ctime)
 
         if resource_ids.instance_id is not None:
-            r_output = self._aws_command([
-                'ec2', 'terminate-instances',
-                f'--instance-ids={resource_ids.instance_id}'
-            ], commandname='aws.ec2-terminate-instances')
+            r_output = self._aws_command(
+                ['ec2', 'terminate-instances', f'--instance-ids={resource_ids.instance_id}'],
+                commandname='aws.ec2-terminate-instances',
+            )
 
             if r_output.is_error:
-                return Error(Failure.from_failure(
-                    'failed to terminate instance',
-                    r_output.unwrap_error()
-                ))
+                return Error(Failure.from_failure('failed to terminate instance', r_output.unwrap_error()))
 
             self.inc_costs(logger, ResourceType.VIRTUAL_MACHINE, resource_ids.ctime)
 
         if resource_ids.security_group is not None:
-            r_output = self._aws_command(
+            r_check = self._aws_command(
                 [
-                    'ec2', 'delete-security-group',
-                    '--group-id', resource_ids.security_group
+                    'ec2',
+                    'describe-network-interfaces',
+                    '--filter',
+                    f'Name=group-id,Values={resource_ids.security_group}',
+                    '--query',
+                    'NetworkInterfaces[*].[NetworkInterfaceId]',
                 ],
+                commandname='aws.ec2-check-security-group-attached',
+            )
+
+            if r_check.is_error:
+                return Error(
+                    Failure.from_failure(
+                        'failed to check if security group is attached to a NIC', r_check.unwrap_error()
+                    )
+                )
+
+            if cast(list[Any], r_check.unwrap()):
+                # We have a VNIC still attached to the security group and have to wait for the VM to terminate fully
+                return Ok(ReleasePoolResourcesState.BLOCKED)
+
+            r_output = self._aws_command(
+                ['ec2', 'delete-security-group', '--group-id', resource_ids.security_group],
                 json_output=False,
-                commandname='aws.ec2-delete-security=group')
+                commandname='aws.ec2-delete-security-group',
+            )
 
             if r_output.is_error:
-                # If the error is here solely because security group has already been deleted -> do not treat this as
-                # a failure
-                reason = r_output.unwrap_error()
-                if 'InvalidGroup.NotFound' not in reason:
-                    return Error(Failure.from_failure(
-                        'failed to delete a guest security group',
-                        reason
-                    ))
+                return Error(Failure.from_failure('failed to delete a guest security group', r_output.unwrap_error()))
 
             self.inc_costs(logger, ResourceType.SECURITY_GROUP, resource_ids.ctime)
 
-        return Ok(None)
-
-    def can_acquire(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
-    ) -> Result[Tuple[bool, Optional[str]], Failure]:
-        r_answer = super().can_acquire(logger, session, guest_request)
-
-        if r_answer.is_error:
-            return Error(r_answer.unwrap_error())
-
-        if r_answer.unwrap()[0] is False:
-            return r_answer
-
-        # Disallow HW constraints the driver does not implement yet
-        if guest_request.environment.has_hw_constraints:
-            r_constraints = guest_request.environment.get_hw_constraints()
-
-            if r_constraints.is_error:
-                return Error(r_constraints.unwrap_error())
-
-        r_images = self.image_info_mapper.map_or_none(logger, guest_request)
-        if r_images.is_error:
-            return Error(r_images.unwrap_error())
-
-        images = r_images.unwrap()
-
-        if not images:
-            return Ok((False, 'compose not supported'))
-
-        pairs: List[Tuple[AWSPoolImageInfo, Flavor]] = []
-
-        for image in images:
-            r_type = self._env_to_instance_type_or_none(logger, session, guest_request, image)
-
-            if r_type.is_error:
-                return Error(r_type.unwrap_error())
-
-            flavor = r_type.unwrap()
-
-            if flavor is None:
-                continue
-
-            pairs.append((image, flavor))
-
-        if not pairs:
-            return Ok((False, 'no suitable image/flavor combination found'))
-
-        log_dict_yaml(logger.info, 'available image/flavor combinations', [
-            {
-                'flavor': flavor.serialize(),
-                'image': image.serialize()
-            } for image, flavor in pairs
-        ])
-
-        return Ok((True, None))
-
-    def map_image_name_to_image_info(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        imagename: str
-    ) -> Result[PoolImageInfo, Failure]:
-        return self._map_image_name_to_image_info_by_cache(logger, imagename)
+        return Ok(ReleasePoolResourcesState.RELEASED)
 
     def _filter_flavors_console_url_support(
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
-        image: AWSPoolImageInfo,
-        suitable_flavors: List[AWSFlavor]
-    ) -> List[AWSFlavor]:
+        image: PoolImageInfo,
+        suitable_flavors: list[AWSFlavor],
+    ) -> Result[list[AWSFlavor], Failure]:
         """
         Console/URL logs require ENA support
         """
 
         if not guest_request.requests_guest_log('console:interactive', GuestLogContentType.URL):
-            return suitable_flavors
+            return Ok(suitable_flavors)
 
-        return list(logging_filter(
-            logger,
-            suitable_flavors,
-            'console requires flavor ENA support',
-            lambda logger, flavor: flavor.ena_support in ('required', 'supported')
-        ))
+        return Ok(
+            list(
+                logging_filter(
+                    logger,
+                    suitable_flavors,
+                    'console requires flavor ENA support',
+                    lambda logger, flavor: flavor.ena_support in ('required', 'supported'),
+                )
+            )
+        )
 
     def _filter_flavors_image_ena_support(
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
-        image: AWSPoolImageInfo,
-        suitable_flavors: List[AWSFlavor]
-    ) -> List[AWSFlavor]:
+        image: PoolImageInfo,
+        suitable_flavors: list[AWSFlavor],
+    ) -> Result[list[AWSFlavor], Failure]:
         """
         Make sure that, if image does not support ENA, we drop all flavors that require the support
         """
 
-        if image.ena_support is True:
-            return suitable_flavors
+        if cast(AWSPoolImageInfo, image).ena_support is True:
+            return Ok(suitable_flavors)
 
-        return list(logging_filter(
-            logger,
-            suitable_flavors,
-            'image and flavor ENA compatibility',
-            lambda logger, flavor: flavor.ena_support != 'required'
-        ))
+        return Ok(
+            list(
+                logging_filter(
+                    logger,
+                    suitable_flavors,
+                    'image and flavor ENA compatibility',
+                    lambda logger, flavor: flavor.ena_support != 'required',
+                )
+            )
+        )
 
     def _filter_flavors_image_boot_method(
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
-        image: AWSPoolImageInfo,
-        suitable_flavors: List[AWSFlavor]
-    ) -> List[AWSFlavor]:
+        image: PoolImageInfo,
+        suitable_flavors: list[AWSFlavor],
+    ) -> Result[list[AWSFlavor], Failure]:
         """
         Make sure that, if image supports a particular boot method only, we drop all flavors that do not support it
         """
 
+        # When image does not specify its boot methods, allow all flavors. This should be increasingly rare condition,
+        # but the property is a list and it may be empty.
         if not image.boot.method:
-            return suitable_flavors
+            return Ok(suitable_flavors)
 
-        return list(logging_filter(
-            logger,
-            suitable_flavors,
-            'image boot method is supported',
-            lambda logger, flavor: any(method in flavor.boot.method for method in image.boot.method)
-        ))
+        # This is the basic filter: allow only flavors that support any of the image boot methods. When we are not
+        # needed to be picky, we will just make sure image and flavors can work together, nothing more.
+        def _basic_filter() -> Result[list[AWSFlavor], Failure]:
+            return Ok(
+                list(
+                    logging_filter(
+                        logger,
+                        suitable_flavors,
+                        'image boot method is supported',
+                        lambda logger, flavor: any(method in flavor.boot.method for method in image.boot.method),
+                    )
+                )
+            )
 
-    def _filter_flavors_hw_constraints(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        image: AWSPoolImageInfo,
-        suitable_flavors: List[AWSFlavor]
-    ) -> List[AWSFlavor]:
+        # When the guest request has no HW requirement at all, use the basic filter.
+        if not guest_request.environment.has_hw_constraints:
+            return _basic_filter()
+
         r_constraints = guest_request.environment.get_hw_constraints()
 
         if r_constraints.is_error:
-            r_constraints.unwrap_error().handle(logger)
-
-            return []
+            return Error(r_constraints.unwrap_error())
 
         constraints = r_constraints.unwrap()
 
+        # When the guest request has no HW requirement at all, use the basic filter.
         if constraints is None:
-            return suitable_flavors
+            return _basic_filter()
+
+        # When the guest has HW requirements, but no boot.method ones, use the basic filter.
+        r_has_boot_constraint = constraints.uses_constraint(logger, 'boot.method')
+
+        if r_has_boot_constraint.is_error:
+            return Error(r_has_boot_constraint.unwrap_error())
+
+        if not r_has_boot_constraint.unwrap():
+            return _basic_filter()
 
         def _boot_method_requested(logger: ContextAdapter, flavor: AWSFlavor) -> bool:
-            r_span = _get_constraint_span(logger, guest_request, image, flavor)
+            # Focus on the default, selected span of constraints.
+            r_span = _get_constraint_span(logger, guest_request, flavor)
 
             if r_span.is_error:
                 r_span.unwrap_error().handle(logger)
@@ -1675,218 +1861,116 @@ class AWSDriver(PoolDriver):
 
             span = r_span.unwrap()
 
-            if not span:
+            # Collect boot.method constraints - it's pointless to consider other constraints.
+            boot_method_constraints = [
+                constraint
+                for constraint in span
+                if constraint.expand_name().property == 'boot' and constraint.expand_name().child_property == 'method'
+            ]
+
+            # This may still happen: we did check whether HW requirements contain any boot.method requirement, and they
+            # did, otherwise we wouldn't be here. Finding no such constraint in the span means these constraints are not
+            # compatible with the flavor, and therefore the flavor is not suitable at all.
+            if not boot_method_constraints:
                 return False
 
-            for constraint in span:
-                property_name, _, child_property, _ = constraint.expand_name()
+            # Construct the "needle", and peek into our master table whether it's there. Note that the needle contains
+            # the "allowed" flag as the last item. Master table contains all combinations, even disallowed ones.
+            needle = (
+                ', '.join(sorted(image.boot.method)),
+                ', '.join(sorted(flavor.boot.method)),
+                f'{boot_method_constraints[0].operator.value} {boot_method_constraints[0].value}',
+                # The combination must be marked as allowed.
+                True,
+            )
 
-                if property_name == 'boot' and child_property == 'method':
-                    if constraint.operator == Operator.CONTAINS:
-                        return constraint.value in (image.boot.method + flavor.boot.method)
+            logger.debug(f'boot method needle: {needle}')
 
-                    if constraint.operator == Operator.NOTCONTAINS:
-                        return constraint.value not in (image.boot.method + flavor.boot.method)
+            return needle in _AWS_BOOT_MODE_MATRIX
 
-                    return False
+        return Ok(
+            list(
+                logging_filter(
+                    logger,
+                    suitable_flavors,
+                    'image and flavor boot methods combine into the requested guest boot method',
+                    _boot_method_requested,
+                )
+            )
+        )
 
-            # There was no constraint related to boot method, otherwise we wouldn't be at this point. Which means,
-            # boot method has not been requested, and therefore it does not matter.
-            return True
-
-        return list(logging_filter(
-            logger,
-            suitable_flavors,
-            'requested boot method is supported by image and flavor',
-            _boot_method_requested
-        ))
-
-    def _env_to_instance_type_or_none(
+    def _guest_request_to_flavor_or_none(
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
-        image: AWSPoolImageInfo
+        image: AWSPoolImageInfo,
     ) -> Result[Optional[AWSFlavor], Failure]:
-        r_suitable_flavors = self._map_environment_to_flavor_info_by_cache_by_constraints(
-            logger,
-            guest_request.environment
-        )
-
-        if r_suitable_flavors.is_error:
-            return Error(r_suitable_flavors.unwrap_error())
-
-        suitable_flavors = cast(List[AWSFlavor], r_suitable_flavors.unwrap())
-
-        suitable_flavors = self.filter_flavors_image_arch(
+        return self._do_guest_request_to_flavor_or_none(
             logger,
             session,
             guest_request,
             image,
-            suitable_flavors
+            self._filter_flavors_image_arch,
+            self._filter_flavors_console_url_support,
+            self._filter_flavors_image_ena_support,
+            self._filter_flavors_image_boot_method,
+            self._filter_flavors_prefer_default_flavor,
+            self._filter_flavors_default_fallback,
         )
 
-        suitable_flavors = self._filter_flavors_console_url_support(
-            logger,
-            session,
-            guest_request,
-            image,
-            suitable_flavors
-        )
-
-        suitable_flavors = self._filter_flavors_image_ena_support(
-            logger,
-            session,
-            guest_request,
-            image,
-            suitable_flavors
-        )
-
-        suitable_flavors = self._filter_flavors_image_boot_method(
-            logger,
-            session,
-            guest_request,
-            image,
-            suitable_flavors
-        )
-
-        # Make sure the image and flavor support requested HW
-        if guest_request.environment.has_hw_constraints:
-            suitable_flavors = self._filter_flavors_hw_constraints(
-                logger,
-                session,
-                guest_request,
-                image,
-                suitable_flavors
-            )
-
-        if not suitable_flavors:
-            if self.pool_config.get('use-default-flavor-when-no-suitable', True):
-                guest_request.log_warning_event(
-                    logger,
-                    session,
-                    'no suitable flavors, using default',
-                    poolname=self.poolname
-                )
-
-                r_default_flavor = self._map_environment_to_flavor_info_by_cache_by_name_or_none(
-                    logger,
-                    self.pool_config['default-instance-type']
-                )
-
-                if r_default_flavor.is_error:
-                    return Error(r_default_flavor.unwrap_error())
-
-                return Ok(cast(AWSFlavor, r_default_flavor.unwrap()))
-
-            guest_request.log_warning_event(
-                logger,
-                session,
-                'no suitable flavors',
-                poolname=self.poolname
-            )
-
-            return Ok(None)
-
-        if self.pool_config['default-instance-type'] in [flavor.name for flavor in suitable_flavors]:
-            logger.info('default flavor among suitable ones, using it')
-
-            return Ok([
-                flavor
-                for flavor in suitable_flavors
-                if flavor.name == self.pool_config['default-instance-type']
-            ][0])
-
-        return Ok(suitable_flavors[0])
-
-    def _env_to_instance_type(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        image: AWSPoolImageInfo
-    ) -> Result[AWSFlavor, Failure]:
-        r_flavor = self._env_to_instance_type_or_none(logger, session, guest_request, image)
-
-        if r_flavor.is_error:
-            return Error(r_flavor.unwrap_error())
-
-        flavor = r_flavor.unwrap()
-
-        if flavor is None:
-            return Error(Failure('no suitable flavor'))
-
-        return Ok(flavor)
-
-    def _describe_instance(
-        self,
-        guest_request: GuestRequest
-    ) -> Result[InstanceOwnerType, Failure]:
-
+    def _describe_instance(self, guest_request: GuestRequest) -> Result[InstanceOwnerType, Failure]:
         aws_options = [
             'ec2',
             'describe-instances',
-            f'--instance-id={AWSPoolData.unserialize(guest_request).instance_id}'
+            f'--instance-id={guest_request.pool_data.mine(self, AWSPoolData).instance_id}',
         ]
 
         r_output = self._aws_command(aws_options, key='Reservations', commandname='aws.ec2-describe-instances')
 
         # command returned an unxpected result
         if r_output.is_error:
-            return Error(Failure.from_failure(
-                'failed to fetch instance information',
-                r_output.unwrap_error()
-            ))
+            return Error(Failure.from_failure('failed to fetch instance information', r_output.unwrap_error()))
 
             return Error(r_output.unwrap_error())
 
-        output = cast(List[Dict[str, Any]], r_output.unwrap())
+        output = cast(list[dict[str, Any]], r_output.unwrap())
 
         # get instance info from command output
         try:
             instance = output[0]['Instances'][0]
             owner = output[0]['OwnerId']
         except (KeyError, IndexError) as error:
-            return Error(
-                Failure.from_exc(
-                    'Failed to parse instance from output',
-                    error,
-                    output=output
-                )
-            )
+            return Error(Failure.from_exc('Failed to parse instance from output', error, output=output))
 
         return Ok((instance, owner))
 
-    def _describe_spot_instance(
-        self,
-        guest_request: GuestRequest
-    ) -> Result[Dict[str, Any], Failure]:
+    def _describe_spot_instance(self, guest_request: GuestRequest) -> Result[dict[str, Any], Failure]:
         aws_options = [
             'ec2',
             'describe-spot-instance-requests',
-            f'--spot-instance-request-ids={AWSPoolData.unserialize(guest_request).spot_instance_id}'
+            f'--spot-instance-request-ids={guest_request.pool_data.mine(self, AWSPoolData).spot_instance_id}',
         ]
 
         r_output = self._aws_command(
-            aws_options,
-            key='SpotInstanceRequests',
-            commandname='aws.ec2-describe-spot-instance-requests'
+            aws_options, key='SpotInstanceRequests', commandname='aws.ec2-describe-spot-instance-requests'
         )
 
         if r_output.is_error:
-            return Error(Failure.from_failure(
-                'failed to fetch spot instance request information',
-                r_output.unwrap_error()
-            ))
+            return Error(
+                Failure.from_failure('failed to fetch spot instance request information', r_output.unwrap_error())
+            )
 
-        return Ok(cast(List[Dict[str, Any]], r_output.unwrap())[0])
+        return Ok(cast(list[dict[str, Any]], r_output.unwrap())[0])
 
     def _aws_command(
         self,
-        args: List[str],
+        args: list[str],
+        *,
         json_output: bool = True,
         key: Optional[str] = None,
-        commandname: Optional[str] = None
+        guestname: Optional[str] = None,
+        commandname: Optional[str] = None,
     ) -> Result[JSONType, Failure]:
         """
         Runs command via aws cli and returns a dictionary with command reply.
@@ -1895,16 +1979,17 @@ class AWSDriver(PoolDriver):
         :param str key: Optional key to return.
         """
 
-        command = [self.pool_config['command']] + args
+        command = [self.pool_config['command'], *args]
 
         r_run = run_cli_tool(
             self.logger,
             command,
             json_output=json_output,
             env=self.environ,
+            guestname=guestname,
             poolname=self.poolname,
             commandname=commandname,
-            cause_extractor=awscli_error_cause_extractor
+            cause_extractor=awscli_error_cause_extractor,
         )
 
         if r_run.is_error:
@@ -1915,10 +2000,14 @@ class AWSDriver(PoolDriver):
             if failure.command_output:
                 cause = awscli_error_cause_extractor(failure.command_output)
 
-                if cause in (AWSCLIErrorCauses.MISSING_INSTANCE, AWSCLIErrorCauses.MISSING_SPOT_INSTANCE_REQUEST):
+                if cause in (
+                    AWSErrorCauses.MISSING_INSTANCE,
+                    AWSErrorCauses.MISSING_SPOT_INSTANCE_REQUEST,
+                    AWSErrorCauses.MISSING_SECURITY_GROUP,
+                ):
                     failure.recoverable = False
 
-                    PoolMetrics.inc_error(self.poolname, cause.value)
+                    PoolMetrics.inc_error(self.poolname, cause)
 
             return Error(failure)
 
@@ -1931,72 +2020,73 @@ class AWSDriver(PoolDriver):
             return Ok(output.json)
 
         try:
-            return Ok(cast(Dict[str, Any], output.json)[key])
+            return Ok(cast(dict[str, Any], output.json)[key])
 
-        except KeyError:
-            return Error(Failure(
-                f"key '{key}' not found in CLI output",
-                command_output=output.process_output,
-                scrubbed_command=command
-            ))
+        except KeyError as exc:
+            return Error(
+                Failure.from_exc(
+                    f"key '{key}' not found in CLI output",
+                    exc,
+                    command_output=output.process_output,
+                    scrubbed_command=command,
+                )
+            )
 
     def _get_spot_price(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        instance_type: Flavor,
-        image: AWSPoolImageInfo
+        self, logger: gluetool.log.ContextAdapter, instance_type: Flavor, image: AWSPoolImageInfo
     ) -> Result[float, Failure]:
-
         availability_zone = self.pool_config['availability-zone']
 
-        r_spot_price = self._aws_command([
-            'ec2', 'describe-spot-price-history',
-            f'--instance-types={instance_type.id}',
-            f'--availability-zone={availability_zone}',
-            f'--product-descriptions={image.platform_details}',
-            '--max-items=1'
-        ], key='SpotPriceHistory', commandname='aws.ec2-describe-spot-price-history')
+        r_spot_price = self._aws_command(
+            [
+                'ec2',
+                'describe-spot-price-history',
+                f'--instance-types={instance_type.id}',
+                f'--availability-zone={availability_zone}',
+                f'--product-descriptions={image.platform_details}',
+                '--max-items=1',
+            ],
+            key='SpotPriceHistory',
+            commandname='aws.ec2-describe-spot-price-history',
+        )
 
         if r_spot_price.is_error:
-            return Error(Failure.from_failure(
-                'failed to fetch spot price history',
-                r_spot_price.unwrap_error()
-            ))
+            return Error(Failure.from_failure('failed to fetch spot price history', r_spot_price.unwrap_error()))
 
-        prices = cast(List[Dict[str, str]], r_spot_price.unwrap())
+        prices = cast(list[dict[str, str]], r_spot_price.unwrap())
 
         log_dict(logger.debug, 'spot prices', prices)
 
         try:
             current_price = float(prices[0]['SpotPrice'])
 
-        except (KeyError, IndexError):
-            PoolMetrics.inc_error(self.poolname, 'spot-price-not-detected')
+        except (KeyError, IndexError) as exc:
+            PoolMetrics.inc_error(self.poolname, AWSErrorCauses.SPOT_PRICE_NOT_DETECTED)
 
-            return Error(Failure('failed to detect spot price'))
+            return Error(Failure.from_exc('failed to detect spot price', exc))
 
         # we bid some % to the price
         price = current_price + current_price * (float(self.pool_config['spot-price-bid-percentage']) / 100.0)
 
         spot_price_bid_percentage = self.pool_config['spot-price-bid-percentage']
 
-        log_dict_yaml(logger.info, 'using spot price', {
-            'availability zone': self.pool_config['availability-zone'],
-            'current price': current_price,
-            'instance type': instance_type.serialize(),
-            'product description': image.platform_details,
-            'bid': f'{spot_price_bid_percentage}%',
-            'print': price
-        })
+        log_dict_yaml(
+            logger.info,
+            'using spot price',
+            {
+                'availability zone': self.pool_config['availability-zone'],
+                'current price': current_price,
+                'instance type': instance_type.serialize(),
+                'product description': image.platform_details,
+                'bid': f'{spot_price_bid_percentage}%',
+                'print': price,
+            },
+        )
 
         return Ok(price)
 
     def _create_block_device_mappings(
-        self,
-        logger: ContextAdapter,
-        guest_request: GuestRequest,
-        image: AWSPoolImageInfo,
-        flavor: Flavor
+        self, logger: ContextAdapter, guest_request: GuestRequest, image: AWSPoolImageInfo, flavor: Flavor
     ) -> Result[BlockDeviceMappings, Failure]:
         """
         Prepare block device mapping according to given flavor.
@@ -2014,14 +2104,10 @@ class AWSDriver(PoolDriver):
         default_root_disk_size: Optional[SizeType] = None
 
         if 'default-root-disk-size' in self.pool_config:
-            default_root_disk_size = UNITS.Quantity(self.pool_config["default-root-disk-size"], UNITS.gibibytes)
+            default_root_disk_size = UNITS.Quantity(self.pool_config['default-root-disk-size'], UNITS.gibibytes)
 
         return create_block_device_mappings(
-            logger,
-            guest_request,
-            image,
-            flavor,
-            default_root_disk_size=default_root_disk_size
+            logger, guest_request, image, flavor, default_root_disk_size=default_root_disk_size
         )
 
     def _create_network_interfaces(
@@ -2030,16 +2116,9 @@ class AWSDriver(PoolDriver):
         guest_request: GuestRequest,
         image: AWSPoolImageInfo,
         flavor: AWSFlavor,
-        security_groups: List[str]
+        security_groups: list[str],
     ) -> Result[NetworkInterfaces, Failure]:
-        return create_network_interfaces(
-            logger,
-            self,
-            guest_request,
-            image,
-            flavor,
-            security_groups
-        )
+        return create_network_interfaces(logger, self, guest_request, image, flavor, security_groups)
 
     def _create_user_data(
         self,
@@ -2053,11 +2132,8 @@ class AWSDriver(PoolDriver):
         return r_post_install_script.unwrap()
 
     def _assign_security_group_rules(
-        self,
-        logger: ContextAdapter,
-        guest_request: GuestRequest,
-        guest_security_group_id: str
-    ) -> Result[List[str], Failure]:
+        self, logger: ContextAdapter, guest_request: GuestRequest, guest_security_group_id: str
+    ) -> Result[list[str], Failure]:
         """
         Ideally there should be a dedicated stage in the artemis lifecycle, when upon startup the artemis config's
         security-group-rules are matched against existing rules in the security-group (with correction
@@ -2084,31 +2160,37 @@ class AWSDriver(PoolDriver):
 
         if not self.pool_config.get('security-group-rules') and self.pool_config.get('security-group'):
             # 2 security groups per guest case
-            res_security_groups.append(self.pool_config['security-group'])
+            res_security_groups.extend(self._pool_security_groups)
 
         if self.pool_config.get('security-group-rules'):
             # 1 security group per guest case, custom and pool merged into one secgroup
             r_rules_from_config = SecurityGroupRules.load_from_pool_config(self.pool_config['security-group-rules'])
             if r_rules_from_config.is_error:
-                return Error(Failure.from_failure('failed to load security group rules from pool config',
-                                                  r_rules_from_config.unwrap_error()))
+                return Error(
+                    Failure.from_failure(
+                        'failed to load security group rules from pool config', r_rules_from_config.unwrap_error()
+                    )
+                )
 
             guest_secgroup_rules.extend(r_rules_from_config.unwrap())
 
-        def _create_ip_permissions_payload(rules: List[SecurityGroupRule]) -> str:
+        def _create_ip_permissions_payload(rules: list[SecurityGroupRule]) -> str:
             ip_permissions = []
             for rule in rules:
-                ip_permissions.append({'IpProtocol': rule.protocol,
-                                       'FromPort': rule.port_min,
-                                       'ToPort': rule.port_max,
-                                       'Ipv6Ranges' if rule.is_ipv6 else 'IpRanges': [
-                                           {'CidrIpv6' if rule.is_ipv6 else 'CidrIp': rule.cidr}]
-                                       })
+                ip_permissions.append(
+                    {
+                        'IpProtocol': rule.protocol,
+                        'FromPort': rule.port_min,
+                        'ToPort': rule.port_max,
+                        'Ipv6Ranges' if rule.is_ipv6 else 'IpRanges': [
+                            {'CidrIpv6' if rule.is_ipv6 else 'CidrIp': rule.cidr}
+                        ],
+                    }
+                )
             return json.dumps(ip_permissions)
 
         # Update new security group with a proper set of rules
-        rules_map = {'ingress': guest_secgroup_rules.ingress,
-                     'egress': guest_secgroup_rules.egress}
+        rules_map = {'ingress': guest_secgroup_rules.ingress, 'egress': guest_secgroup_rules.egress}
 
         # NOTE(ivasilev) As we have to support both ipv4 and ipv6 can't use the comfort of --cidr passing as this
         # argument supports only ipv4 addresses, need to form --ip-permissions payload manually.
@@ -2117,82 +2199,131 @@ class AWSDriver(PoolDriver):
                 # No rules to apply, skipping
                 continue
 
-            r_update_sg_bulk = self._aws_command([
-                'ec2', f'authorize-security-group-{rule_type}',
-                '--group-id', guest_security_group_id,
-                '--ip-permissions', _create_ip_permissions_payload(rules)
-            ])
+            r_update_sg_bulk = self._aws_command(
+                [
+                    'ec2',
+                    f'authorize-security-group-{rule_type}',
+                    '--group-id',
+                    guest_security_group_id,
+                    '--ip-permissions',
+                    _create_ip_permissions_payload(rules),
+                ]
+            )
             if r_update_sg_bulk.is_error:
                 return Error(Failure.from_failure('failed to update security group', r_update_sg_bulk.unwrap_error()))
 
         return Ok(res_security_groups)
 
-    def _create_guest_security_group(
+    def _find_security_group_id(
+        self, logger: ContextAdapter, security_group: str, vpc: str
+    ) -> Result[Optional[str], Failure]:
+        r_security_group_info = self._aws_command(
+            [
+                'ec2',
+                'describe-security-groups',
+                '--filters',
+                f'Name=group-name,Values={security_group}',
+                f'Name=vpc-id,Values={vpc}',
+            ],
+            commandname='aws.ec2-describe-security-groups',
+        )
+
+        if r_security_group_info.is_error:
+            return Error(r_security_group_info.unwrap_error())
+
+        security_group_ids: list[str] = list(JQ_QUERY_SECURITY_GROUP_IDS.input(r_security_group_info.unwrap()).all())
+
+        if not security_group_ids:
+            return Ok(None)
+
+        return Ok(security_group_ids[0])
+
+    def _acquire_guest_security_group(
         self,
         logger: ContextAdapter,
         guest_request: GuestRequest,
-        tags: Dict[str, str],
-    ) -> Result[List[str], Failure]:
+        tags: dict[str, str],
+    ) -> Result[list[str], Failure]:
         # Get the name of the new group from the template
         r_security_group_template = KNOB_GUEST_SECURITY_GROUP_NAME_TEMPLATE.get_value(entityname=self.poolname)
         if r_security_group_template.is_error:
-            return Error(Failure('Could not get guest security group name template'))
+            return Error(
+                Failure.from_failure(
+                    'Could not get guest security group name template', r_security_group_template.unwrap_error()
+                )
+            )
 
         r_rendered = render_template(
             r_security_group_template.unwrap(),
             GUESTNAME=guest_request.guestname,
             ENVIRONMENT=guest_request.environment,
-            TAGS=tags
+            TAGS=tags,
         )
-        if r_security_group_template.is_error:
-            return Error(Failure('Could not render guest security group name template'))
+        if not is_successful(r_rendered):
+            return Error(
+                Failure.from_failure('Could not render guest security group name template', r_rendered.failure())
+            )
 
         security_group_name = r_rendered.unwrap()
 
         # Get the VPC id from the subnet-id, otherwise subsequent instance creation may fail with SG and subnet
         # not belonging to the same network
         r_subnet_details = self._aws_command(
-            [
-                'ec2', 'describe-subnets',
-                '--filters', f'Name=subnet-id,Values={self.pool_config["subnet-id"]}'
-            ],
-            key="Subnets", commandname='aws.ec2-describe-subnets'
+            ['ec2', 'describe-subnets', '--filters', f'Name=subnet-id,Values={self.pool_config["subnet-id"]}'],
+            key='Subnets',
+            commandname='aws.ec2-describe-subnets',
         )
 
         if r_subnet_details.is_error:
-            return Error(Failure.from_failure(
-                'failed to list subnet details, cannot retrieve VPC id',
-                r_subnet_details.unwrap_error()
-            ))
+            return Error(
+                Failure.from_failure(
+                    'failed to list subnet details, cannot retrieve VPC id', r_subnet_details.unwrap_error()
+                )
+            )
 
-        subnet_details = cast(List[Dict[str, str]], r_subnet_details.unwrap())
+        subnet_details = cast(list[dict[str, str]], r_subnet_details.unwrap())
         vpc_id = subnet_details[0]['VpcId']
 
-        # Create a new security group and retrieve it's id
-        r_create_sg = self._aws_command(
-            [
-                'ec2', 'create-security-group',
-                '--group-name', security_group_name,
-                '--description', 'Autocreated artemis guest security group',
-                '--vpc-id', vpc_id
-            ],
-            key='GroupId', commandname='aws.ec2-create-security-group'
-        )
+        r_security_group_id = self._find_security_group_id(logger, security_group_name, vpc_id)
 
-        if r_create_sg.is_error:
-            return Error(Failure.from_failure(
-                'failed to create a security group',
-                r_create_sg.unwrap_error()
-            ))
+        if r_security_group_id.is_error:
+            return Error(r_security_group_id.unwrap_error())
 
-        security_group_id = cast(str, r_create_sg.unwrap())
+        if r_security_group_id.unwrap():
+            security_group_id = r_security_group_id.unwrap()
+
+            assert security_group_id is not None
+
+        else:
+            command = [
+                'ec2',
+                'create-security-group',
+                '--group-name',
+                security_group_name,
+                '--description',
+                'Autocreated artemis guest security group',
+                '--vpc-id',
+                vpc_id,
+            ]
+
+            if tags:
+                command += ['--tag-specifications', *_tags_to_tag_specifications(tags, 'security-group')]
+
+            # Create a new security group and retrieve it's id
+            r_create_sg = self._aws_command(command, key='GroupId', commandname='aws.ec2-create-security-group')
+
+            if r_create_sg.is_error:
+                return Error(Failure.from_failure('failed to create a security group', r_create_sg.unwrap_error()))
+
+            security_group_id = cast(str, r_create_sg.unwrap())
 
         r_get_secgroups = self._assign_security_group_rules(logger, guest_request, security_group_id)
         if r_get_secgroups.is_error:
-            return Error(Failure.from_failure(
-                'failed to setup guest security group rules properly',
-                r_get_secgroups.unwrap_error()
-            ))
+            return Error(
+                Failure.from_failure(
+                    'failed to setup guest security group rules properly', r_get_secgroups.unwrap_error()
+                )
+            )
 
         # Finally return the ids of the future instance secgroups
         return Ok(r_get_secgroups.unwrap())
@@ -2203,13 +2334,8 @@ class AWSDriver(PoolDriver):
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         instance_type: AWSFlavor,
-        image: AWSPoolImageInfo
+        image: AWSPoolImageInfo,
     ) -> Result[ProvisioningProgress, Failure]:
-        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
-
-        if r_delay.is_error:
-            return Error(r_delay.unwrap_error())
-
         r_base_tags = self.get_guest_tags(logger, session, guest_request)
 
         if r_base_tags.is_error:
@@ -2220,28 +2346,52 @@ class AWSDriver(PoolDriver):
         # If create-security-group-per-guest is defined in the config then precreate a security group for each guest,
         # otherwise use the one from the security-group pool configuration
         if normalize_bool_option(self.pool_config.get('create-security-group-per-guest', False)):
-            r_create_guest_sg = self._create_guest_security_group(logger=logger,
-                                                                  guest_request=guest_request,
-                                                                  tags=tags)
+            r_create_guest_sg = self._acquire_guest_security_group(
+                logger=logger, guest_request=guest_request, tags=tags
+            )
             if r_create_guest_sg.is_error:
                 return Error(r_create_guest_sg.unwrap_error())
 
             security_group_ids = r_create_guest_sg.unwrap()
+
         else:
-            assert self.pool_config['security-group']
-            security_group_ids = [self.pool_config['security-group']]
+            security_group_ids = self._pool_security_groups
 
         logger.info(f'Using security groups {security_group_ids}')
 
         command = [
-            'ec2', 'run-instances',
-            '--image-id', image.id,
-            '--key-name', self.pool_config['master-key-name'],
-            '--instance-type', instance_type.id
+            'ec2',
+            'run-instances',
+            '--image-id',
+            image.id,
+            '--key-name',
+            self.pool_config['master-key-name'],
+            '--instance-type',
+            instance_type.id,
         ]
 
         if self.pool_config.get('expose-instance-tags-in-metadata', False):
             command += ['--metadata-options', 'InstanceMetadataTags=enabled']
+
+        # Check if confidential computing is requested
+        r_span = _get_constraint_span(logger, guest_request, instance_type)
+
+        if r_span.is_error:
+            return Error(r_span.unwrap_error())
+
+        span = r_span.unwrap()
+
+        confidential_computing_requested = False
+
+        for constraint in span:
+            property_name, _, child_property, _ = (constraint.original_constraint or constraint).expand_name()
+
+            if property_name == 'virtualization' and child_property == 'confidential':
+                confidential_computing_requested = constraint.value is True
+                break
+
+        if confidential_computing_requested:
+            command += ['--cpu-options', 'AmdSevSnp=enabled']
 
         if 'subnet-id' in self.pool_config:
             command.extend(['--subnet-id', self.pool_config['subnet-id']])
@@ -2251,37 +2401,27 @@ class AWSDriver(PoolDriver):
         if r_block_device_mappings.is_error:
             return Error(r_block_device_mappings.unwrap_error())
 
-        command.extend([
-            '--block-device-mappings',
-            r_block_device_mappings.unwrap().serialize_to_json()
-        ])
+        command.extend(['--block-device-mappings', r_block_device_mappings.unwrap().serialize_to_json()])
 
-        r_network_interfaces = self._create_network_interfaces(logger, guest_request, image, instance_type,
-                                                               security_group_ids)
+        r_network_interfaces = self._create_network_interfaces(
+            logger, guest_request, image, instance_type, security_group_ids
+        )
 
         if r_network_interfaces.is_error:
             return Error(r_network_interfaces.unwrap_error())
 
-        command.extend([
-            '--network-interfaces',
-            r_network_interfaces.unwrap().serialize_to_json()
-        ])
+        command.extend(['--network-interfaces', r_network_interfaces.unwrap().serialize_to_json()])
 
         user_data = self._create_user_data(logger, guest_request)
 
         if user_data:
-            command.extend([
-                '--user-data',
-                user_data
-            ])
+            command.extend(['--user-data', user_data])
 
         if 'additional-options' in self.pool_config:
             command.extend(self.pool_config['additional-options'])
 
         if tags:
-            command += [
-                '--tag-specifications'
-            ] + _tags_to_tag_specifications(tags, 'instance', 'volume')
+            command += ['--tag-specifications', *_tags_to_tag_specifications(tags, 'instance', 'volume')]
 
         # Note: this is actually not used for anything but logging alone. We re-use the spot template, the fields are
         # pretty much the same.
@@ -2294,7 +2434,7 @@ class AWSDriver(PoolDriver):
             security_groups=security_group_ids,
             user_data=_base64_encode(user_data) if user_data else '',
             network_interfaces=r_network_interfaces.unwrap().serialize(),
-            block_device_mappings=r_block_device_mappings.unwrap().serialize()
+            block_device_mappings=r_block_device_mappings.unwrap().serialize(),
         )
 
         log_dict_yaml(logger.info, 'non-spot request launch specification', json.loads(specification))
@@ -2302,32 +2442,32 @@ class AWSDriver(PoolDriver):
         r_instance_request = self._aws_command(command, key='Instances', commandname='aws.ec2-run-instances')
 
         if r_instance_request.is_error:
-            return Error(Failure.from_failure(
-                'failed to start instance',
-                r_instance_request.unwrap_error()
-            ))
+            return Error(Failure.from_failure('failed to start instance', r_instance_request.unwrap_error()))
 
-        instance_request = cast(List[Dict[str, str]], r_instance_request.unwrap())
+        instance_request = cast(list[dict[str, str]], r_instance_request.unwrap())
 
         try:
             instance_id = instance_request[0]['InstanceId']
-        except (KeyError, IndexError):
-            return Error(Failure('Failed to find InstanceID in aws output', output=instance_request))
+        except (KeyError, IndexError) as exc:
+            return Error(Failure.from_exc('Failed to find InstanceID in aws output', exc, output=instance_request))
 
         # instance state is "pending" after launch
         # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-lifecycle.html
         logger.info(f'current instance state {instance_id}:pending')
 
         # There is no chance that the guest will be ready in this step
-        return Ok(ProvisioningProgress(
-            state=ProvisioningState.PENDING,
-            pool_data=AWSPoolData(
-                instance_id=instance_id,
-                security_group=(security_group_ids[0]
-                                if security_group_ids[0] != self.pool_config.get('security-group') else None)),
-            delay_update=r_delay.unwrap(),
-            ssh_info=image.ssh
-        ))
+        return Ok(
+            ProvisioningProgress(
+                state=ProvisioningState.PENDING,
+                pool_data=AWSPoolData(
+                    instance_id=instance_id,
+                    security_group=(
+                        security_group_ids[0] if security_group_ids[0] not in self._pool_security_groups else None
+                    ),
+                ),
+                ssh_info=image.ssh,
+            )
+        )
 
     def _request_spot_instance(
         self,
@@ -2335,13 +2475,8 @@ class AWSDriver(PoolDriver):
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         instance_type: AWSFlavor,
-        image: AWSPoolImageInfo
+        image: AWSPoolImageInfo,
     ) -> Result[ProvisioningProgress, Failure]:
-        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
-
-        if r_delay.is_error:
-            return Error(r_delay.unwrap_error())
-
         r_base_tags = self.get_guest_tags(logger, session, guest_request)
 
         if r_base_tags.is_error:
@@ -2352,16 +2487,16 @@ class AWSDriver(PoolDriver):
         # If create-security-group-per-guest is defined in the config then precreate a security group for each guest,
         # otherwise use the one from the security-group pool configuration
         if normalize_bool_option(self.pool_config.get('create-security-group-per-guest', False)):
-            r_create_guest_sg = self._create_guest_security_group(logger=logger,
-                                                                  guest_request=guest_request,
-                                                                  tags=tags)
+            r_create_guest_sg = self._acquire_guest_security_group(
+                logger=logger, guest_request=guest_request, tags=tags
+            )
             if r_create_guest_sg.is_error:
                 return Error(r_create_guest_sg.unwrap_error())
 
             security_group_ids = r_create_guest_sg.unwrap()
+
         else:
-            assert self.pool_config['security-group']
-            security_group_ids = [self.pool_config['security-group']]
+            security_group_ids = self._pool_security_groups
 
         logger.info(f'Using security groups {security_group_ids}')
 
@@ -2378,8 +2513,9 @@ class AWSDriver(PoolDriver):
         if r_block_device_mappings.is_error:
             return Error(r_block_device_mappings.unwrap_error())
 
-        r_network_interfaces = self._create_network_interfaces(logger, guest_request, image, instance_type,
-                                                               security_group_ids)
+        r_network_interfaces = self._create_network_interfaces(
+            logger, guest_request, image, instance_type, security_group_ids
+        )
 
         if r_network_interfaces.is_error:
             return Error(r_network_interfaces.unwrap_error())
@@ -2395,60 +2531,52 @@ class AWSDriver(PoolDriver):
             security_group=security_group_ids,
             user_data=_base64_encode(user_data) if user_data else '',
             network_interfaces=r_network_interfaces.unwrap().serialize(),
-            block_device_mappings=r_block_device_mappings.unwrap().serialize()
+            block_device_mappings=r_block_device_mappings.unwrap().serialize(),
         )
 
         log_dict_yaml(logger.info, 'spot request launch specification', json.loads(specification))
 
         command = [
-            'ec2', 'request-spot-instances',
+            'ec2',
+            'request-spot-instances',
             f'--spot-price={spot_price}',
-            f'--launch-specification={" ".join(specification.split())}'
+            f'--launch-specification={" ".join(specification.split())}',
         ]
 
         if tags:
-            command += [
-                '--tag-specifications'
-            ] + _tags_to_tag_specifications(tags, 'spot-instances-request')
+            command += ['--tag-specifications', *_tags_to_tag_specifications(tags, 'spot-instances-request')]
 
         r_spot_request = self._aws_command(
-            command,
-            key='SpotInstanceRequests',
-            commandname='aws.ec2-request-spot-instances'
+            command, key='SpotInstanceRequests', commandname='aws.ec2-request-spot-instances'
         )
 
         if r_spot_request.is_error:
-            return Error(Failure.from_failure(
-                'failed to request spot instance',
-                r_spot_request.unwrap_error()
-            ))
+            return Error(Failure.from_failure('failed to request spot instance', r_spot_request.unwrap_error()))
 
-        spot_instance_id = cast(List[Dict[str, str]], r_spot_request.unwrap())[0]['SpotInstanceRequestId']
+        spot_instance_id = cast(list[dict[str, str]], r_spot_request.unwrap())[0]['SpotInstanceRequestId']
 
         # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/spot-request-status.html
         logger.info(f'current spot instance request state {spot_instance_id}:open:pending-evaluation')
 
-        return Ok(ProvisioningProgress(
-            state=ProvisioningState.PENDING,
-            pool_data=AWSPoolData(
-                spot_instance_id=spot_instance_id,
-                security_group=(security_group_ids[0]
-                                if security_group_ids[0] != self.pool_config.get('security-group') else None)),
-            delay_update=r_delay.unwrap(),
-            ssh_info=image.ssh
-        ))
+        return Ok(
+            ProvisioningProgress(
+                state=ProvisioningState.PENDING,
+                pool_data=AWSPoolData(
+                    spot_instance_id=spot_instance_id,
+                    security_group=(
+                        security_group_ids[0] if security_group_ids[0] not in self._pool_security_groups else None
+                    ),
+                ),
+                ssh_info=image.ssh,
+            )
+        )
 
     def _do_update_spot_instance(
         self,
         logger: gluetool.log.ContextAdapter,
         guest_request: GuestRequest,
     ) -> Result[ProvisioningProgress, Failure]:
-        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
-
-        if r_delay.is_error:
-            return Error(r_delay.unwrap_error())
-
-        pool_data = AWSPoolData.unserialize(guest_request)
+        pool_data = guest_request.pool_data.mine(self, AWSPoolData)
 
         assert pool_data.spot_instance_id is not None
 
@@ -2465,49 +2593,52 @@ class AWSDriver(PoolDriver):
         logger.info(f'current spot instance request state {pool_data.spot_instance_id}:{state}:{status}')
 
         if status == 'fulfilled' and state == 'active':
-            return Ok(ProvisioningProgress(
-                state=ProvisioningState.PENDING,
-                pool_data=AWSPoolData(
-                    instance_id=spot_instance['InstanceId'],
-                    spot_instance_id=pool_data.spot_instance_id,
-                    security_group=pool_data.security_group
-                ),
-                delay_update=r_delay.unwrap()
-            ))
+            return Ok(
+                ProvisioningProgress(
+                    state=ProvisioningState.PENDING,
+                    pool_data=AWSPoolData(
+                        instance_id=spot_instance['InstanceId'],
+                        spot_instance_id=pool_data.spot_instance_id,
+                        security_group=pool_data.security_group,
+                    ),
+                )
+            )
 
-        if state == 'open':
-            if is_old_enough(logger, spot_instance['CreateTime'], KNOB_SPOT_OPEN_TIMEOUT.value):
-                PoolMetrics.inc_error(self.poolname, 'instance-building-too-long')
+        if state == 'open':  # noqa: SIM102
+            if is_old_enough(spot_instance['CreateTime'], KNOB_SPOT_OPEN_TIMEOUT.value):
+                PoolMetrics.inc_error(self.poolname, AWSErrorCauses.INSTANCE_BUILDING_TOO_LONG)
 
-                return Ok(ProvisioningProgress(
-                    state=ProvisioningState.CANCEL,
-                    pool_data=AWSPoolData.unserialize(guest_request),
-                    pool_failures=[Failure('spot instance stuck in "open" for too long')]
-                ))
+                return Ok(
+                    ProvisioningProgress(
+                        state=ProvisioningState.CANCEL,
+                        pool_data=guest_request.pool_data.mine(self, AWSPoolData),
+                        pool_failures=[Failure('spot instance stuck in "open" for too long')],
+                    )
+                )
 
         if state in ('cancelled', 'failed', 'closed', 'disabled'):
-            PoolMetrics.inc_error(self.poolname, 'spot-instance-terminated-prematurely')
+            PoolMetrics.inc_error(self.poolname, AWSErrorCauses.SPOT_INSTANCE_TERMINATED_PREMATURELY)
 
             spot_instance_fault = spot_instance.get('Fault', {})
 
-            return Ok(ProvisioningProgress(
-                state=ProvisioningState.CANCEL,
-                pool_data=AWSPoolData.unserialize(guest_request),
-                pool_failures=[Failure(
-                    'spot instance terminated prematurely',
-                    spot_instance_state=state,
-                    spot_instance_status=status,
-                    spot_instance_error=spot_instance['Status']['Message'],
-                    spot_instance_error_code=spot_instance_fault.get('Code'),
-                    spot_instance_error_detail=spot_instance_fault.get('Message')
-                )]
-            ))
+            return Ok(
+                ProvisioningProgress(
+                    state=ProvisioningState.CANCEL,
+                    pool_data=guest_request.pool_data.mine(self, AWSPoolData),
+                    pool_failures=[
+                        Failure(
+                            'spot instance terminated prematurely',
+                            spot_instance_state=state,
+                            spot_instance_status=status,
+                            spot_instance_error=spot_instance['Status']['Message'],
+                            spot_instance_error_code=spot_instance_fault.get('Code'),
+                            spot_instance_error_detail=spot_instance_fault.get('Message'),
+                        )
+                    ],
+                )
+            )
 
-        return Ok(ProvisioningProgress(
-            state=ProvisioningState.PENDING,
-            pool_data=pool_data,
-            delay_update=r_delay.unwrap()
-        ))
+        return Ok(ProvisioningProgress(state=ProvisioningState.PENDING, pool_data=pool_data))
 
     def _do_update_instance(
         self,
@@ -2515,21 +2646,16 @@ class AWSDriver(PoolDriver):
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
     ) -> Result[ProvisioningProgress, Failure]:
-        r_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.poolname)
-
-        if r_delay.is_error:
-            return Error(r_delay.unwrap_error())
-
         r_output = self._describe_instance(guest_request)
 
         if r_output.is_error:
             return Error(r_output.unwrap_error())
 
-        instance, owner = r_output.unwrap()
+        instance, _ = r_output.unwrap()
 
         state = instance['State']['Name']
 
-        pool_data = AWSPoolData.unserialize(guest_request)
+        pool_data = guest_request.pool_data.mine(self, AWSPoolData)
 
         assert pool_data.instance_id is not None
 
@@ -2539,29 +2665,29 @@ class AWSDriver(PoolDriver):
         # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-lifecycle.html
 
         if state == 'terminated' or state == 'shutting-down':
-            PoolMetrics.inc_error(self.poolname, 'instance-terminated-prematurely')
+            PoolMetrics.inc_error(self.poolname, AWSErrorCauses.INSTANCE_TERMINATED_PREMATURELY)
 
-            return Ok(ProvisioningProgress(
-                state=ProvisioningState.CANCEL,
-                pool_data=AWSPoolData.unserialize(guest_request),
-                pool_failures=[Failure('instance terminated prematurely')]
-            ))
+            return Ok(
+                ProvisioningProgress(
+                    state=ProvisioningState.CANCEL,
+                    pool_data=guest_request.pool_data.mine(self, AWSPoolData),
+                    pool_failures=[Failure('instance terminated prematurely')],
+                )
+            )
 
         if state == 'pending':
-            if is_old_enough(logger, instance['LaunchTime'], KNOB_PENDING_TIMEOUT.value):
-                PoolMetrics.inc_error(self.poolname, 'instance-building-too-long')
+            if is_old_enough(instance['LaunchTime'], KNOB_PENDING_TIMEOUT.value):
+                PoolMetrics.inc_error(self.poolname, AWSErrorCauses.INSTANCE_BUILDING_TOO_LONG)
 
-                return Ok(ProvisioningProgress(
-                    state=ProvisioningState.CANCEL,
-                    pool_data=AWSPoolData.unserialize(guest_request),
-                    pool_failures=[Failure('instance stuck in "pending" for too long')]
-                ))
+                return Ok(
+                    ProvisioningProgress(
+                        state=ProvisioningState.CANCEL,
+                        pool_data=guest_request.pool_data.mine(self, AWSPoolData),
+                        pool_failures=[Failure('instance stuck in "pending" for too long')],
+                    )
+                )
 
-            return Ok(ProvisioningProgress(
-                state=ProvisioningState.PENDING,
-                pool_data=pool_data,
-                delay_update=r_delay.unwrap()
-            ))
+            return Ok(ProvisioningProgress(state=ProvisioningState.PENDING, pool_data=pool_data))
 
         # Once we have a working instance, we need to apply tags, because:
         #
@@ -2584,55 +2710,48 @@ class AWSDriver(PoolDriver):
             volume_ids = JQ_QUERY_EBS_VOLUME_IDS.input(instance).all()
 
         except Exception as exc:
-            return Error(Failure.from_exc(
-                'failed to parse AWS output',
-                exc
-            ))
+            return Error(Failure.from_exc('failed to parse AWS output', exc))
 
-        taggable_resource_ids = [pool_data.instance_id] + volume_ids
+        taggable_resource_ids = [pool_data.instance_id, *volume_ids]
 
         r_tag = self._tag_resources(taggable_resource_ids, tags)
 
         if r_tag.is_error:
-            return Error(Failure.from_failure(
-                'failed to tag resource',
-                r_tag.unwrap_error().update(
-                    tags=tags,
-                    resource_ids=taggable_resource_ids
+            return Error(
+                Failure.from_failure(
+                    'failed to tag resource', r_tag.unwrap_error().update(tags=tags, resource_ids=taggable_resource_ids)
                 )
-            ))
+            )
 
         if self.pool_config.get('expose-instance-tags-in-metadata', False):
-            r_enable_metadata = self._aws_command([
-                'ec2',
-                'modify-instance-metadata-options',
-                '--instance-id', pool_data.instance_id,
-                '--instance-metadata-tags', 'enabled'
-            ], json_output=False, commandname='aws.enable-instance-tags-in-metadata')
+            r_enable_metadata = self._aws_command(
+                [
+                    'ec2',
+                    'modify-instance-metadata-options',
+                    '--instance-id',
+                    pool_data.instance_id,
+                    '--instance-metadata-tags',
+                    'enabled',
+                ],
+                json_output=False,
+                commandname='aws.enable-instance-tags-in-metadata',
+            )
 
             if r_enable_metadata.is_error:
-                return Error(Failure.from_failure(
-                    'failed to enable instance tags in metadata',
-                    r_enable_metadata.unwrap_error()
-                ))
+                return Error(
+                    Failure.from_failure('failed to enable instance tags in metadata', r_enable_metadata.unwrap_error())
+                )
 
         address = instance['PrivateIpAddress']
         if self.use_public_ip:
             address = instance['PublicIpAddress']
 
-        return Ok(ProvisioningProgress(
-            state=ProvisioningState.COMPLETE,
-            pool_data=pool_data,
-            address=address
-        ))
+        return Ok(ProvisioningProgress(state=ProvisioningState.COMPLETE, pool_data=pool_data, address=address))
 
     def update_guest(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
-        pool_data = AWSPoolData.unserialize(guest_request)
+        pool_data = guest_request.pool_data.mine(self, AWSPoolData)
 
         # If there is a spot instance request, check its state. If it's complete, the pool data would be updated
         # with freshly known instance ID - next time we're asked for update, we would proceed to check the state
@@ -2644,10 +2763,7 @@ class AWSDriver(PoolDriver):
         return self._do_update_instance(logger, session, guest_request)
 
     def guest_watchdog(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[WatchdogState, Failure]:
         """
         Perform any periodic tasks the driver might need to apply while the request is in use.
@@ -2655,7 +2771,7 @@ class AWSDriver(PoolDriver):
         :param logger: logger to use for logging.
         :param guest_request: guest request to provision for.
         """
-        spot_instance_id = AWSPoolData.unserialize(guest_request).spot_instance_id
+        spot_instance_id = guest_request.pool_data.mine(self, AWSPoolData).spot_instance_id
         if spot_instance_id is None:
             # We are dealing with a non-spot instance that can't be terminated on demand by AWS
             return Ok(WatchdogState.COMPLETE)
@@ -2678,11 +2794,11 @@ class AWSDriver(PoolDriver):
             return Ok(WatchdogState.COMPLETE)
 
         if status == 'instance-terminated-no-capacity':
-            PoolMetrics.inc_error(self.poolname, 'spot-instance-terminated-no-capacity')
+            PoolMetrics.inc_error(self.poolname, AWSErrorCauses.SPOT_INSTANCE_TERMINATED_NO_CAPACITY)
         else:
             # All other transitions go here, including weird unexpected ones like
             # cancelled / request-canceled-and-instance-running)
-            PoolMetrics.inc_error(self.poolname, 'spot-instance-terminated-unexpectedly')
+            PoolMetrics.inc_error(self.poolname, AWSErrorCauses.SPOT_INSTANCE_TERMINATED_UNEXPECTEDLY)
 
         msg = 'spot instance terminated prematurely'
         guest_request.log_error_event(
@@ -2696,83 +2812,35 @@ class AWSDriver(PoolDriver):
                 spot_instance_state=state,
                 spot_instance_status=status,
                 spot_instance_error=spot_instance['Status']['Message'],
-            )
+            ),
         )
 
         # Nothing else to watch here, termination reported, we're done
         return Ok(WatchdogState.COMPLETE)
 
-    def _tag_resources(
-        self,
-        resource_ids: List[str],
-        tags: GuestTagsType
-    ) -> Result[JSONType, Failure]:
-        return self._aws_command([
-            'ec2',
-            'create-tags',
-            '--resources'
-        ] + resource_ids + [
-            '--tags'
-        ] + _serialize_tags(tags), json_output=False, commandname='aws.tag-resources')
-
-    def acquire_guest(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
-    ) -> Result[ProvisioningProgress, Failure]:
-        """
-        Acquire one guest from the pool. The guest must satisfy requirements specified
-        by `environment`.
-
-        :param Environment environment: environmental requirements a guest must satisfy.
-        :param Key key: master key to upload to the guest.
-        :rtype: result.Result[Guest, Failure]
-        :returns: :py:class:`result.Result` with either :py:class:`Guest` instance, or specification
-            of error.
-        """
-        return self._do_acquire_guest(
-            logger,
-            session,
-            guest_request
+    def _tag_resources(self, resource_ids: list[str], tags: Tags) -> Result[JSONType, Failure]:
+        return self._aws_command(
+            ['ec2', 'create-tags', '--resources', *resource_ids, '--tags', *_serialize_tags(tags)],
+            json_output=False,
+            commandname='aws.tag-resources',
         )
 
-    def _do_acquire_guest(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest
+    def acquire_guest(
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
-        log_dict_yaml(logger.info, 'provisioning environment', guest_request._environment)
+        r_image_flavor_pairs = self._collect_image_flavor_pairs(logger, session, guest_request)
 
-        # find out image from enviroment
-        r_images = self.image_info_mapper.map(logger, guest_request)
+        if r_image_flavor_pairs.is_error:
+            return Error(r_image_flavor_pairs.unwrap_error())
 
-        if r_images.is_error:
-            return Error(r_images.unwrap_error())
+        can_acquire, pairs = r_image_flavor_pairs.unwrap()
 
-        images = r_images.unwrap()
+        if not can_acquire.can_acquire:
+            assert can_acquire.reason is not None
 
-        pairs: List[Tuple[AWSPoolImageInfo, AWSFlavor]] = []
+            return Error(Failure(can_acquire.reason.message))
 
-        for image in images:
-            r_instance_type = self._env_to_instance_type(logger, session, guest_request, image)
-            if r_instance_type.is_error:
-                return Error(r_instance_type.unwrap_error())
-
-            pairs.append((image, r_instance_type.unwrap()))
-
-        if not pairs:
-            return Error(Failure('no suitable image/flavor combination found'))
-
-        log_dict_yaml(logger.info, 'available image/flavor combinations', [
-            {
-                'flavor': flavor.serialize(),
-                'image': image.serialize()
-            } for image, flavor in pairs
-        ])
-
-        image, instance_type = pairs[0]
+        image, flavor = pairs[0]
 
         # If this pool provides spot instances, we start the provisioning by submitting a spot instance request.
         # After that, we request an update to be scheduled, to check progress of this spot request. If successfull,
@@ -2783,33 +2851,26 @@ class AWSDriver(PoolDriver):
         # is no explicit request to transition from spot instance request to instance updates - once spot request is
         # fulfilled, we're given instance ID to work with.
 
-        self.log_acquisition_attempt(
-            logger,
-            session,
-            guest_request,
-            flavor=instance_type,
-            image=image
-        )
+        self.log_acquisition_attempt(logger, session, guest_request, flavor=flavor, image=image)
 
         if normalize_bool_option(self.pool_config.get('use-spot-request', False)):
-            return self._request_spot_instance(logger, session, guest_request, instance_type, image)
+            return self._request_spot_instance(logger, session, guest_request, flavor, image)
 
-        return self._request_instance(logger, session, guest_request, instance_type, image)
+        return self._request_instance(logger, session, guest_request, flavor, image)
 
-    def release_guest(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[bool, Failure]:
+    def release_guest(
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
+    ) -> Result[None, Failure]:
         """
-        Release guest and its resources back to the pool.
-
-        :param Guest guest: a guest to be destroyed.
-        :rtype: result.Result[bool, str]
+        Release resources allocated for the guest back to the pool infrastructure.
         """
 
-        if AWSPoolData.is_empty(guest_request):
-            return Ok(True)
+        pool_data = guest_request.pool_data.mine_or_none(self, AWSPoolData)
 
-        pool_data = AWSPoolData.unserialize(guest_request)
+        if not pool_data:
+            return Ok(None)
 
-        resource_ids: List[AWSPoolResourcesIDs] = []
+        resource_ids: list[AWSPoolResourcesIDs] = []
 
         # Prevent "double free" error by using a sequence: if we succeed freeing the instance,
         # we no longer try to free it in the case of retries, we'd focus on spot request only.
@@ -2819,198 +2880,27 @@ class AWSDriver(PoolDriver):
         if pool_data.spot_instance_id is not None:
             resource_ids.append(AWSPoolResourcesIDs(spot_instance_id=pool_data.spot_instance_id))
 
-        # NOTE(ivasilev) We are not adding the security_group to the resources-to-cleanup-list as instance deletion
-        # takes time and when run together security group deletion will most definitely fail. So let's clean up in 2
-        # stages -> first dispatch resource cleanup for the instance and then for the security group.
-        if not resource_ids and not pool_data.security_group:
-            return Error(Failure('guest has no identification'))
-
-        r_cleanup = self.dispatch_resource_cleanup(logger, *resource_ids, guest_request=guest_request)
-
-        if r_cleanup.is_error:
-            return Error(r_cleanup.unwrap_error())
-
-        # Security group can be cleaned up after all instance resources are freed. To avoid most certain retries let's
-        # introduce a delay
         if pool_data.security_group is not None:
-            r_delay = KNOB_REMOVE_SECURITY_GROUP_DELAY.get_value(entityname=self.poolname)
+            resource_ids.append(AWSPoolResourcesIDs(security_group=pool_data.security_group))
 
-            if r_delay.is_error:
-                return Error(r_delay.unwrap_error())
+        return self.dispatch_resource_cleanup(logger, session, *resource_ids, guest_request=guest_request)
 
-            r_secgroup_cleanup = self.dispatch_resource_cleanup(
-                logger,
-                AWSPoolResourcesIDs(security_group=pool_data.security_group),
-                guest_request=guest_request,
-                delay=r_delay.unwrap())
-
-            if r_secgroup_cleanup.is_error:
-                return Error(r_cleanup.unwrap_error())
-
-        return Ok(True)
-
-    def fetch_pool_image_info(self) -> Result[List[PoolImageInfo], Failure]:
-        def _fetch_images(filters: Optional[ConfigImageFilter] = None) -> Result[List[PoolImageInfo], Failure]:
-            name_patern: Optional[Pattern[str]] = None
-            creation_date_patern: Optional[Pattern[str]] = None
-            max_age: Optional[int] = None
-
-            if filters:
-                if 'name-regex' in filters:
-                    name_patern = re.compile(filters['name-regex'])
-
-                if 'creation-date-regex' in filters:
-                    creation_date_patern = re.compile(filters['creation-date-regex'])
-
-                if 'max-age' in filters:
-                    max_age = filters.get('max-age')
-
-            cli_options = [
-                'ec2',
-                'describe-images'
-            ]
-
-            if filters and 'owner' in filters:
-                cli_options += [
-                    '--owners',
-                    filters['owner']
-                ]
-
-            else:
-                cli_options += [
-                    '--owners',
-                    'self'
-                ]
-
-            if filters and 'name-wildcard' in filters:
-                cli_options += [
-                    '--filter', f'Name=name,Values={filters["name-wildcard"]}'
-                ]
-
-            r_images = self._aws_command(
-                cli_options,
-                key='Images',
-                commandname='aws.ec2-describe-images'
-            )
-
-            if r_images.is_error:
-                return Error(Failure.from_failure(
-                    'failed to fetch image information',
-                    r_images.unwrap_error()
-                ))
-
-            images: List[PoolImageInfo] = []
-
-            for image in cast(List[APIImageType], r_images.unwrap()):
-                if name_patern is not None \
-                   and not name_patern.match(image.get('Name') or image['ImageId']):
-                    continue
-
-                if creation_date_patern is not None \
-                   and not creation_date_patern.match(image['CreationDate']):
-                    continue
-
-                if max_age is not None and is_old_enough(self.logger, image['CreationDate'], max_age):
-                    continue
-
-                try:
-                    aws_boot_mode = cast(Optional[str], JQ_QUERY_IMAGE_SUPPORTED_BOOT_MODE.input(image).first())
-
-                except Exception as exc:
-                    return Error(Failure.from_exc(
-                        'failed to parse AWS output',
-                        exc
-                    ))
-
-                if aws_boot_mode:
-                    boot_method = _aws_boot_to_boot(aws_boot_mode)
-
-                    if boot_method == 'uefi-preferred':
-                        image_boot = FlavorBoot(method=['bios', 'uefi'])
-                    else:
-                        image_boot = FlavorBoot(method=[boot_method])
-
-                else:
-                    image_boot = FlavorBoot()
-
-                try:
-                    images.append(AWSPoolImageInfo(
-                        # .Name is optional and may be undefined or missing - use .ImageId in such a case
-                        name=image.get('Name') or image['ImageId'],
-                        id=image['ImageId'],
-                        arch=_aws_arch_to_arch(image['Architecture']),
-                        boot=image_boot,
-                        ssh=PoolImageSSHInfo(),
-                        platform_details=image['PlatformDetails'],
-                        block_device_mappings=image['BlockDeviceMappings'],
-                        # some AMI lack this field, and we need to make sure it's really a boolean, not `null` or `None`
-                        ena_support=image.get('EnaSupport', False) or False,
-                        boot_mode=aws_boot_mode
-                    ))
-
-                except KeyError as exc:
-                    return Error(Failure.from_exc(
-                        'malformed image description',
-                        exc,
-                        image_info=r_images.unwrap()
-                    ))
-
-            log_dict_yaml(self.logger.debug, 'image filters', filters)
-            log_dict_yaml(self.logger.debug, 'found images', [image.name for image in images])
-
-            return Ok(images)
-
-        images: List[PoolImageInfo] = []
-        image_filters = cast(List[ConfigImageFilter], self.pool_config.get('image-filters', []))
-
-        if image_filters:
-            for filters in image_filters:
-                r_images = _fetch_images(filters)
-
-                if r_images.is_error:
-                    return r_images
-
-                images += r_images.unwrap()
-
-        else:
-            r_images = _fetch_images()
-
-            if r_images.is_error:
-                return r_images
-
-            images += r_images.unwrap()
-
-        return Ok(images)
-
-    def fetch_pool_flavor_info(self) -> Result[List[Flavor], Failure]:
+    def fetch_pool_flavor_info(self) -> Result[list[Flavor], Failure]:
         # See AWS docs: https://docs.aws.amazon.com/cli/latest/reference/ec2/describe-instance-types.html
 
         r_capabilities = self.capabilities()
 
-        if r_capabilities.is_error:
-            return Error(r_capabilities.unwrap_error())
+        if not is_successful(r_capabilities):
+            return Error(r_capabilities.failure())
 
         capabilities = r_capabilities.unwrap()
-
-        def _fetch(logger: gluetool.log.ContextAdapter) -> Result[List[Dict[str, Any]], Failure]:
-            r_raw_flavors = self._aws_command(
-                ['ec2', 'describe-instance-types'],
-                key='InstanceTypes',
-                commandname='aws.ec2-describe-instance-types'
-            )
-
-            if r_raw_flavors.is_error:
-                return Error(r_raw_flavors.unwrap_error())
-
-            return Ok(cast(List[Dict[str, Any]], r_raw_flavors.unwrap()))
 
         # Here we covert instance types retrieved from API into flavors. We take a look at architectures
         # supported by instance type, and create distinct flavors for each architecture. That way, we can
         # have pools supporting more than one architecture, and let Artemis match flavors and requestes
         # based on their attributes, not because maintainers "hide" the instance types with wrong parameters.
         def _constructor(
-            logger: gluetool.log.ContextAdapter,
-            raw_flavor: Dict[str, Any]
+            logger: gluetool.log.ContextAdapter, raw_flavor: dict[str, Any]
         ) -> Iterator[Result[Flavor, Failure]]:
             for arch in cast(APIInstanceTypeProcessorInfo, raw_flavor['ProcessorInfo'])['SupportedArchitectures']:
                 artemis_arch = _aws_arch_to_arch(arch)
@@ -3019,16 +2909,15 @@ class AWSDriver(PoolDriver):
                     continue
 
                 try:
-                    boot_methods: List[FlavorBootMethodType] = [
-                        _aws_boot_to_boot(boot_method)
+                    boot_methods: list[FlavorBootMethodType] = [
+                        _aws_boot_mode_to_boot_method(boot_method)
                         for boot_method in JQ_QUERY_FLAVOR_SUPPORTED_BOOT_MODES.input(raw_flavor).all()
                     ]
 
                 except Exception as exc:
-                    return Error(Failure.from_exc(
-                        'malformed flavor description',
-                        exc
-                    ))
+                    yield Error(Failure.from_exc('malformed flavor description', exc))
+
+                    return
 
                 vcpus = int(raw_flavor['VCpuInfo']['DefaultVCpus'])
                 cores = int(raw_flavor['VCpuInfo']['DefaultCores'])
@@ -3039,52 +2928,52 @@ class AWSDriver(PoolDriver):
                 nic_limit = raw_flavor['NetworkInfo']['MaximumNetworkInterfaces']
 
                 if nic_limit > 1:
-                    network.items += [
-                        FlavorNetwork(type='eth', is_expansion=True, max_additional_items=nic_limit - 1)
-                    ]
+                    network.items += [FlavorNetwork(type='eth', is_expansion=True, max_additional_items=nic_limit - 1)]
 
-                yield Ok(AWSFlavor(
-                    name=raw_flavor['InstanceType'],
-                    id=raw_flavor['InstanceType'],
-                    arch=artemis_arch,
-                    boot=FlavorBoot(method=boot_methods),
-                    cpu=FlavorCpu(
-                        cores=cores,
-                        threads=cores * threads_per_core,
-                        processors=vcpus,
-                        threads_per_core=threads_per_core
-                    ),
-                    network=network,
-                    # memory is reported in MB
-                    memory=UNITS.Quantity(int(raw_flavor['MemoryInfo']['SizeInMiB']), UNITS.mebibytes),
-                    virtualization=FlavorVirtualization(
-                        hypervisor=raw_flavor.get('Hypervisor', None),
-                        is_virtualized=True if raw_flavor.get('Hypervisor', '').lower() in AWS_VM_HYPERVISORS else False
-                    ),
-                    ena_support=raw_flavor.get('NetworkInfo', {}).get('EnaSupport', 'unsupported')
-                ))
+                yield Ok(
+                    AWSFlavor(
+                        name=raw_flavor['InstanceType'],
+                        id=raw_flavor['InstanceType'],
+                        arch=artemis_arch,
+                        boot=FlavorBoot(method=boot_methods),
+                        cpu=FlavorCpu(
+                            cores=cores,
+                            threads=cores * threads_per_core,
+                            processors=vcpus,
+                            threads_per_core=threads_per_core,
+                        ),
+                        network=network,
+                        # memory is reported in MB
+                        memory=UNITS.Quantity(int(raw_flavor['MemoryInfo']['SizeInMiB']), UNITS.mebibytes),
+                        virtualization=FlavorVirtualization(
+                            hypervisor=raw_flavor.get('Hypervisor'),
+                            is_virtualized=bool(raw_flavor.get('Hypervisor', '').lower() in AWS_VM_HYPERVISORS),
+                        ),
+                        ena_support=raw_flavor.get('NetworkInfo', {}).get('EnaSupport', 'unsupported'),
+                    )
+                )
 
         return self.do_fetch_pool_flavor_info(
-            self.logger,
-            _fetch,
-            # ignore[index]: for some reason, mypy does not detect the type correctly
-            lambda raw_flavor: cast(str, raw_flavor['InstanceType']),  # type: ignore[index]
-            _constructor
+            self.logger, self._query_backend_flavors, lambda raw_flavor: raw_flavor['InstanceType'], _constructor
         )
 
     def get_cached_pool_flavor_info(self, flavorname: str) -> Result[Optional[Flavor], Failure]:
         return get_cached_mapping_item(CACHE.get(), self.flavor_info_cache_key, flavorname, AWSFlavor)
 
-    def get_cached_pool_flavor_infos(self) -> Result[List[Flavor], Failure]:
+    def get_cached_pool_flavor_infos(self) -> Result[list[Flavor], Failure]:
         """
         Retrieve all flavor info known to the pool.
         """
 
-        return get_cached_mapping_values(CACHE.get(), self.flavor_info_cache_key, AWSFlavor)
+        with Sentry.start_span(
+            TracingOp.FUNCTION, description='PoolDriver.get_cached_pool_flavor_infos'
+        ) as tracing_span:
+            tracing_span.set_tag('poolname', self.poolname)
+
+            return get_cached_mapping_values(CACHE.get(), self.flavor_info_cache_key, AWSFlavor)
 
     def fetch_pool_resources_metrics(
-        self,
-        logger: gluetool.log.ContextAdapter
+        self, logger: gluetool.log.ContextAdapter
     ) -> Result[PoolResourcesMetrics, Failure]:
         subnet_id = self.pool_config['subnet-id']
 
@@ -3095,69 +2984,61 @@ class AWSDriver(PoolDriver):
 
         resources = r_resources.unwrap()
 
-        r_flavors = self.get_cached_pool_flavor_infos()
+        # Resource usage - instances and flavors
+        def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[list[dict[str, Any]], Failure]:
+            # Count only instance using our subnet
+            r = self._aws_command(
+                ['ec2', 'describe-instances', '--filter', f'Name=subnet-id,Values={subnet_id}'],
+                commandname='aws.ec2-describe-instances',
+            )
 
-        if r_flavors.is_error:
-            return Error(r_flavors.unwrap_error())
+            if r.is_error:
+                return Error(Failure.from_failure('failed to fetch instance information', r.unwrap_error()))
 
-        flavors = {
-            flavor.name: flavor
-            for flavor in r_flavors.unwrap()
-        }
+            return Ok(list(JQ_QUERY_POOL_INSTANCES.input(r.unwrap()).all()))
 
-        # Count instances - only those using our subnet
-        r_instances = self._aws_command([
-            'ec2', 'describe-instances',
-            '--filter', f'Name=subnet-id,Values={subnet_id}'
-        ], commandname='aws.ec2-describe-instances')
+        def _update_instance_usage(
+            logger: gluetool.log.ContextAdapter,
+            usage: PoolResourcesUsage,
+            raw_instance: dict[str, Any],
+            flavor: Optional[Flavor],
+        ) -> Result[None, Failure]:
+            assert usage.instances is not None  # narrow type
+            assert usage.cores is not None  # narrow type
+            assert usage.memory is not None  # narrow type
 
-        if r_instances.is_error:
-            return Error(Failure.from_failure(
-                'failed to fetch instance information',
-                r_instances.unwrap_error()
-            ))
+            usage.instances += 1
 
-        resources.usage.instances = 0
-        resources.usage.cores = 0
-        resources.usage.memory = 0
+            if flavor is not None:
+                usage.cores += flavor.cpu.cores or 0
+                usage.memory += flavor.memory.to('bytes').magnitude if flavor.memory is not None else 0
 
-        try:
-            for instance_info in JQ_QUERY_POOL_INSTANCES.input(r_instances.unwrap()).all():
-                resources.usage.instances += 1
+                if flavor.name not in usage.flavors:
+                    usage.flavors[flavor.name] = 0
 
-                flavor = flavors.get(instance_info['InstanceType'])
+                usage.flavors[flavor.name] += 1
 
-                # This may happen, with multiple pools with different flavors using the same credentials
-                # and overlapping subnets.
-                if flavor is None:
-                    logger.warning(f'flavor {instance_info["InstanceType"]} not cached')
-                    continue
+            return Ok(None)
 
-                resources.usage.cores += flavor.cpu.cores or 0
-                resources.usage.memory += flavor.memory.to('bytes').magnitude if flavor.memory is not None else 0
+        r_instances_usage = self.do_fetch_pool_resources_metrics_flavor_usage(
+            logger,
+            resources.usage,
+            _fetch_instances,
+            lambda raw_instance: raw_instance['InstanceType'],
+            _update_instance_usage,
+        )
 
-                if flavor.name not in resources.usage.flavors:
-                    resources.usage.flavors[flavor.name] = 0
-
-                resources.usage.flavors[flavor.name] += 1
-
-        except Exception as exc:
-            return Error(Failure.from_exc(
-                'failed to parse AWS output',
-                exc
-            ))
+        if r_instances_usage.is_error:
+            return Error(r_instances_usage.unwrap_error())
 
         # Inspect the subnet
-        r_subnet = self._aws_command([
-            'ec2', 'describe-subnets',
-            '--filter', f'Name=subnet-id,Values={subnet_id}'
-        ], commandname='aws.ec2-describe-subnets')
+        r_subnet = self._aws_command(
+            ['ec2', 'describe-subnets', '--filter', f'Name=subnet-id,Values={subnet_id}'],
+            commandname='aws.ec2-describe-subnets',
+        )
 
         if r_subnet.is_error:
-            return Error(Failure.from_failure(
-                'failed to fetch subnet information',
-                r_subnet.unwrap_error()
-            ))
+            return Error(Failure.from_failure('failed to fetch subnet information', r_subnet.unwrap_error()))
 
         # Extract the total number of IPs...
         cidr = JQ_QUERY_SUBNET_CIDR.input(r_subnet.unwrap()).first()
@@ -3176,43 +3057,49 @@ class AWSDriver(PoolDriver):
         return Ok(resources)
 
     def _fetch_guest_console_blob(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest_request: GuestRequest
-    ) -> Result[
-            Union[Tuple[None, None], Tuple[datetime.datetime, Optional[str]]],
-            Failure]:
-        pool_data = AWSPoolData.unserialize(guest_request)
+        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
+    ) -> Result[Union[tuple[None, None], tuple[datetime.datetime, Optional[str]]], Failure]:
+        pool_data = guest_request.pool_data.mine(self, AWSPoolData)
 
         # This can actually happen, spot instances may take some time to get the instance ID.
         if pool_data.instance_id is None:
             return Ok((None, None))
 
-        r_output = self._aws_command([
-            'ec2',
-            'get-console-output',
-            '--instance-id', pool_data.instance_id
-        ], commandname='aws.ec2-get-console-output')
+        r_output = self._aws_command(
+            ['ec2', 'get-console-output', '--instance-id', pool_data.instance_id, '--latest'],
+            commandname='aws.ec2-get-console-output',
+        )
 
         if r_output.is_error:
-            return Error(Failure.from_failure(
-                'failed to fetch console output',
-                r_output.unwrap_error()
-            ))
+            # Try once again without `--latest` which is supported with Nitro only. We do not track which which flavor
+            # or hypervisor we're using.
+            r_output = self._aws_command(
+                ['ec2', 'get-console-output', '--instance-id', pool_data.instance_id],
+                commandname='aws.ec2-get-console-output',
+            )
 
-        output = cast(Dict[str, str], r_output.unwrap())
+            if r_output.is_error:
+                return Error(Failure.from_failure('failed to fetch console output', r_output.unwrap_error()))
 
-        timestamp = datetime.datetime.strptime(output['Timestamp'], '%Y-%m-%dT%H:%M:%S.%fZ')
+        output = cast(dict[str, str], r_output.unwrap())
+
+        timestamp = self.timestamp_to_datetime(output['Timestamp'])
+        if timestamp.is_error:
+            return Error(
+                Failure.from_failure(
+                    'Could not parse timestamp while fetching console blob',
+                    timestamp.unwrap_error(),
+                    instance=pool_data.instance_id,
+                )
+            )
+
         console_output = output.get('Output')
 
-        return Ok((timestamp, console_output))
+        return Ok((timestamp.unwrap(), console_output))
 
     @guest_log_updater('aws', 'console:dump', GuestLogContentType.BLOB)  # type: ignore[arg-type]
     def _update_guest_log_console_dump_blob(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest_request: GuestRequest,
-        guest_log: GuestLog
+        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest, guest_log: GuestLog
     ) -> Result[GuestLogUpdateProgress, Failure]:
         """
         Update console.dump/blob guest log.
@@ -3234,41 +3121,57 @@ class AWSDriver(PoolDriver):
             guest_log,
             timestamp,
             output,
-            lambda guest_log, timestamp, content, content_hash: timestamp in guest_log.blob_timestamps
+            lambda guest_log, timestamp, content, content_hash: timestamp in guest_log.blob_timestamps,
         )
-
-        progress.delay_update = KNOB_CONSOLE_DUMP_BLOB_UPDATE_TICK.value
 
         return Ok(progress)
 
     @guest_log_updater('aws', 'console:interactive', GuestLogContentType.URL)  # type: ignore[arg-type]
     def _update_guest_log_console_url(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        guest_request: GuestRequest,
-        guest_log: GuestLog
+        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest, guest_log: GuestLog
     ) -> Result[GuestLogUpdateProgress, Failure]:
         """
         Update console.interactive/url guest log.
         """
 
-        pool_data = AWSPoolData.unserialize(guest_request)
+        pool_data = guest_request.pool_data.mine(self, AWSPoolData)
 
         # This can actually happen, spot instances may take some time to get the instance ID.
         if pool_data.instance_id is None:
-            return Ok(GuestLogUpdateProgress(
-                state=GuestLogState.PENDING,
-                delay_update=KNOB_CONSOLE_DUMP_BLOB_UPDATE_TICK.value
-            ))
+            return Ok(GuestLogUpdateProgress(state=GuestLogState.PENDING))
 
         # In AWS case only logged in users can access the console (1 session a time). The url has fixed format
         # depending on instance_id only, let's just generate it for every instance.
         output = KNOB_CONSOLE_INTERACTIVE_URL.value.format(instance_id=pool_data.instance_id)  # noqa: FS002
 
-        return Ok(GuestLogUpdateProgress(
-            state=GuestLogState.COMPLETE,
-            url=output
-        ))
+        return Ok(GuestLogUpdateProgress(state=GuestLogState.COMPLETE, url=output))
+
+    def trigger_reboot(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[None, Failure]:
+        pool_data = guest_request.pool_data.mine_or_none(self, AWSPoolData)
+
+        if not pool_data:
+            return Ok(None)
+
+        if pool_data.instance_id is None:
+            return Error(Failure('failed to trigger instance reboot without instance ID'))
+
+        r = self._aws_command(
+            ['ec2', 'reboot-instances', '--instance-ids', pool_data.instance_id],
+            json_output=False,
+            commandname='awc.ec2-reboot-instance',
+        )
+
+        if r.is_error:
+            return Error(Failure.from_failure('failed to trigger instance reboot', r.unwrap_error()))
+
+        return Ok(None)
+
+    # The following are necessary implementations of abstract methods the driver does not have use for. They are
+    # required, but we will remove them in the future.
+    def acquire_console_url(
+        self, logger: gluetool.log.ContextAdapter, guest: GuestRequest
+    ) -> Result[ConsoleUrlData, Failure]:
+        return Error(Failure('unsupported driver method', poolname=self.poolname, method='acquire_console_url'))
 
 
 PoolDriver._drivers_registry['aws'] = AWSDriver
