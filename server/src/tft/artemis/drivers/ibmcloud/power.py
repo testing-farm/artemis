@@ -339,7 +339,7 @@ class IBMCloudPowerDriver(IBMCloudDriver[BackendInstance, IBMCloudPowerInstance,
 
                 for raw_instance_entry in r_list_instances.unwrap():
                     # To get network details need to additionally get instance details
-                    r_instance = self._query_backend_instance_reuse_session(logger, raw_instance_entry.id, session)
+                    r_instance = self._query_backend_instance_sessionless(logger, raw_instance_entry.id, session)
 
                     if not is_successful(r_instance):
                         return Error(
@@ -560,12 +560,11 @@ class IBMCloudPowerDriver(IBMCloudDriver[BackendInstance, IBMCloudPowerInstance,
         self, logger: gluetool.log.ContextAdapter, instance_id: str
     ) -> _Result[BackendInstance, Failure]:
         with IBMCloudPowerSession(logger, self) as session:
-            return self._query_backend_instance_reuse_session(logger, instance_id, session)
+            return self._query_backend_instance_sessionless(logger, instance_id, session)
 
-    # Note: the output of this method matches what `pi instance get` returns. In general, `instance get` and
-    # `instance list` differ in the output structure significantly, this method may not fit all use cases it
-    # fits in other drivers. Be careful when using it.
-    def _query_backend_instance_reuse_session(
+    # Issues the actual `pi instance get` call but does not create an ibmcloud cli session.
+    # To be used with an already secured cli session directory.
+    def _query_backend_instance_sessionless(
         self, logger: gluetool.log.ContextAdapter, instance_id: str, session: CLISessionPermanentDir
     ) -> _Result[BackendInstance, Failure]:
         r_instance_info = session.run(
