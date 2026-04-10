@@ -73,6 +73,9 @@ properties:
   custom-flavors:
     type: array
 
+  patch-flavors:
+    type: array
+
 additionalProperties: false
 
 required:
