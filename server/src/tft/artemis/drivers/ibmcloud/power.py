@@ -15,7 +15,7 @@ from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
 from typing_extensions import TypeAlias
 
-from tft.artemis.drivers import PoolDriver, PoolImageInfo, PoolImageInfoT, create_tempfile
+from tft.artemis.drivers import CLISessionPermanentDir, PoolDriver, PoolImageInfo, PoolImageInfoT, create_tempfile
 from tft.artemis.drivers.ibmcloud import (
     IBMCloudDriver,
     IBMCloudFlavor,
@@ -339,7 +339,7 @@ class IBMCloudPowerDriver(IBMCloudDriver[BackendInstance, IBMCloudPowerInstance,
 
                 for raw_instance_entry in r_list_instances.unwrap():
                     # To get network details need to additionally get instance details
-                    r_instance = self._query_backend_instance(logger, raw_instance_entry.id)
+                    r_instance = self._query_backend_instance_sessionless(logger, raw_instance_entry.id, session)
 
                     if not is_successful(r_instance):
                         return Error(
@@ -560,16 +560,21 @@ class IBMCloudPowerDriver(IBMCloudDriver[BackendInstance, IBMCloudPowerInstance,
         self, logger: gluetool.log.ContextAdapter, instance_id: str
     ) -> _Result[BackendInstance, Failure]:
         with IBMCloudPowerSession(logger, self) as session:
-            r_instance_info = session.run(
-                logger, ['pi', 'instance', 'get', instance_id, '--json'], commandname='ibmcloud.pi.vm-show'
-            )
+            return self._query_backend_instance_sessionless(logger, instance_id, session)
 
-            if r_instance_info.is_error:
-                return _Error(
-                    Failure.from_failure('failed to fetch instance information', r_instance_info.unwrap_error())
-                )
+    # Issues the actual `pi instance get` call but does not create an ibmcloud cli session.
+    # To be used with an already secured cli session directory.
+    def _query_backend_instance_sessionless(
+        self, logger: gluetool.log.ContextAdapter, instance_id: str, session: CLISessionPermanentDir
+    ) -> _Result[BackendInstance, Failure]:
+        r_instance_info = session.run(
+            logger, ['pi', 'instance', 'get', instance_id, '--json'], commandname='ibmcloud.pi.vm-show'
+        )
 
-            return _Ok(cast(BackendInstance, r_instance_info.unwrap()))
+        if r_instance_info.is_error:
+            return _Error(Failure.from_failure('failed to fetch instance information', r_instance_info.unwrap_error()))
+
+        return _Ok(cast(BackendInstance, r_instance_info.unwrap()))
 
     def list_instances(self, logger: gluetool.log.ContextAdapter) -> Result[list[IBMCloudPowerInstance], Failure]:
         with IBMCloudPowerSession(logger, self) as session:
