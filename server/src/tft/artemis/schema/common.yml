@@ -31,6 +31,9 @@ definitions:
       memory:
         type: string
 
+      compatible:
+        "$ref": "#/definitions/patch_flavor_compatible"
+
     required:
       - name
 
