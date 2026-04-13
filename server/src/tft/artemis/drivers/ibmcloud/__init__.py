@@ -317,7 +317,9 @@ class IBMCloudDriver(
         if r_instance_tags.is_error:
             return Error(
                 Failure.from_failure(
-                    f'Locating ibmcloud resource associated with {instance_name} failed', r_instance_tags.unwrap_error()
+                    'Locating ibmcloud resource associated instance failed',
+                    r_instance_tags.unwrap_error(),
+                    instance_id=instance_name,
                 )
             )
 
