@@ -535,7 +535,7 @@ def create_error_cause_extractor(
             return None
 
         for cause, pattern in (patterns or {}).items():
-            if not pattern.match(content):
+            if not pattern.search(content):
                 continue
 
             return cause
