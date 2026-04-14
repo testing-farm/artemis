@@ -7,7 +7,7 @@ import gluetool.log
 import sqlalchemy.orm.session
 
 from ..db import DB
-from ..drivers import PoolDriver
+from ..drivers import FlavorBasedPoolDriver, PoolDriver
 from . import (
     _ROOT_LOGGER,
     DoerReturnType,
@@ -61,7 +61,12 @@ class Workspace(_Workspace):
 
             return None
 
-        r_refresh = pool.refresh_cached_pool_flavor_info()
+        if not isinstance(pool, FlavorBasedPoolDriver):
+            self._progress('pool-not-flavor-based')
+
+            return None
+
+        r_refresh = pool.refresh_pool_flavor_info()
 
         if r_refresh.is_error:
             return self._error(r_refresh, 'failed to refresh pool flavor info')

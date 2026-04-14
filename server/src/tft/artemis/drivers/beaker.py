@@ -42,7 +42,6 @@ from ..environment import (
     Constraint,
     ConstraintBase,
     Environment,
-    Flavor,
     FlavorBoot,
     Kickstart,
     Or,
@@ -2508,7 +2507,9 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
             return Ok(r_query_instances.unwrap().stdout.splitlines())
 
         def _update_instance_usage(
-            logger: gluetool.log.ContextAdapter, usage: PoolResourcesUsage, raw_instance: str, flavor: Optional[Flavor]
+            logger: gluetool.log.ContextAdapter,
+            usage: PoolResourcesUsage,
+            raw_instance: str,
         ) -> Result[None, Failure]:
             assert usage.instances is not None  # narrow type
 
@@ -2520,8 +2521,8 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
 
             return Ok(None)
 
-        r_instances_usage = self.do_fetch_pool_resources_metrics_flavor_usage(
-            logger, resources.usage, _fetch_instances, None, _update_instance_usage
+        r_instances_usage = self.do_fetch_pool_resources_metrics_instance_usage(
+            logger, resources.usage, _fetch_instances, _update_instance_usage
         )
 
         if r_instances_usage.is_error:

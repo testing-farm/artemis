@@ -17,7 +17,7 @@ from gluetool.result import Error, Ok, Result
 from google.cloud import compute_v1
 from returns.result import Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
-from typing_extensions import override
+from typing_extensions import TypeAlias, override
 
 from .. import Failure, log_dict_yaml
 from ..db import GuestRequest
@@ -29,6 +29,7 @@ from . import (
     CommonErrorCauses,
     ConfigImageFilter,
     ConsoleUrlData,
+    FlavorBasedPoolDriver,
     Instance,
     PoolCapabilities,
     PoolData,
@@ -73,6 +74,9 @@ GCPErrorCauses = CommonErrorCauses
 error_cause_extractor = create_error_cause_extractor(GCPErrorCauses)
 
 
+BackendFlavor: TypeAlias = str
+
+
 @dataclasses.dataclass
 class GCPPoolData(PoolData):
     name: str
@@ -88,7 +92,7 @@ class GCPPoolResourcesIDs(PoolResourcesIDs):
     zone: Optional[str] = None
 
 
-class GCPDriver(PoolDriver[GCPErrorCauses, Instance]):
+class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, BackendFlavor, Instance]):
     drivername = 'gcp'
 
     pool_data_class = GCPPoolData
@@ -202,6 +206,10 @@ class GCPDriver(PoolDriver[GCPErrorCauses, Instance]):
             return Ok(CanAcquire.cannot('HW constraints are not supported by the GCP driver'))
 
         return Ok(CanAcquire())
+
+    @override
+    def _query_backend_flavors(self, logger: gluetool.log.ContextAdapter) -> _Result[list[BackendFlavor], Failure]:
+        return _Ok([])
 
     def _query_instance_id(self, instance_name: str, project: str, zone: str) -> Result[int, Failure]:
         """Perform API call to GCP, asking about the given instance"""
@@ -577,6 +585,9 @@ class GCPDriver(PoolDriver[GCPErrorCauses, Instance]):
             return Error(Failure.from_exc('Failed to reboot instance', exc))
 
         return Ok(None)
+
+    def fetch_pool_flavor_info(self) -> Result[list[Flavor], Failure]:
+        return Ok([])
 
     def fetch_pool_resources_metrics(
         self, logger: gluetool.log.ContextAdapter

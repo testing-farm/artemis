@@ -201,12 +201,12 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, 
 
         return _Ok(cast(list[dict[str, Any]], r_flavors_list.unwrap()))
 
-    def fetch_pool_flavor_info(self) -> Result[list[Flavor], Failure]:
+    def fetch_pool_flavor_info(self) -> Result[list[IBMCloudFlavor], Failure]:
         # See https://cloud.ibm.com/docs/vpc?topic=vpc-vs-profiles&interface=cli for more info
 
         def _constructor(
             logger: gluetool.log.ContextAdapter, raw_flavor: dict[str, Any]
-        ) -> Iterator[Result[Flavor, Failure]]:
+        ) -> Iterator[Result[IBMCloudFlavor, Failure]]:
             raw_disks = cast(list[Any], raw_flavor.get('disks', []))
 
             if not raw_disks:
@@ -247,7 +247,7 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, 
                 )
             )
 
-        return self.do_fetch_pool_flavor_info(
+        return self._construct_pool_flavor_infos(
             self.logger, self._query_backend_flavors, lambda raw_flavor: cast(str, raw_flavor['name']), _constructor
         )
 
