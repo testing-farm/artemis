@@ -3,6 +3,7 @@
 
 import dataclasses
 import datetime
+import enum
 import functools
 import operator
 import re
@@ -23,7 +24,7 @@ from novaclient import client as nocl
 from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
 
-from .. import Failure, JSONType, process_output_to_str, safe_call
+from .. import Failure, JSONType, safe_call
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
 from ..environment import (
     Environment,
@@ -46,7 +47,6 @@ from . import (
     PoolCapabilities,
     PoolData,
     PoolDriver,
-    PoolErrorCauses,
     PoolImageInfo,
     PoolImageSSHInfo,
     PoolResourcesIDs,
@@ -54,6 +54,7 @@ from . import (
     ProvisioningState,
     ReleasePoolResourcesState,
     SerializedPoolResourcesIDs,
+    create_error_cause_extractor,
     create_tempfile,
     guest_log_updater,
     run_cli_tool,
@@ -108,11 +109,14 @@ ConfigImageFilter = TypedDict(
 )
 
 
-class OpenStackErrorCauses(PoolErrorCauses):
+class OpenStackErrorCauses(enum.Enum):
+    # From CommonErrorCauses
     NONE = 'none'
     RESOURCE_METRICS_REFRESH_FAILED = 'resource-metrics-refresh-failed'
     FLAVOR_INFO_REFRESH_FAILED = 'flavor-info-refresh-failed'
     IMAGE_INFO_REFRESH_FAILED = 'image-info-refresh-failed'
+
+    # OpenStack specific
     NO_SUCH_COMMAND = 'no-such-command'
     MISSING_INSTANCE = 'missing-instance'
     INSTANCE_NOT_READY = 'instance-not-ready'
@@ -120,31 +124,14 @@ class OpenStackErrorCauses(PoolErrorCauses):
     INSTANCE_BUILDING_TOO_LONG = 'instance-building-too-long'
 
 
-CLI_ERROR_PATTERNS = {
-    OpenStackErrorCauses.NO_SUCH_COMMAND: re.compile(r'openstack: .+ is not an openstack command'),
-    OpenStackErrorCauses.MISSING_INSTANCE: re.compile(r'^No server with a name or ID'),
-    OpenStackErrorCauses.INSTANCE_NOT_READY: re.compile(r'^Instance [a-z0-9\-]+ is not ready'),
-}
-
-
-def os_error_cause_extractor(output: gluetool.utils.ProcessOutput) -> OpenStackErrorCauses:
-    if output.exit_code == 0:
-        return OpenStackErrorCauses.NONE
-
-    stdout = process_output_to_str(output, stream='stdout')
-    stderr = process_output_to_str(output, stream='stderr')
-
-    stdout = stdout.strip() if stdout is not None else None
-    stderr = stderr.strip() if stderr is not None else None
-
-    for cause, pattern in CLI_ERROR_PATTERNS.items():
-        if stdout and pattern.match(stdout):
-            return cause
-
-        if stderr and pattern.match(stderr):
-            return cause
-
-    return OpenStackErrorCauses.NONE
+error_cause_extractor = create_error_cause_extractor(
+    OpenStackErrorCauses,
+    patterns={
+        OpenStackErrorCauses.NO_SUCH_COMMAND: re.compile(r'openstack: .+ is not an openstack command'),
+        OpenStackErrorCauses.MISSING_INSTANCE: re.compile(r'^No server with a name or ID'),
+        OpenStackErrorCauses.INSTANCE_NOT_READY: re.compile(r'^Instance [a-z0-9\-]+ is not ready'),
+    },
+)
 
 
 @dataclasses.dataclass
@@ -157,10 +144,14 @@ class OpenStackPoolResourcesIDs(PoolResourcesIDs):
     instance_id: Optional[str] = None
 
 
-class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor, novaclient.v2.flavors.Flavor, Instance]):
+class OpenStackDriver(
+    FlavorBasedPoolDriver[OpenStackErrorCauses, PoolImageInfo, Flavor, novaclient.v2.flavors.Flavor, Instance]
+):
     drivername = 'openstack'
 
     pool_data_class = OpenStackPoolData
+
+    error_cause_extractor = staticmethod(error_cause_extractor)
 
     _image_map_hook_name = 'OPENSTACK_ENVIRONMENT_TO_IMAGE'
 
@@ -273,7 +264,7 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor, novaclient.v2
             guestname=guestname,
             poolname=self.poolname,
             commandname=commandname,
-            cause_extractor=os_error_cause_extractor,
+            cause_extractor=self.error_cause_extractor,
         )
 
         if r_run.is_error:
@@ -283,7 +274,7 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor, novaclient.v2
             # run this method, we would never evenr made it remove instance that doesn't exist.
             if (
                 failure.command_output
-                and os_error_cause_extractor(failure.command_output) == OpenStackErrorCauses.MISSING_INSTANCE
+                and self.error_cause_extractor(output=failure.command_output) == OpenStackErrorCauses.MISSING_INSTANCE
             ):
                 failure.recoverable = False
 
@@ -843,7 +834,7 @@ class OpenStackDriver(FlavorBasedPoolDriver[PoolImageInfo, Flavor, novaclient.v2
             # Detect "instance not ready".
             if (
                 failure.command_output
-                and os_error_cause_extractor(failure.command_output) == OpenStackErrorCauses.INSTANCE_NOT_READY
+                and self.error_cause_extractor(output=failure.command_output) == OpenStackErrorCauses.INSTANCE_NOT_READY
             ):
                 return Ok(None)
 

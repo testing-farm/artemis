@@ -21,6 +21,7 @@ from tft.artemis.drivers import (
     BackendFlavorT,
     CLISessionPermanentDir,
     ConsoleUrlData,
+    ErrorCausesT,
     FlavorBasedPoolDriver,
     Instance,
     PoolData,
@@ -233,9 +234,9 @@ class IBMCloudSession(CLISessionPermanentDir):
 
 
 class IBMCloudDriver(
-    FlavorBasedPoolDriver[PoolImageInfo, IBMCloudFlavor, BackendFlavorT, IBMCloudInstanceT],
+    FlavorBasedPoolDriver[ErrorCausesT, PoolImageInfo, IBMCloudFlavor, BackendFlavorT, IBMCloudInstanceT],
     abc.ABC,
-    Generic[BackendInstanceT, IBMCloudInstanceT, BackendFlavorT],
+    Generic[ErrorCausesT, BackendInstanceT, IBMCloudInstanceT, BackendFlavorT],
 ):
     drivername = 'abstract-ibmcloud-driver'
 

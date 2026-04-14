@@ -21,6 +21,7 @@ from ..knobs import KNOB_DISABLE_CERT_VERIFICATION, KNOB_HTTP_TIMEOUT
 from ..metrics import PoolResourcesMetrics
 from . import (
     CanAcquire,
+    CommonErrorCauses,
     ConfigImageFilter,
     ConsoleUrlData,
     GuestLogUpdateProgress,
@@ -34,8 +35,13 @@ from . import (
     ProvisioningState,
     ReleasePoolResourcesState,
     SerializedPoolResourcesIDs,
+    create_error_cause_extractor,
     guest_log_updater,
 )
+
+FlasherErrorCauses = CommonErrorCauses
+
+error_cause_extractor = create_error_cause_extractor(FlasherErrorCauses)
 
 
 @dataclasses.dataclass
@@ -49,10 +55,12 @@ class FlasherPoolResourcesIDs(PoolResourcesIDs):
     guestname: Optional[str] = None
 
 
-class FlasherDriver(PoolDriver[Instance]):
+class FlasherDriver(PoolDriver[FlasherErrorCauses, Instance]):
     drivername = 'flasher'  # PoolDriver needs this. See __init__.py
 
     pool_data_class = FlasherPoolData
+
+    error_cause_extractor = staticmethod(error_cause_extractor)
 
     def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str, pool_config: dict[str, Any]) -> None:
         super().__init__(logger, poolname, pool_config)

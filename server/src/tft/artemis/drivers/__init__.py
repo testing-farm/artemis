@@ -502,21 +502,77 @@ class PoolLogger(gluetool.log.ContextAdapter):
         return cast(str, self._contexts['pool_name'][1])
 
 
-class PoolErrorCauses(enum.Enum):
+class ErrorCauses(enum.Enum):
     """
     A base class for enums listing various error causes recognized by pools for the purpose of collecting metrics.
     """
 
+    NONE = 'none'
 
-class CommonPoolErrorCauses(enum.Enum):
+
+class CommonErrorCauses(enum.Enum):
     NONE = 'none'
     RESOURCE_METRICS_REFRESH_FAILED = 'resource-metrics-refresh-failed'
     FLAVOR_INFO_REFRESH_FAILED = 'flavor-info-refresh-failed'
     IMAGE_INFO_REFRESH_FAILED = 'image-info-refresh-failed'
 
 
-#: A type for callables extracting CLI error cause from process output.
-PoolErrorCauseExtractor = Callable[[gluetool.utils.ProcessOutput], PoolErrorCauses]
+ErrorCausesT = TypeVar('ErrorCausesT', bound=enum.Enum, covariant=True)  # noqa: PLC0105
+
+
+class ErrorCauseExtractor(Protocol, Generic[ErrorCausesT]):
+    def __call__(
+        self, *, content: Optional[str] = None, output: Optional[gluetool.utils.ProcessOutput] = None
+    ) -> ErrorCausesT:
+        pass
+
+
+def create_error_cause_extractor(
+    causes: type[ErrorCausesT], patterns: Optional[dict[ErrorCausesT, Pattern[str]]] = None
+) -> ErrorCauseExtractor[ErrorCausesT]:
+    def _extract_from_text(content: Optional[str]) -> Optional[ErrorCausesT]:
+        if content is None:
+            return None
+
+        for cause, pattern in (patterns or {}).items():
+            if not pattern.search(content):
+                continue
+
+            return cause
+
+        return None
+
+    def _extractor(
+        *,
+        content: Optional[str] = None,
+        output: Optional[gluetool.utils.ProcessOutput] = None,
+    ) -> ErrorCausesT:
+        cause = _extract_from_text(content)
+
+        if cause:
+            return cause
+
+        if output:
+            if output.exit_code == 0:
+                return cast(ErrorCausesT, cast(ErrorCauses, causes).NONE)
+
+            stderr = process_output_to_str(output, stream='stderr')
+
+            cause = _extract_from_text(stderr.strip() if stderr is not None else None)
+
+            if cause:
+                return cause
+
+            stdout = process_output_to_str(output, stream='stdout')
+
+            cause = _extract_from_text(stdout.strip() if stdout is not None else None)
+
+            if cause:
+                return cause
+
+        return cast(ErrorCausesT, cast(ErrorCauses, causes).NONE)
+
+    return _extractor
 
 
 @dataclasses.dataclass(repr=False)
@@ -1353,7 +1409,7 @@ def render_tags(
 InstanceT = TypeVar('InstanceT', bound='Instance', covariant=True)  # noqa: PLC0105
 
 
-class PoolDriver(gluetool.log.LoggerMixin, Generic[InstanceT]):
+class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
     drivername: str
 
     _image_map_hook_name: str
@@ -1361,8 +1417,8 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[InstanceT]):
     image_info_class: type[PoolImageInfo] = PoolImageInfo
     flavor_info_class: type[Flavor] = Flavor
     pool_data_class: type[PoolData] = PoolData
-    pool_error_causes_enum: type[PoolErrorCauses]
-    cli_error_cause_extractor: Optional[PoolErrorCauseExtractor] = None
+
+    error_cause_extractor: ErrorCauseExtractor[ErrorCausesT]
 
     #: Template for a cache key holding pool image info.
     POOL_IMAGE_INFO_CACHE_KEY = 'pool.{}.image-info'
@@ -1387,12 +1443,12 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[InstanceT]):
         self.image_info_cache_key = self.POOL_IMAGE_INFO_CACHE_KEY.format(self.poolname)  # noqa: FS002
         self.flavor_info_cache_key = self.POOL_FLAVOR_INFO_CACHE_KEY.format(self.poolname)  # noqa: FS002
 
-    _drivers_registry: ClassVar[dict[str, type['PoolDriver[Any]']]] = {}
+    _drivers_registry: ClassVar[dict[str, type['PoolDriver[Any, Any]']]] = {}
 
     @staticmethod
     def _instantiate(
         logger: gluetool.log.ContextAdapter, driver_name: str, poolname: str, pool_config: dict[str, Any]
-    ) -> Result['PoolDriver[Any]', Failure]:
+    ) -> Result['PoolDriver[Any, Any]', Failure]:
         pool_driver_class = PoolDriver._drivers_registry.get(driver_name)
 
         if pool_driver_class is None:
@@ -1411,7 +1467,7 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[InstanceT]):
     @staticmethod
     def load_or_none(
         logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, poolname: str
-    ) -> Result[Optional['PoolDriver[Any]'], Failure]:
+    ) -> Result[Optional['PoolDriver[Any, Any]'], Failure]:
         r_pool_record = SafeQuery.from_session(session, Pool).filter(Pool.poolname == poolname).one_or_none()
 
         if r_pool_record.is_error:
@@ -1433,7 +1489,7 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[InstanceT]):
     @staticmethod
     def load(
         logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, poolname: str
-    ) -> Result['PoolDriver[Any]', Failure]:
+    ) -> Result['PoolDriver[Any, Any]', Failure]:
         r_pool = PoolDriver.load_or_none(logger, session, poolname)
 
         if r_pool.is_error:
@@ -1449,13 +1505,13 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[InstanceT]):
     @staticmethod
     def load_all(
         logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, *, enabled_only: bool = True
-    ) -> Result[list['PoolDriver[Any]'], Failure]:
+    ) -> Result[list['PoolDriver[Any, Any]'], Failure]:
         r_pools = SafeQuery.from_session(session, Pool).all()
 
         if r_pools.is_error:
             return Error(r_pools.unwrap_error())
 
-        pools: list[PoolDriver[Any]] = []
+        pools: list[PoolDriver[Any, Any]] = []
 
         for pool_record in r_pools.unwrap():
             r_pool = PoolDriver._instantiate(logger, pool_record.driver, pool_record.poolname, pool_record.parameters)
@@ -2270,7 +2326,7 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[InstanceT]):
         r_resource_metrics = self.fetch_pool_resources_metrics(logger)
 
         if r_resource_metrics.is_error:
-            PoolMetrics(self.poolname).inc_error(self.poolname, CommonPoolErrorCauses.RESOURCE_METRICS_REFRESH_FAILED)
+            PoolMetrics(self.poolname).inc_error(self.poolname, CommonErrorCauses.RESOURCE_METRICS_REFRESH_FAILED)
 
             return Error(r_resource_metrics.unwrap_error())
 
@@ -2500,7 +2556,7 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[InstanceT]):
         r_image_info = self.fetch_pool_image_info()
 
         if r_image_info.is_error:
-            PoolMetrics(self.poolname).inc_error(self.poolname, CommonPoolErrorCauses.IMAGE_INFO_REFRESH_FAILED)
+            PoolMetrics(self.poolname).inc_error(self.poolname, CommonErrorCauses.IMAGE_INFO_REFRESH_FAILED)
 
             return Error(r_image_info.unwrap_error())
 
@@ -2676,7 +2732,7 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[InstanceT]):
         r_flavor_info = self.fetch_pool_flavor_info()
 
         if r_flavor_info.is_error:
-            PoolMetrics(self.poolname).inc_error(self.poolname, CommonPoolErrorCauses.FLAVOR_INFO_REFRESH_FAILED)
+            PoolMetrics(self.poolname).inc_error(self.poolname, CommonErrorCauses.FLAVOR_INFO_REFRESH_FAILED)
 
             return Error(r_flavor_info.unwrap_error())
 
@@ -2753,9 +2809,13 @@ class FlavorFilter(Protocol, Generic[FlavorT]):
 
 
 class FlavorBasedPoolDriver(
-    PoolDriver[InstanceT,],
+    PoolDriver[
+        ErrorCausesT,
+        InstanceT,
+    ],
     abc.ABC,
     Generic[
+        ErrorCausesT,
         PoolImageInfoT,
         FlavorT,
         BackendFlavorT,
@@ -3100,7 +3160,7 @@ def run_cli_tool(
     guestname: Optional[str] = None,
     poolname: Optional[str] = None,
     commandname: Optional[str] = None,
-    cause_extractor: Optional[PoolErrorCauseExtractor] = None,
+    cause_extractor: Optional[ErrorCauseExtractor[ErrorCausesT]] = None,
 ) -> Result[CLIOutput, Failure]:
     """
     Run a given command, and return its output.
@@ -3177,7 +3237,7 @@ def run_cli_tool(
                 commandname,
                 output.exit_code,
                 command_time,
-                cause=cause_extractor(output) if cause_extractor is not None else None,
+                cause=cause_extractor(output=output) if cause_extractor is not None else None,
             )
 
         # We are expected to log the command when either one of these conditions is true:
@@ -3258,7 +3318,7 @@ def run_remote(
     guestname: Optional[str] = None,
     poolname: Optional[str] = None,
     commandname: Optional[str] = None,
-    cause_extractor: Optional[PoolErrorCauseExtractor] = None,
+    cause_extractor: Optional[ErrorCauseExtractor[ErrorCausesT]] = None,
 ) -> Result[CLIOutput, Failure]:
     if guest_request.address is None:
         return Error(Failure('cannot connect to unknown remote address'))
@@ -3311,7 +3371,7 @@ def copy_to_remote(
     guestname: Optional[str] = None,
     poolname: Optional[str] = None,
     commandname: Optional[str] = None,
-    cause_extractor: Optional[PoolErrorCauseExtractor] = None,
+    cause_extractor: Optional[ErrorCauseExtractor[ErrorCauses]] = None,
 ) -> Result[CLIOutput, Failure]:
     if guest_request.address is None:
         return Error(Failure('cannot connect to unknown remote address'))
@@ -3360,7 +3420,7 @@ def copy_from_remote(
     guestname: Optional[str] = None,
     poolname: Optional[str] = None,
     commandname: Optional[str] = None,
-    cause_extractor: Optional[PoolErrorCauseExtractor] = None,
+    cause_extractor: Optional[ErrorCauseExtractor[ErrorCauses]] = None,
 ) -> Result[CLIOutput, Failure]:
     if guest_request.address is None:
         return Error(Failure('cannot connect to unknown remote address'))
@@ -3406,7 +3466,7 @@ def ping_shell_remote(
     guestname: Optional[str] = None,
     poolname: Optional[str] = None,
     commandname: Optional[str] = None,
-    cause_extractor: Optional[PoolErrorCauseExtractor] = None,
+    cause_extractor: Optional[ErrorCauseExtractor[ErrorCausesT]] = None,
 ) -> Result[bool, Failure]:
     """
     Try to run a simple ``echo`` command on a given guest, and verify its output.
@@ -3479,7 +3539,7 @@ class CLISessionPermanentDir(abc.ABC):
     CLI_CMD = 'cli'
     CLI_CONFIG_DIR_ENV_VAR = 'CLI_CONFIG_DIR'
 
-    def __init__(self, logger: gluetool.log.ContextAdapter, pool: 'PoolDriver[Any]') -> None:
+    def __init__(self, logger: gluetool.log.ContextAdapter, pool: 'PoolDriver[Any, Any]') -> None:
         self.pool = pool
 
         r_session_dir_path = KNOB_CLI_SESSION_CONFIGURATION_DIR.get_value(entityname=self.pool.poolname)
@@ -3570,7 +3630,7 @@ class CLISessionPermanentDir(abc.ABC):
             guestname=guestname,
             poolname=self.pool.poolname,
             commandname=commandname,
-            cause_extractor=self.pool.cli_error_cause_extractor,
+            cause_extractor=self.pool.error_cause_extractor,
         )
 
         # Release the lock
@@ -3740,7 +3800,7 @@ class ResourceManager(Generic[ResourceT, ResourceCreationRequestT, ResourceCreat
     def __init__(
         self,
         logger: gluetool.log.ContextAdapter,
-        pool: PoolDriver[Any],
+        pool: PoolDriver[Any, Any],
         resource_type: str,
         list_resources: RMListResourcesCallback[ResourceT],
         resource_name: RMResourceNameCallback,

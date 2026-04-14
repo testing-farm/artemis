@@ -28,7 +28,7 @@ class PoolPolicyRuling:
     Container for reporting policy result for a given pool.
     """
 
-    pool: PoolDriver[Any]
+    pool: PoolDriver[Any, Any]
     allowed: bool
 
     note: Optional[str] = None
@@ -51,7 +51,9 @@ class PolicyRuling:
 
     @classmethod
     def from_pools(
-        cls, pools: list[PoolDriver[Any]], predicate: Optional[Callable[[PoolDriver[Any]], PoolPolicyRuling]] = None
+        cls,
+        pools: list[PoolDriver[Any, Any]],
+        predicate: Optional[Callable[[PoolDriver[Any, Any]], PoolPolicyRuling]] = None,
     ) -> 'PolicyRuling':
         if predicate is None:
             predicate = lambda pool: PoolPolicyRuling(pool=pool, allowed=True)  # noqa: E731
@@ -63,7 +65,7 @@ class PolicyRuling:
         return [pool_ruling for pool_ruling in self.pools if pool_ruling.allowed]
 
     @property
-    def allowed_pools(self) -> list[PoolDriver[Any]]:
+    def allowed_pools(self) -> list[PoolDriver[Any, Any]]:
         return [pool_ruling.pool for pool_ruling in self.allowed_rulings]
 
     @property
@@ -83,7 +85,8 @@ class PolicyRuling:
 
 PolicyReturnType = Result[PolicyRuling, Failure]
 PolicyType = Callable[
-    [gluetool.log.ContextAdapter, sqlalchemy.orm.session.Session, list[PoolDriver[Any]], GuestRequest], PolicyReturnType
+    [gluetool.log.ContextAdapter, sqlalchemy.orm.session.Session, list[PoolDriver[Any, Any]], GuestRequest],
+    PolicyReturnType,
 ]
 
 
@@ -252,7 +255,7 @@ def policy_boilerplate(fn: PolicyType) -> PolicyType:
     def wrapper(
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
-        pools: list[PoolDriver[Any]],
+        pools: list[PoolDriver[Any, Any]],
         guest_request: GuestRequest,
     ) -> PolicyReturnType:
         try:
@@ -289,8 +292,8 @@ def policy_boilerplate(fn: PolicyType) -> PolicyType:
 
 
 def collect_pool_capabilities(
-    pools: list[PoolDriver[Any]],
-) -> _Result[list[tuple[PoolDriver[Any], PoolCapabilities]], Failure]:
+    pools: list[PoolDriver[Any, Any]],
+) -> _Result[list[tuple[PoolDriver[Any, Any], PoolCapabilities]], Failure]:
     """
     Collect capabilities of given pools. Since pool's :py:meth:`PoolDriver.capabilities` can return a failure,
     we use this helper to simplify writing of policies by gathering capabilities, or returns the failure capturing
@@ -315,10 +318,10 @@ def collect_pool_capabilities(
 def collect_pool_can_acquire(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
-    pools: list[PoolDriver[Any]],
+    pools: list[PoolDriver[Any, Any]],
     guest_request: GuestRequest,
-) -> Result[list[tuple[PoolDriver[Any], CanAcquire]], Failure]:
-    can_acquire: list[tuple[PoolDriver[Any], CanAcquire]] = []
+) -> Result[list[tuple[PoolDriver[Any, Any], CanAcquire]], Failure]:
+    can_acquire: list[tuple[PoolDriver[Any, Any], CanAcquire]] = []
 
     for pool in pools:
         with Sentry.start_span(TracingOp.FUNCTION, description='PoolDriver.can_acquire') as tracing_span:
@@ -340,7 +343,9 @@ def collect_pool_can_acquire(
     return Ok(can_acquire)
 
 
-def collect_pool_metrics(pools: list[PoolDriver[Any]]) -> Result[list[tuple[PoolDriver[Any], PoolMetrics]], Failure]:
+def collect_pool_metrics(
+    pools: list[PoolDriver[Any, Any]],
+) -> Result[list[tuple[PoolDriver[Any, Any], PoolMetrics]], Failure]:
     pool_metrics = [(pool, PoolMetrics(pool.poolname)) for pool in pools]
 
     for _, metrics in pool_metrics:
@@ -352,7 +357,7 @@ def collect_pool_metrics(pools: list[PoolDriver[Any]]) -> Result[list[tuple[Pool
 def collect_pool_tags(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
-    pools: list[PoolDriver[Any]],
+    pools: list[PoolDriver[Any, Any]],
 ) -> Result[dict[str, Tags], Failure]:
     r_answers = [(pool, pool.get_pool_tags(logger, session)) for pool in pools]
 
@@ -373,7 +378,7 @@ def collect_pool_tags(
 
 
 def create_preferrence_filter_by_driver_class(
-    policy_name: str, *preferred_drivers: type[PoolDriver[Any]]
+    policy_name: str, *preferred_drivers: type[PoolDriver[Any, Any]]
 ) -> PolicyType:
     # `policy_boilerplate` does some things that depend on its knowledge of the policy name. That name
     # is deduced from the policy function name, but this helper will generate policy functions with the
@@ -383,10 +388,10 @@ def create_preferrence_filter_by_driver_class(
     def policy(
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
-        pools: list[PoolDriver[Any]],
+        pools: list[PoolDriver[Any, Any]],
         guest_request: GuestRequest,
     ) -> PolicyReturnType:
-        preferred_pools: list[PoolDriver[Any]] = [pool for pool in pools if isinstance(pool, preferred_drivers)]
+        preferred_pools: list[PoolDriver[Any, Any]] = [pool for pool in pools if isinstance(pool, preferred_drivers)]
 
         if not preferred_pools:
             return Ok(PolicyRuling.from_pools(pools))
@@ -406,7 +411,7 @@ def create_preferrence_filter_by_driver_class(
 def policy_pool_enabled(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
-    pools: list[PoolDriver[Any]],
+    pools: list[PoolDriver[Any, Any]],
     guest_request: GuestRequest,
 ) -> PolicyReturnType:
     """
@@ -433,7 +438,7 @@ def policy_pool_enabled(
 def policy_match_pool_name(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
-    pools: list[PoolDriver[Any]],
+    pools: list[PoolDriver[Any, Any]],
     guest_request: GuestRequest,
 ) -> PolicyReturnType:
     """
@@ -455,7 +460,7 @@ def policy_match_pool_name(
 def policy_supports_architecture(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
-    pools: list[PoolDriver[Any]],
+    pools: list[PoolDriver[Any, Any]],
     guest_request: GuestRequest,
 ) -> PolicyReturnType:
     """
@@ -483,7 +488,7 @@ def policy_supports_architecture(
 def policy_supports_guest_logs(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
-    pools: list[PoolDriver[Any]],
+    pools: list[PoolDriver[Any, Any]],
     guest_request: GuestRequest,
 ) -> PolicyReturnType:
     """
@@ -514,7 +519,7 @@ def policy_supports_guest_logs(
 
 
 def _prefer_spot_or_dedicated_instances(
-    pools: list[PoolDriver[Any]], guest_request: GuestRequest, *, supports_spot_instances: bool
+    pools: list[PoolDriver[Any, Any]], guest_request: GuestRequest, *, supports_spot_instances: bool
 ) -> PolicyReturnType:
     # If request does insist on using spot or non-spot instance, we should not mess with its request by
     # possibly removing the group it requests. For such environments, do nothing and let other policies
@@ -545,7 +550,7 @@ def _prefer_spot_or_dedicated_instances(
 def policy_prefer_spot_instances(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
-    pools: list[PoolDriver[Any]],
+    pools: list[PoolDriver[Any, Any]],
     guest_request: GuestRequest,
 ) -> PolicyReturnType:
     """
@@ -559,7 +564,7 @@ def policy_prefer_spot_instances(
 def policy_prefer_dedicated_instances(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
-    pools: list[PoolDriver[Any]],
+    pools: list[PoolDriver[Any, Any]],
     guest_request: GuestRequest,
 ) -> PolicyReturnType:
     """
@@ -573,7 +578,7 @@ def policy_prefer_dedicated_instances(
 def policy_use_spot_instances(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
-    pools: list[PoolDriver[Any]],
+    pools: list[PoolDriver[Any, Any]],
     guest_request: GuestRequest,
 ) -> PolicyReturnType:
     """
@@ -610,7 +615,7 @@ def policy_use_spot_instances(
 def policy_least_crowded(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
-    pools: list[PoolDriver[Any]],
+    pools: list[PoolDriver[Any, Any]],
     guest_request: GuestRequest,
 ) -> PolicyReturnType:
     """
@@ -645,7 +650,7 @@ def policy_least_crowded(
 def policy_most_free_addresses(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
-    pools: list[PoolDriver[Any]],
+    pools: list[PoolDriver[Any, Any]],
     guest_request: GuestRequest,
 ) -> PolicyReturnType:
     """
@@ -665,7 +670,7 @@ def policy_most_free_addresses(
     # Hold usage report - pools and resources that were checked, and the outcome of the check.
     usage_report: list[list[str]] = []
 
-    def pool_to_free_addresses(pool: PoolDriver[Any], metrics: PoolMetrics) -> int:
+    def pool_to_free_addresses(pool: PoolDriver[Any, Any], metrics: PoolMetrics) -> int:
         free_addresses = 0
 
         for network_name, network_limit in metrics.resources.limits.networks.items():
@@ -722,7 +727,7 @@ def policy_most_free_addresses(
 def policy_one_attempt_forgiving(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
-    pools: list[PoolDriver[Any]],
+    pools: list[PoolDriver[Any, Any]],
     guest_request: GuestRequest,
 ) -> PolicyReturnType:
     """
@@ -765,7 +770,7 @@ def policy_one_attempt_forgiving(
 def policy_timeout_reached(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
-    pools: list[PoolDriver[Any]],
+    pools: list[PoolDriver[Any, Any]],
     guest_request: GuestRequest,
 ) -> PolicyReturnType:
     """
@@ -802,7 +807,7 @@ def policy_timeout_reached(
 def policy_enough_resources(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
-    pools: list[PoolDriver[Any]],
+    pools: list[PoolDriver[Any, Any]],
     guest_request: GuestRequest,
 ) -> PolicyReturnType:
     """
@@ -830,7 +835,7 @@ def policy_enough_resources(
     # Hold usage report - pools and resources that were checked, and the outcome of the check.
     usage_report: list[list[str]] = []
 
-    def has_enough(pool: PoolDriver[Any], metrics: PoolMetrics) -> bool:
+    def has_enough(pool: PoolDriver[Any, Any], metrics: PoolMetrics) -> bool:
         def is_enough(metric_name: str, limit: int, usage: int) -> bool:
             # Very crude trim. We could be smarter, but this should be enough to not hit the limit.
             usage_level = usage / limit
@@ -867,7 +872,7 @@ def policy_enough_resources(
 def policy_can_acquire(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
-    pools: list[PoolDriver[Any]],
+    pools: list[PoolDriver[Any, Any]],
     guest_request: GuestRequest,
 ) -> PolicyReturnType:
     """
@@ -909,7 +914,7 @@ def policy_can_acquire(
 def policy_use_only_when_addressed(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
-    pools: list[PoolDriver[Any]],
+    pools: list[PoolDriver[Any, Any]],
     guest_request: GuestRequest,
 ) -> PolicyReturnType:
     """
@@ -930,7 +935,7 @@ def policy_use_only_when_addressed(
 def policy_one_shot_only(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
-    pools: list[PoolDriver[Any]],
+    pools: list[PoolDriver[Any, Any]],
     guest_request: GuestRequest,
 ) -> PolicyReturnType:
     """
@@ -957,7 +962,7 @@ def run_routing_policies(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
     guest_request: GuestRequest,
-    pools: list[PoolDriver[Any]],
+    pools: list[PoolDriver[Any, Any]],
     policies: list[PolicyType],
 ) -> PolicyReturnType:
     """

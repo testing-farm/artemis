@@ -4,6 +4,7 @@
 import base64
 import dataclasses
 import datetime
+import enum
 import ipaddress
 import json
 import operator
@@ -39,7 +40,6 @@ from .. import (
     TracingOp,
     log_dict_yaml,
     logging_filter,
-    process_output_to_str,
     render_template,
 )
 from ..cache import get_cached_mapping_item, get_cached_mapping_values
@@ -67,7 +67,6 @@ from . import (
     PoolCapabilities,
     PoolData,
     PoolDriver,
-    PoolErrorCauses,
     PoolImageInfo,
     PoolImageSSHInfo,
     PoolResourcesIDs,
@@ -77,6 +76,7 @@ from . import (
     SerializedPoolResourcesIDs,
     Tags,
     WatchdogState,
+    create_error_cause_extractor,
     guest_log_updater,
     run_cli_tool,
 )
@@ -186,11 +186,14 @@ BackendFlavor: TypeAlias = dict[str, Any]
 AWS_VM_HYPERVISORS = ('nitro', 'xen')
 
 
-class AWSErrorCauses(PoolErrorCauses):
+class AWSErrorCauses(enum.Enum):
+    # From CommonErrorCauses
     NONE = 'none'
     RESOURCE_METRICS_REFRESH_FAILED = 'resource-metrics-refresh-failed'
     FLAVOR_INFO_REFRESH_FAILED = 'flavor-info-refresh-failed'
     IMAGE_INFO_REFRESH_FAILED = 'image-info-refresh-failed'
+
+    # AWS specific
     MISSING_INSTANCE = 'missing-instance'
     MISSING_SPOT_INSTANCE_REQUEST = 'missing-spot-instance-request'
     MISSING_SECURITY_GROUP = 'missing-security-group'
@@ -203,37 +206,21 @@ class AWSErrorCauses(PoolErrorCauses):
     SPOT_INSTANCE_TERMINATED_UNEXPECTEDLY = 'spot-instance-terminated-unexpectedly'
 
 
-CLI_ERROR_PATTERNS = {
-    AWSErrorCauses.MISSING_INSTANCE: re.compile(
-        r'.+\(InvalidInstanceID\.NotFound\).+The instance ID \'.+\' does not exist'
-    ),
-    AWSErrorCauses.MISSING_SPOT_INSTANCE_REQUEST: re.compile(
-        r'.+\(InvalidSpotInstanceRequestID\.NotFound\).+The spot instance request ID \'.+\' does not exist'
-    ),
-    AWSErrorCauses.MISSING_SECURITY_GROUP: re.compile(
-        r'.+\(InvalidGroup\.NotFound\).+The security group \'.+\' does not exist'
-    ),
-    AWSErrorCauses.REQUEST_LIMIT_EXCEEDED: re.compile(r'.+\(RequestLimitExceeded\).+Request limit exceeded'),
-}
-
-
-def awscli_error_cause_extractor(output: gluetool.utils.ProcessOutput) -> AWSErrorCauses:
-    if output.exit_code == 0:
-        return AWSErrorCauses.NONE
-
-    stderr = process_output_to_str(output, stream='stderr')
-    stderr = stderr.strip() if stderr is not None else None
-
-    if stderr is None:
-        return AWSErrorCauses.NONE
-
-    for cause, pattern in CLI_ERROR_PATTERNS.items():
-        if not pattern.match(stderr):
-            continue
-
-        return cause
-
-    return AWSErrorCauses.NONE
+error_cause_extractor = create_error_cause_extractor(
+    AWSErrorCauses,
+    patterns={
+        AWSErrorCauses.MISSING_INSTANCE: re.compile(
+            r'.+\(InvalidInstanceID\.NotFound\).+The instance ID \'.+\' does not exist'
+        ),
+        AWSErrorCauses.MISSING_SPOT_INSTANCE_REQUEST: re.compile(
+            r'.+\(InvalidSpotInstanceRequestID\.NotFound\).+The spot instance request ID \'.+\' does not exist'
+        ),
+        AWSErrorCauses.MISSING_SECURITY_GROUP: re.compile(
+            r'.+\(InvalidGroup\.NotFound\).+The security group \'.+\' does not exist'
+        ),
+        AWSErrorCauses.REQUEST_LIMIT_EXCEEDED: re.compile(r'.+\(RequestLimitExceeded\).+Request limit exceeded'),
+    },
+)
 
 
 AWS_INSTANCE_SPECIFICATION = Template("""
@@ -1494,12 +1481,14 @@ _AWS_BOOT_MODE_MATRIX = [
 ]
 
 
-class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor, BackendFlavor, Instance]):
+class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavor, BackendFlavor, Instance]):
     drivername = 'aws'
 
     image_info_class = AWSPoolImageInfo
     flavor_info_class = AWSFlavor
     pool_data_class = AWSPoolData
+
+    error_cause_extractor = staticmethod(error_cause_extractor)
 
     datetime_format = AWS_DATETIME_FORMAT
 
@@ -1989,7 +1978,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor, BackendFlavor
             guestname=guestname,
             poolname=self.poolname,
             commandname=commandname,
-            cause_extractor=awscli_error_cause_extractor,
+            cause_extractor=self.error_cause_extractor,
         )
 
         if r_run.is_error:
@@ -1998,7 +1987,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSPoolImageInfo, AWSFlavor, BackendFlavor
             # Detect "instance does not exist" - these errors are clearly irrecoverable. No matter how often we would
             # run these CLI commands, we would never ever made them work with instances that don't exist.
             if failure.command_output:
-                cause = awscli_error_cause_extractor(failure.command_output)
+                cause = self.error_cause_extractor(output=failure.command_output)
 
                 if cause in (
                     AWSErrorCauses.MISSING_INSTANCE,
