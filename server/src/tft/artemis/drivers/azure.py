@@ -1160,7 +1160,7 @@ class AzureDriver(
 
         return Ok(resources)
 
-    def fetch_pool_flavor_info(self) -> Result[list[Flavor], Failure]:
+    def fetch_pool_flavor_info(self) -> Result[list[AzureFlavor], Failure]:
         # Flavors are described by az cli as
         # {
         #     "maxDataDiskCount": int,
@@ -1173,7 +1173,7 @@ class AzureDriver(
 
         def _constructor(
             logger: gluetool.log.ContextAdapter, raw_flavor: dict[str, Any]
-        ) -> Iterator[Result[Flavor, Failure]]:
+        ) -> Iterator[Result[AzureFlavor, Failure]]:
             max_data_disk_count = int(raw_flavor['maxDataDiskCount'])
             # diskspace is reported in MB
             disks = [FlavorDisk(size=UNITS.Quantity(int(raw_flavor['osDiskSizeInMB']), UNITS.megabytes))]
@@ -1194,7 +1194,7 @@ class AzureDriver(
                 )
             )
 
-        return self.do_fetch_pool_flavor_info(
+        return self._construct_pool_flavor_infos(
             self.logger, self._query_backend_flavors, lambda raw_flavor: cast(str, raw_flavor['name']), _constructor
         )
 

@@ -17,7 +17,7 @@ import shlex
 import sys
 import tempfile
 import time
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from re import Pattern
 from typing import (
     Any,
@@ -1080,7 +1080,7 @@ def _apply_flavor_specification(flavor: Flavor, flavor_spec: ConfigFlavorSpecTyp
 
 
 def _patch_flavors(
-    logger: gluetool.log.ContextAdapter, flavors: dict[str, Flavor], patches: list[ConfigPatchFlavorSpecType]
+    logger: gluetool.log.ContextAdapter, flavors: Mapping[str, Flavor], patches: list[ConfigPatchFlavorSpecType]
 ) -> Result[None, Failure]:
     """
     "Patch" existing flavors as specified by configuration.
@@ -1135,8 +1135,8 @@ def _patch_flavors(
 
 
 def _custom_flavors(
-    logger: gluetool.log.ContextAdapter, flavors: dict[str, Flavor], patches: list[ConfigCustomFlavorSpecType]
-) -> Result[list[Flavor], Failure]:
+    logger: gluetool.log.ContextAdapter, flavors: Mapping[str, FlavorT], patches: list[ConfigCustomFlavorSpecType]
+) -> Result[list[FlavorT], Failure]:
     """
     Create custom flavors based on existing ones.
 
@@ -1415,16 +1415,12 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
     _image_map_hook_name: str
 
     image_info_class: type[PoolImageInfo] = PoolImageInfo
-    flavor_info_class: type[Flavor] = Flavor
     pool_data_class: type[PoolData] = PoolData
 
     error_cause_extractor: ErrorCauseExtractor[ErrorCausesT]
 
     #: Template for a cache key holding pool image info.
     POOL_IMAGE_INFO_CACHE_KEY = 'pool.{}.image-info'
-
-    #: Template for a cache key holding flavor image info.
-    POOL_FLAVOR_INFO_CACHE_KEY = 'pool.{}.flavor-info'
 
     #: Hold all known guest log updaters, with key being driver name, log name and its content type.
     guest_log_updaters: ClassVar[dict[tuple[str, str, GuestLogContentType], str]] = {}
@@ -1441,7 +1437,6 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
         self._pool_costs_metrics: Optional[PoolCostsMetrics] = None
 
         self.image_info_cache_key = self.POOL_IMAGE_INFO_CACHE_KEY.format(self.poolname)  # noqa: FS002
-        self.flavor_info_cache_key = self.POOL_FLAVOR_INFO_CACHE_KEY.format(self.poolname)  # noqa: FS002
 
     _drivers_registry: ClassVar[dict[str, type['PoolDriver[Any, Any]']]] = {}
 
@@ -1791,108 +1786,6 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
 
         return Ok(CanAcquire())
 
-    # TODO: I dislike the naming scheme here very much...
-    def _map_environment_to_flavor_info_by_cache_by_name_or_none(
-        self, logger: gluetool.log.ContextAdapter, flavorname: str
-    ) -> Result[Optional[Flavor], Failure]:
-        """
-        Find a flavor matching the given name.
-
-        :returns: a flavor info or ``None`` if such a name does not exist.
-        """
-
-        r_flavor = get_cached_mapping_item(CACHE.get(), self.flavor_info_cache_key, flavorname, self.flavor_info_class)
-
-        if r_flavor.is_error:
-            return Error(r_flavor.unwrap_error())
-
-        return r_flavor
-
-    def _map_environment_to_flavor_info_by_cache_by_name(
-        self, logger: gluetool.log.ContextAdapter, flavorname: str
-    ) -> Result[Flavor, Failure]:
-        """
-        Find a flavor matching the given name.
-
-        :returns: a flavor info.
-        """
-
-        r_flavor = self._map_environment_to_flavor_info_by_cache_by_name_or_none(logger, flavorname)
-
-        if r_flavor.is_error:
-            return Error(r_flavor.unwrap_error())
-
-        picked_flavor = r_flavor.unwrap()
-
-        if picked_flavor is None:
-            return Error(Failure('no such flavor', flavorname=flavorname))
-
-        return Ok(picked_flavor)
-
-    def _map_environment_to_flavor_info_by_cache_by_constraints(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        environment: Environment,
-        sort_key_getter: FlavorKeyGetterType = flavor_to_key,
-    ) -> Result[list[Flavor], Failure]:
-        """
-        Evaluate the given environment, and return flavors suitable for the environment given its HW constraints.
-
-        :returns: list of two-item tuples consisting of a pool flavor info paired with a corresponding
-            :py:class:`environment.Flavor` instance.
-        """
-
-        # Fetch available flavor infos and pool capabilities first.
-        r_flavors = self.get_cached_pool_flavor_infos()
-
-        if r_flavors.is_error:
-            return Error(r_flavors.unwrap_error())
-
-        flavors = r_flavors.unwrap()
-
-        gluetool.log.log_dict(logger.debug, 'available flavors', flavors)
-
-        # Extract HW constraints specified by the environment.
-        r_constraints = environment.get_hw_constraints()
-
-        if r_constraints.is_error:
-            return Error(r_constraints.unwrap_error())
-
-        constraints = r_constraints.unwrap()
-
-        if constraints is None:
-            return Ok(flavors)
-
-        log_dict_yaml(logger.debug, 'constraint', constraints.serialize())
-
-        # The actual filter: pick flavors that pass the test and match the requirements.
-        suitable_flavors = []
-
-        for flavor in flavors:
-            r_suitable = constraints.eval_flavor(logger, flavor)
-
-            if r_suitable.is_error:
-                return Error(r_suitable.unwrap_error())
-
-            if r_suitable.unwrap() is True:
-                suitable_flavors.append(flavor)
-
-        gluetool.log.log_dict(logger.debug, 'suitable flavors', suitable_flavors)
-
-        if not suitable_flavors:
-            return Ok([])
-
-        # Sort suitable flavors, the "smaller" ones first. The less cores, memory and diskpace the flavor has,
-        # the smaller it is in eyes of this ordering.
-        sorted_suitable_flavors = sorted(suitable_flavors, key=sort_key_getter)
-
-        gluetool.log.log_dict(logger.debug, 'sorted suitable flavors', sorted_suitable_flavors)
-
-        gluetool.log.log_dict(logger.debug, 'environment', environment.serialize())
-        log_dict_yaml(logger.debug, 'constraints', constraints.serialize())
-
-        return Ok(sorted_suitable_flavors)
-
     def log_acquisition_attempt(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -2181,6 +2074,55 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
 
         return Ok(r_rendered_tags.unwrap())
 
+    def do_fetch_pool_resources_metrics_instance_usage(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        usage: PoolResourcesUsage,
+        fetch: Callable[[gluetool.log.ContextAdapter], Result[list[T], Failure]],
+        update: Callable[[gluetool.log.ContextAdapter, PoolResourcesUsage, T], Result[None, Failure]],
+    ) -> Result[None, Failure]:
+        """
+        A helper implementation for constructing pool instance usage metrics.
+
+        :param logger: logger to use for logging.
+        :param usage: pool resource usage container.
+        :param fetch: a callable that returns a list of raw instance information, one entry per
+            instance. The actual type of each raw instance entry is not important for this helper,
+            it must match input types expected by ``update``.
+        :param update: a callable that accepts pool resource usage, a raw instance, and shall update pool resource
+            usage by adding data about the instance.
+        """
+
+        usage.instances = 0
+        usage.cores = 0
+        usage.memory = 0
+        usage.diskspace = 0
+
+        r_raw_instances = fetch(logger)
+
+        if r_raw_instances.is_error:
+            return Error(r_raw_instances.unwrap_error())
+
+        raw_instances = r_raw_instances.unwrap()
+
+        for raw_instance in raw_instances:
+            try:
+                r_update = update(logger, usage, raw_instance)
+
+            except Exception as exc:
+                return Error(
+                    Failure.from_exc('failed to extract instance resource info', exc, raw_instance=raw_instance)
+                )
+
+            if r_update.is_error:
+                return Error(
+                    Failure.from_failure(
+                        'failed to extract instance resource info', r_update.unwrap_error(), raw_instance=raw_instance
+                    )
+                )
+
+        return Ok(None)
+
     def _fetch_pool_resources_metrics_from_config(
         self, logger: gluetool.log.ContextAdapter
     ) -> Result[PoolResourcesMetrics, Failure]:
@@ -2216,82 +2158,6 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
                 )
 
         return Ok(metrics)
-
-    def do_fetch_pool_resources_metrics_flavor_usage(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        usage: PoolResourcesUsage,
-        fetch: Callable[[gluetool.log.ContextAdapter], Result[list[T], Failure]],
-        flavor_name_getter: Optional[Callable[[T], str]],
-        update: Callable[[gluetool.log.ContextAdapter, PoolResourcesUsage, T, Optional[Flavor]], Result[None, Failure]],
-    ) -> Result[None, Failure]:
-        """
-        A helper implementation for constructing pool flavor usage metrics.
-
-        :param logger: logger to use for logging.
-        :param usage: pool resource usage container.
-        :param fetch: a callable that returns a list of raw instance information, one entry per
-            instance. The actual type of each raw instance entry is not important for this helper,
-            it must match input types expected by ``flavor_name_getter`` and ``update``.
-        :param flavor_name_getter: a callable that returns a name of the flavor for a given raw
-            instance entry.
-        :param update: a callable that accepts pool resource usage, a raw instance and optionally
-            a flavor, and shall update pool resource usage by adding data about the instance.
-        """
-
-        r_flavors = self.get_cached_pool_flavor_infos()
-
-        if r_flavors.is_error:
-            return Error(r_flavors.unwrap_error())
-
-        flavors = {flavor.name: flavor for flavor in r_flavors.unwrap()}
-
-        usage.instances = 0
-        usage.cores = 0
-        usage.memory = 0
-        usage.diskspace = 0
-
-        r_raw_instances = fetch(logger)
-
-        if r_raw_instances.is_error:
-            return Error(r_raw_instances.unwrap_error())
-
-        raw_instances = r_raw_instances.unwrap()
-
-        for raw_instance in raw_instances:
-            if flavor_name_getter is not None:
-                try:
-                    flavor_name = flavor_name_getter(raw_instance)
-
-                except Exception as exc:
-                    return Error(Failure.from_exc('malformed instance description', exc, raw_instance=raw_instance))
-
-                flavor = flavors.get(flavor_name)
-
-                # This may happen, with multiple pools with different flavors using the same credentials
-                # and overlapping subnets.
-                if flavor is None:
-                    logger.warning(f'flavor {flavor_name} not cached')
-
-            else:
-                flavor = None
-
-            try:
-                r_update = update(logger, usage, raw_instance, flavor)
-
-            except Exception as exc:
-                return Error(
-                    Failure.from_exc('failed to extract instance resource info', exc, raw_instance=raw_instance)
-                )
-
-            if r_update.is_error:
-                return Error(
-                    Failure.from_failure(
-                        'failed to extract instance resource info', r_update.unwrap_error(), raw_instance=raw_instance
-                    )
-                )
-
-        return Ok(None)
 
     def fetch_pool_resources_metrics(
         self, logger: gluetool.log.ContextAdapter
@@ -2587,190 +2453,6 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
 
         return get_cached_mapping_item(CACHE.get(), self.image_info_cache_key, imagename, self.image_info_class)
 
-    def do_fetch_pool_flavor_info(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        fetch: Callable[[gluetool.log.ContextAdapter], _Result[list[T], Failure]],
-        name_getter: Callable[[T], str],
-        constructor: Callable[[gluetool.log.ContextAdapter, T], Iterator[Result[Flavor, Failure]]],
-    ) -> Result[list[Flavor], Failure]:
-        """
-        A helper implementation for constructing flavor info.
-
-        :param logger: logger to use for logging.
-        :param fetch: a callable that returns a list of raw flavor information, one entry per
-            flavor. The actual type of each raw flavor entry is not important for this helper, it
-            must match input types expected by ``name_getter`` and ``constructor``.
-        :param name_getter: a callable that returns a name of the flavor for a given raw flavor entry.
-        :param constructor: a callable that yields actual :py:class:`Flavor` instances, one for each
-            flavor constructed from a given raw flavor.
-        """
-
-        flavor_name_pattern: Optional[Pattern[str]] = None
-
-        if self.pool_config.get('flavor-regex'):
-            try:
-                flavor_name_pattern = re.compile(self.pool_config['flavor-regex'])
-
-            except re.error as exc:
-                return Error(Failure.from_exc('failed to compile flavor-regex pattern', exc))
-
-        r_raw_flavors = fetch(logger)
-
-        if not is_successful(r_raw_flavors):
-            return Error(r_raw_flavors.failure())
-
-        raw_flavors = r_raw_flavors.unwrap()
-
-        flavors: list[Flavor] = []
-
-        for raw_flavor in raw_flavors:
-            try:
-                flavor_name = name_getter(raw_flavor)
-
-            except Exception as exc:
-                return Error(Failure.from_exc('malformed flavor description', exc, raw_flavor=raw_flavor))
-
-            if flavor_name_pattern is not None and not flavor_name_pattern.match(flavor_name):
-                continue
-
-            try:
-                for r_flavor in constructor(logger, raw_flavor):
-                    if r_flavor.is_error:
-                        return Error(
-                            Failure.from_failure(
-                                'failed to extract flavor info', r_flavor.unwrap_error(), raw_flavor=raw_flavor
-                            )
-                        )
-
-                    flavors.append(r_flavor.unwrap())
-
-            except Exception as exc:
-                return Error(Failure.from_exc('failed to extract flavor info', exc, raw_flavor=raw_flavor))
-
-        return Ok(flavors)
-
-    def fetch_pool_flavor_info(self) -> Result[list[Flavor], Failure]:
-        """
-        Responsible for fetching the most up-to-date flavor info..
-
-        This is the only method common driver needs to reimplement. The default
-        implementation yields "no flavors" default as it has no actual pool to query.
-        The real driver would probably to query its pool's API, and retrieve actual data.
-        """
-
-        return Ok([])
-
-    def _fetch_custom_pool_flavor_info_from_config(
-        self, logger: gluetool.log.ContextAdapter, flavors: dict[str, Flavor]
-    ) -> Result[list[Flavor], Failure]:
-        """
-        "Fetch" custom flavors specified in driver configuration. These are clones of existing flavors, but with
-        some of the original properties changed in the clone.
-
-        :param flavors: actual existing flavors that serve as basis for custom flavors.
-        """
-
-        return _custom_flavors(
-            logger, flavors, cast(list[ConfigCustomFlavorSpecType], self.pool_config.get('custom-flavors', []))
-        )
-
-    def _fetch_patched_pool_flavor_info_from_config(
-        self, logger: gluetool.log.ContextAdapter, flavors: dict[str, Flavor]
-    ) -> Result[None, Failure]:
-        """
-        "Patch" existing flavors as specified by configuration. Some information may not be available via API,
-        therefore maintainers can use ``patch-flavors`` to modify flavors as needed.
-
-        :param flavors: actual existing flavors that serve as basis for custom flavors.
-        """
-
-        return _patch_flavors(
-            logger, flavors, cast(list[ConfigPatchFlavorSpecType], self.pool_config.get('patch-flavors', []))
-        )
-
-    def _fetch_pool_flavor_info_from_config(
-        self, logger: gluetool.log.ContextAdapter, flavors: list[Flavor]
-    ) -> Result[list[Flavor], Failure]:
-        """
-        "Fetch" flavor infos from the driver configuration. This includes both custom flavors and patch information.
-
-        :param flavors: actual existing flavors that serve as basis for custom flavors.
-        """
-
-        flavors_map = {flavor.name: flavor for flavor in flavors}
-
-        if 'custom-flavors' in self.pool_config:
-            r_custom_flavors = self._fetch_custom_pool_flavor_info_from_config(logger, flavors_map)
-
-            if r_custom_flavors.is_error:
-                return Error(r_custom_flavors.unwrap_error())
-
-            for flavor in r_custom_flavors.unwrap():
-                flavors_map[flavor.name] = flavor
-
-        if 'patch-flavors' in self.pool_config:
-            r_patched_flavors = self._fetch_patched_pool_flavor_info_from_config(logger, flavors_map)
-
-            if r_patched_flavors.is_error:
-                return Error(r_patched_flavors.unwrap_error())
-
-        return Ok(list(flavors_map.values()))
-
-    def refresh_cached_pool_flavor_info(self) -> Result[None, Failure]:
-        """
-        Responsible for updating the cache with the most up-to-date flavor info. For that purpose, it calls
-        :py:meth:`fetch_pool_flavor_info` to retrieve the actual data - this part is driver-specific, while
-        the cache operations are not.
-
-        Since :py:meth:`fetch_pool_flavor_info` is presumably going to talk to pool API, we cannot allow it
-        to be part of the critical paths like routing, therefore we exchange metrics through the cache.
-
-        Data are stored as a mapping between image name and a containers serialized into JSON blobs.
-        """
-
-        r_flavor_info = self.fetch_pool_flavor_info()
-
-        if r_flavor_info.is_error:
-            PoolMetrics(self.poolname).inc_error(self.poolname, CommonErrorCauses.FLAVOR_INFO_REFRESH_FAILED)
-
-            return Error(r_flavor_info.unwrap_error())
-
-        real_flavors = r_flavor_info.unwrap()
-
-        r_config_flavors = self._fetch_pool_flavor_info_from_config(LOGGER.get(), real_flavors)
-
-        if r_config_flavors.is_error:
-            return Error(r_config_flavors.unwrap_error())
-
-        all_flavors = real_flavors + r_config_flavors.unwrap()
-
-        r_refresh = refresh_cached_mapping(
-            CACHE.get(), self.flavor_info_cache_key, {fi.name: fi for fi in all_flavors if fi.name}
-        )
-
-        if r_refresh.is_error:
-            return Error(r_refresh.unwrap_error())
-
-        PoolMetrics(self.poolname).refresh_flavor_info_metrics(self.poolname, len(all_flavors))
-
-        return Ok(None)
-
-    def get_cached_pool_flavor_info(self, flavorname: str) -> Result[Optional[Flavor], Failure]:
-        """
-        Retrieve "current" flavor info metrics, as stored in the cache. Given how the information is acquired,
-        it will **always** be slightly outdated.
-
-        .. note::
-
-           There is a small window opened to race conditions: if provisioning gets to this method *before*
-           pool's flavor info has been fetched and stored in the cache, after the cache was emptied (e.g. by
-           a caching service restart), then this method will return ``None``, falsely pretending the flavor
-           is unknown.
-        """
-
-        return get_cached_mapping_item(CACHE.get(), self.flavor_info_cache_key, flavorname, self.flavor_info_class)
-
     def get_cached_pool_image_infos(self) -> Result[list[PoolImageInfo], Failure]:
         """
         Retrieve pool image info for all known images.
@@ -2782,18 +2464,6 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
             tracing_span.set_tag('poolname', self.poolname)
 
             return get_cached_mapping_values(CACHE.get(), self.image_info_cache_key, self.image_info_class)
-
-    def get_cached_pool_flavor_infos(self) -> Result[list[Flavor], Failure]:
-        """
-        Retrieve all flavor info known to the pool.
-        """
-
-        with Sentry.start_span(
-            TracingOp.FUNCTION, description='PoolDriver.get_cached_pool_flavor_infos'
-        ) as tracing_span:
-            tracing_span.set_tag('poolname', self.poolname)
-
-            return get_cached_mapping_values(CACHE.get(), self.flavor_info_cache_key, self.flavor_info_class)
 
 
 class FlavorFilter(Protocol, Generic[FlavorT]):
@@ -2828,6 +2498,16 @@ class FlavorBasedPoolDriver(
     Drivers of this type work with images and flavors, and the class provides implementation of shared concepts and
     behavior of such drivers.
     """
+
+    flavor_info_class: type[FlavorT] = Flavor  # type: ignore[assignment]
+
+    #: Template for a cache key holding flavor image info.
+    POOL_FLAVOR_INFO_CACHE_KEY = 'pool.{}.flavor-info'
+
+    def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str, pool_config: dict[str, Any]) -> None:
+        super().__init__(logger, poolname, pool_config)
+
+        self.flavor_info_cache_key = self.POOL_FLAVOR_INFO_CACHE_KEY.format(self.poolname)  # noqa: FS002
 
     @abc.abstractmethod
     def _query_backend_flavors(self, logger: gluetool.log.ContextAdapter) -> _Result[list[BackendFlavorT], Failure]:
@@ -2953,7 +2633,7 @@ class FlavorBasedPoolDriver(
             return Error(r_suitable_flavors.unwrap_error())
 
         r_filtered_suitable_flavors = self._filter_suitable_flavors(
-            logger, session, guest_request, image, cast(list[FlavorT], r_suitable_flavors.unwrap()), *flavor_filters
+            logger, session, guest_request, image, r_suitable_flavors.unwrap(), *flavor_filters
         )
 
         if r_filtered_suitable_flavors.is_error:
@@ -3128,6 +2808,386 @@ class FlavorBasedPoolDriver(
 
         # Nothing ruled out the provisioning yet, return a positive answer.
         return Ok(CanAcquire())
+
+    # TODO: I dislike the naming scheme here very much...
+    def _map_environment_to_flavor_info_by_cache_by_name_or_none(
+        self, logger: gluetool.log.ContextAdapter, flavorname: str
+    ) -> Result[Optional[FlavorT], Failure]:
+        """
+        Find a flavor matching the given name.
+
+        :returns: a flavor info or ``None`` if such a name does not exist.
+        """
+
+        r_flavor = get_cached_mapping_item(CACHE.get(), self.flavor_info_cache_key, flavorname, self.flavor_info_class)
+
+        if r_flavor.is_error:
+            return Error(r_flavor.unwrap_error())
+
+        return r_flavor
+
+    def _map_environment_to_flavor_info_by_cache_by_name(
+        self, logger: gluetool.log.ContextAdapter, flavorname: str
+    ) -> Result[FlavorT, Failure]:
+        """
+        Find a flavor matching the given name.
+
+        :returns: a flavor info.
+        """
+
+        r_flavor = self._map_environment_to_flavor_info_by_cache_by_name_or_none(logger, flavorname)
+
+        if r_flavor.is_error:
+            return Error(r_flavor.unwrap_error())
+
+        picked_flavor = r_flavor.unwrap()
+
+        if picked_flavor is None:
+            return Error(Failure('no such flavor', flavorname=flavorname))
+
+        return Ok(picked_flavor)
+
+    def _map_environment_to_flavor_info_by_cache_by_constraints(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        environment: Environment,
+        sort_key_getter: FlavorKeyGetterType = flavor_to_key,
+    ) -> Result[list[FlavorT], Failure]:
+        """
+        Evaluate the given environment, and return flavors suitable for the environment given its HW constraints.
+
+        :returns: list of two-item tuples consisting of a pool flavor info paired with a corresponding
+            :py:class:`environment.Flavor` instance.
+        """
+
+        # Fetch available flavor infos and pool capabilities first.
+        r_flavors = self.get_pool_flavor_infos()
+
+        if r_flavors.is_error:
+            return Error(r_flavors.unwrap_error())
+
+        flavors = r_flavors.unwrap()
+
+        gluetool.log.log_dict(logger.debug, 'available flavors', flavors)
+
+        # Extract HW constraints specified by the environment.
+        r_constraints = environment.get_hw_constraints()
+
+        if r_constraints.is_error:
+            return Error(r_constraints.unwrap_error())
+
+        constraints = r_constraints.unwrap()
+
+        if constraints is None:
+            return Ok(flavors)
+
+        log_dict_yaml(logger.debug, 'constraint', constraints.serialize())
+
+        # The actual filter: pick flavors that pass the test and match the requirements.
+        suitable_flavors = []
+
+        for flavor in flavors:
+            r_suitable = constraints.eval_flavor(logger, flavor)
+
+            if r_suitable.is_error:
+                return Error(r_suitable.unwrap_error())
+
+            if r_suitable.unwrap() is True:
+                suitable_flavors.append(flavor)
+
+        gluetool.log.log_dict(logger.debug, 'suitable flavors', suitable_flavors)
+
+        if not suitable_flavors:
+            return Ok([])
+
+        # Sort suitable flavors, the "smaller" ones first. The less cores, memory and diskpace the flavor has,
+        # the smaller it is in eyes of this ordering.
+        sorted_suitable_flavors = sorted(suitable_flavors, key=sort_key_getter)
+
+        gluetool.log.log_dict(logger.debug, 'sorted suitable flavors', sorted_suitable_flavors)
+
+        gluetool.log.log_dict(logger.debug, 'environment', environment.serialize())
+        log_dict_yaml(logger.debug, 'constraints', constraints.serialize())
+
+        return Ok(sorted_suitable_flavors)
+
+    def _construct_pool_flavor_infos(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        fetch: Callable[[gluetool.log.ContextAdapter], _Result[list[T], Failure]],
+        name_getter: Callable[[T], str],
+        constructor: Callable[[gluetool.log.ContextAdapter, T], Iterator[Result[FlavorT, Failure]]],
+    ) -> Result[list[FlavorT], Failure]:
+        """
+        A helper implementation for constructing flavor info.
+
+        :param logger: logger to use for logging.
+        :param fetch: a callable that returns a list of raw flavor information, one entry per
+            flavor. The actual type of each raw flavor entry is not important for this helper, it
+            must match input types expected by ``name_getter`` and ``constructor``.
+        :param name_getter: a callable that returns a name of the flavor for a given raw flavor entry.
+        :param constructor: a callable that yields actual :py:class:`Flavor` instances, one for each
+            flavor constructed from a given raw flavor.
+        """
+
+        flavor_name_pattern: Optional[Pattern[str]] = None
+
+        if self.pool_config.get('flavor-regex'):
+            try:
+                flavor_name_pattern = re.compile(self.pool_config['flavor-regex'])
+
+            except re.error as exc:
+                return Error(Failure.from_exc('failed to compile flavor-regex pattern', exc))
+
+        r_raw_flavors = fetch(logger)
+
+        if not is_successful(r_raw_flavors):
+            return Error(r_raw_flavors.failure())
+
+        raw_flavors = r_raw_flavors.unwrap()
+
+        flavors: list[FlavorT] = []
+
+        for raw_flavor in raw_flavors:
+            try:
+                flavor_name = name_getter(raw_flavor)
+
+            except Exception as exc:
+                return Error(Failure.from_exc('malformed flavor description', exc, raw_flavor=raw_flavor))
+
+            if flavor_name_pattern is not None and not flavor_name_pattern.match(flavor_name):
+                continue
+
+            try:
+                for r_flavor in constructor(logger, raw_flavor):
+                    if r_flavor.is_error:
+                        return Error(
+                            Failure.from_failure(
+                                'failed to extract flavor info', r_flavor.unwrap_error(), raw_flavor=raw_flavor
+                            )
+                        )
+
+                    flavors.append(r_flavor.unwrap())
+
+            except Exception as exc:
+                return Error(Failure.from_exc('failed to extract flavor info', exc, raw_flavor=raw_flavor))
+
+        return Ok(flavors)
+
+    @abc.abstractmethod
+    def fetch_pool_flavor_info(self) -> Result[list[FlavorT], Failure]:
+        """
+        Responsible for fetching the most up-to-date flavor info..
+
+        This is the only method common driver needs to reimplement. The default
+        implementation yields "no flavors" default as it has no actual pool to query.
+        The real driver would probably to query its pool's API, and retrieve actual data.
+        """
+
+        raise NotImplementedError
+
+    def _fetch_custom_pool_flavor_info_from_config(
+        self, logger: gluetool.log.ContextAdapter, flavors: Mapping[str, FlavorT]
+    ) -> Result[list[FlavorT], Failure]:
+        """
+        "Fetch" custom flavors specified in driver configuration. These are clones of existing flavors, but with
+        some of the original properties changed in the clone.
+
+        :param flavors: actual existing flavors that serve as basis for custom flavors.
+        """
+
+        return _custom_flavors(
+            logger, flavors, cast(list[ConfigCustomFlavorSpecType], self.pool_config.get('custom-flavors', []))
+        )
+
+    def _fetch_patched_pool_flavor_info_from_config(
+        self, logger: gluetool.log.ContextAdapter, flavors: Mapping[str, Flavor]
+    ) -> Result[None, Failure]:
+        """
+        "Patch" existing flavors as specified by configuration. Some information may not be available via API,
+        therefore maintainers can use ``patch-flavors`` to modify flavors as needed.
+
+        :param flavors: actual existing flavors that serve as basis for custom flavors.
+        """
+
+        return _patch_flavors(
+            logger, flavors, cast(list[ConfigPatchFlavorSpecType], self.pool_config.get('patch-flavors', []))
+        )
+
+    def _fetch_pool_flavor_info_from_config(
+        self, logger: gluetool.log.ContextAdapter, flavors: list[FlavorT]
+    ) -> Result[list[Flavor], Failure]:
+        """
+        "Fetch" flavor infos from the driver configuration. This includes both custom flavors and patch information.
+
+        :param flavors: actual existing flavors that serve as basis for custom flavors.
+        """
+
+        flavors_map = {flavor.name: flavor for flavor in flavors}
+
+        if 'custom-flavors' in self.pool_config:
+            r_custom_flavors = self._fetch_custom_pool_flavor_info_from_config(logger, flavors_map)
+
+            if r_custom_flavors.is_error:
+                return Error(r_custom_flavors.unwrap_error())
+
+            for flavor in r_custom_flavors.unwrap():
+                flavors_map[flavor.name] = flavor
+
+        if 'patch-flavors' in self.pool_config:
+            r_patched_flavors = self._fetch_patched_pool_flavor_info_from_config(logger, flavors_map)
+
+            if r_patched_flavors.is_error:
+                return Error(r_patched_flavors.unwrap_error())
+
+        return Ok(list(flavors_map.values()))
+
+    def refresh_pool_flavor_info(self) -> Result[None, Failure]:
+        """
+        Responsible for updating the cache with the most up-to-date flavor info.
+
+        For that purpose, it calls :py:meth:`fetch_pool_flavor_info` to retrieve the actual data - this part is
+        driver-specific, while the cache operations are not.
+
+        Data are stored as a mapping between image name and a container serialized into JSON blobs.
+        """
+
+        r_flavor_info = self.fetch_pool_flavor_info()
+
+        if r_flavor_info.is_error:
+            PoolMetrics(self.poolname).inc_error(self.poolname, CommonErrorCauses.FLAVOR_INFO_REFRESH_FAILED)
+
+            return Error(r_flavor_info.unwrap_error())
+
+        real_flavors = r_flavor_info.unwrap()
+
+        r_config_flavors = self._fetch_pool_flavor_info_from_config(LOGGER.get(), real_flavors)
+
+        if r_config_flavors.is_error:
+            return Error(r_config_flavors.unwrap_error())
+
+        all_flavors = real_flavors + r_config_flavors.unwrap()
+
+        r_refresh = refresh_cached_mapping(
+            CACHE.get(), self.flavor_info_cache_key, {fi.name: fi for fi in all_flavors if fi.name}
+        )
+
+        if r_refresh.is_error:
+            return Error(r_refresh.unwrap_error())
+
+        PoolMetrics(self.poolname).refresh_flavor_info_metrics(self.poolname, len(all_flavors))
+
+        return Ok(None)
+
+    def get_pool_flavor_info(self, flavorname: str) -> Result[Optional[FlavorT], Failure]:
+        """
+        Retrieve flavor info for the given flavor.
+
+        .. note::
+
+           There is a small window opened to race conditions: if provisioning gets to this method *before*
+           pool's flavor info has been fetched and stored in the cache, after the cache was emptied (e.g. by
+           a caching service restart), then this method will return ``None``, falsely pretending the flavor
+           is unknown.
+        """
+
+        with Sentry.start_span(TracingOp.FUNCTION, description='PoolDriver.get_pool_flavor_info') as tracing_span:
+            tracing_span.set_tag('poolname', self.poolname)
+
+            return get_cached_mapping_item(CACHE.get(), self.flavor_info_cache_key, flavorname, self.flavor_info_class)
+
+    def get_pool_flavor_infos(self) -> Result[list[FlavorT], Failure]:
+        """
+        Retrieve flavor info for all flavors known to the pool.
+
+        .. note::
+
+           There is a small window opened to race conditions: if provisioning gets to this method *before*
+           pool's flavor info has been fetched and stored in the cache, after the cache was emptied (e.g. by
+           a caching service restart), then this method will return an empty list, falsely pretending there
+           are no flavors.
+        """
+
+        with Sentry.start_span(TracingOp.FUNCTION, description='PoolDriver.get_pool_flavor_infos') as tracing_span:
+            tracing_span.set_tag('poolname', self.poolname)
+
+            return get_cached_mapping_values(CACHE.get(), self.flavor_info_cache_key, self.flavor_info_class)
+
+    def do_fetch_pool_resources_metrics_flavor_usage(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        usage: PoolResourcesUsage,
+        fetch: Callable[[gluetool.log.ContextAdapter], Result[list[T], Failure]],
+        flavor_name_getter: Optional[Callable[[T], str]],
+        update: Callable[[gluetool.log.ContextAdapter, PoolResourcesUsage, T, Optional[Flavor]], Result[None, Failure]],
+    ) -> Result[None, Failure]:
+        """
+        A helper implementation for constructing pool flavor usage metrics.
+
+        :param logger: logger to use for logging.
+        :param usage: pool resource usage container.
+        :param fetch: a callable that returns a list of raw instance information, one entry per
+            instance. The actual type of each raw instance entry is not important for this helper,
+            it must match input types expected by ``flavor_name_getter`` and ``update``.
+        :param flavor_name_getter: a callable that returns a name of the flavor for a given raw
+            instance entry.
+        :param update: a callable that accepts pool resource usage, a raw instance and optionally
+            a flavor, and shall update pool resource usage by adding data about the instance.
+        """
+
+        r_flavors = self.get_pool_flavor_infos()
+
+        if r_flavors.is_error:
+            return Error(r_flavors.unwrap_error())
+
+        flavors = {flavor.name: flavor for flavor in r_flavors.unwrap()}
+
+        usage.instances = 0
+        usage.cores = 0
+        usage.memory = 0
+        usage.diskspace = 0
+
+        r_raw_instances = fetch(logger)
+
+        if r_raw_instances.is_error:
+            return Error(r_raw_instances.unwrap_error())
+
+        raw_instances = r_raw_instances.unwrap()
+
+        for raw_instance in raw_instances:
+            if flavor_name_getter is not None:
+                try:
+                    flavor_name = flavor_name_getter(raw_instance)
+
+                except Exception as exc:
+                    return Error(Failure.from_exc('malformed instance description', exc, raw_instance=raw_instance))
+
+                flavor = flavors.get(flavor_name)
+
+                # This may happen, with multiple pools with different flavors using the same credentials
+                # and overlapping subnets.
+                if flavor is None:
+                    logger.warning(f'flavor {flavor_name} not cached')
+
+            else:
+                flavor = None
+
+            try:
+                r_update = update(logger, usage, raw_instance, flavor)
+
+            except Exception as exc:
+                return Error(
+                    Failure.from_exc('failed to extract instance resource info', exc, raw_instance=raw_instance)
+                )
+
+            if r_update.is_error:
+                return Error(
+                    Failure.from_failure(
+                        'failed to extract instance resource info', r_update.unwrap_error(), raw_instance=raw_instance
+                    )
+                )
+
+        return Ok(None)
 
 
 def vm_info_to_ip(

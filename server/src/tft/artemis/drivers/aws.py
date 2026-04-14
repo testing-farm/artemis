@@ -2880,7 +2880,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
 
         return self.dispatch_resource_cleanup(logger, session, *resource_ids, guest_request=guest_request)
 
-    def fetch_pool_flavor_info(self) -> Result[list[Flavor], Failure]:
+    def fetch_pool_flavor_info(self) -> Result[list[AWSFlavor], Failure]:
         # See AWS docs: https://docs.aws.amazon.com/cli/latest/reference/ec2/describe-instance-types.html
 
         r_capabilities = self.capabilities()
@@ -2896,7 +2896,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
         # based on their attributes, not because maintainers "hide" the instance types with wrong parameters.
         def _constructor(
             logger: gluetool.log.ContextAdapter, raw_flavor: dict[str, Any]
-        ) -> Iterator[Result[Flavor, Failure]]:
+        ) -> Iterator[Result[AWSFlavor, Failure]]:
             for arch in cast(APIInstanceTypeProcessorInfo, raw_flavor['ProcessorInfo'])['SupportedArchitectures']:
                 artemis_arch = _aws_arch_to_arch(arch)
 
@@ -2948,7 +2948,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
                     )
                 )
 
-        return self.do_fetch_pool_flavor_info(
+        return self._construct_pool_flavor_infos(
             self.logger, self._query_backend_flavors, lambda raw_flavor: raw_flavor['InstanceType'], _constructor
         )
 
