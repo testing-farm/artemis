@@ -17,6 +17,7 @@ from gluetool.result import Error, Ok, Result
 from google.cloud import compute_v1
 from returns.result import Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
+from typing_extensions import override
 
 from .. import Failure, log_dict_yaml
 from ..db import GuestRequest
@@ -219,6 +220,7 @@ class GCPDriver(PoolDriver[GCPErrorCauses, Instance]):
 
         return Ok(instance_info.id)
 
+    @override
     def update_guest(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -269,6 +271,7 @@ class GCPDriver(PoolDriver[GCPErrorCauses, Instance]):
             )
         )
 
+    @override
     def release_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[None, Failure]:
@@ -288,6 +291,7 @@ class GCPDriver(PoolDriver[GCPErrorCauses, Instance]):
             guest_request=guest_request,
         )
 
+    @override
     def release_pool_resources(
         self, logger: gluetool.log.ContextAdapter, raw_resource_ids: SerializedPoolResourcesIDs
     ) -> Result[ReleasePoolResourcesState, Failure]:
@@ -399,6 +403,7 @@ class GCPDriver(PoolDriver[GCPErrorCauses, Instance]):
             return Error(Failure.from_exc('Failed to query information about the freshly created instance', exc))
         return Ok(created_instance)
 
+    @override
     def list_images(
         self, logger: gluetool.log.ContextAdapter, filters: Optional[ConfigImageFilter] = None
     ) -> Result[list[PoolImageInfo], Failure]:
@@ -450,6 +455,7 @@ class GCPDriver(PoolDriver[GCPErrorCauses, Instance]):
 
         return Ok(res)
 
+    @override
     def acquire_guest(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -549,6 +555,7 @@ class GCPDriver(PoolDriver[GCPErrorCauses, Instance]):
             return access_configs[0].nat_i_p
         return None
 
+    @override
     def trigger_reboot(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[None, Failure]:
         """
         Trigger hard reboot of a GCP instance.
@@ -615,6 +622,7 @@ class GCPDriver(PoolDriver[GCPErrorCauses, Instance]):
 
     # The following are necessary implementations of abstract methods the driver does not have use for. They are
     # required, but we will remove them in the future.
+    @override
     def acquire_console_url(
         self, logger: gluetool.log.ContextAdapter, guest: GuestRequest
     ) -> Result[ConsoleUrlData, Failure]:

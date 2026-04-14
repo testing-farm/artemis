@@ -7,6 +7,7 @@ import gluetool.log
 import gluetool.utils
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
+from typing_extensions import override
 
 from .. import Failure
 from ..db import GuestRequest
@@ -40,11 +41,13 @@ class LocalhostDriver(PoolDriver[LocalhostErrorCauses, Instance]):
 
     error_cause_extractor = staticmethod(error_cause_extractor)
 
+    @override
     def list_images(
         self, logger: gluetool.log.ContextAdapter, filters: Optional[ConfigImageFilter] = None
     ) -> Result[list[PoolImageInfo], Failure]:
         return Ok([])
 
+    @override
     def acquire_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
@@ -56,6 +59,7 @@ class LocalhostDriver(PoolDriver[LocalhostErrorCauses, Instance]):
             )
         )
 
+    @override
     def update_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
@@ -65,6 +69,7 @@ class LocalhostDriver(PoolDriver[LocalhostErrorCauses, Instance]):
             )
         )
 
+    @override
     def release_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[None, Failure]:
@@ -74,16 +79,19 @@ class LocalhostDriver(PoolDriver[LocalhostErrorCauses, Instance]):
 
         return Ok(None)
 
+    @override
     def release_pool_resources(
         self, logger: gluetool.log.ContextAdapter, raw_resources_ids: SerializedPoolResourcesIDs
     ) -> Result[ReleasePoolResourcesState, Failure]:
         return Ok(ReleasePoolResourcesState.RELEASED)
 
+    @override
     def trigger_reboot(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[None, Failure]:
         return Error(Failure('guest reboot not supported'))
 
     # The following are necessary implementations of abstract methods the driver does not have use for. They are
     # required, but we will remove them in the future.
+    @override
     def acquire_console_url(
         self, logger: gluetool.log.ContextAdapter, guest: GuestRequest
     ) -> Result[ConsoleUrlData, Failure]:

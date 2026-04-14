@@ -13,6 +13,7 @@ import requests.exceptions
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 from returns.result import Result as _Result, Success as _Ok
+from typing_extensions import override
 
 from .. import Failure
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
@@ -150,6 +151,7 @@ class RestDriver(PoolDriver[RestErrorCauses, Instance]):
 
         return Ok(CanAcquire(can_acquire=result, reason=Failure(reason) if reason else None))
 
+    @override
     def list_images(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -157,6 +159,7 @@ class RestDriver(PoolDriver[RestErrorCauses, Instance]):
     ) -> Result[list[PoolImageInfo], Failure]:
         return Ok([])
 
+    @override
     def acquire_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
@@ -219,6 +222,7 @@ class RestDriver(PoolDriver[RestErrorCauses, Instance]):
             )
         )
 
+    @override
     def update_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
@@ -276,6 +280,7 @@ class RestDriver(PoolDriver[RestErrorCauses, Instance]):
             )
         )
 
+    @override
     def release_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[None, Failure]:
@@ -295,6 +300,7 @@ class RestDriver(PoolDriver[RestErrorCauses, Instance]):
             guest_request=guest_request,
         )
 
+    @override
     def release_pool_resources(
         self, logger: gluetool.log.ContextAdapter, raw_resource_ids: SerializedPoolResourcesIDs
     ) -> Result[ReleasePoolResourcesState, Failure]:
@@ -463,6 +469,7 @@ class RestDriver(PoolDriver[RestErrorCauses, Instance]):
         """
         return self._update_guest_log_blob(logger, guest_log, self._get_guest_log_url(guest_request, 'console'))
 
+    @override
     def trigger_reboot(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[None, Failure]:
         '''
         Request
@@ -498,6 +505,7 @@ class RestDriver(PoolDriver[RestErrorCauses, Instance]):
 
     # The following are necessary implementations of abstract methods the driver does not have use for. They are
     # required, but we will remove them in the future.
+    @override
     def acquire_console_url(
         self, logger: gluetool.log.ContextAdapter, guest: GuestRequest
     ) -> Result[ConsoleUrlData, Failure]:

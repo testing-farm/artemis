@@ -16,6 +16,7 @@ import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 from returns.pipeline import is_successful
 from returns.result import Failure as _Error, Result as _Result, Success as _Ok
+from typing_extensions import override
 
 from tft.artemis.drivers import (
     BackendFlavorT,
@@ -94,6 +95,7 @@ class IBMCloudInstance(Instance):
     def is_error(self) -> bool:
         raise NotImplementedError
 
+    @override
     def to_pool_resource_ids(self) -> IBMCloudPoolResourcesIDs:
         return IBMCloudPoolResourcesIDs(instance_id=self.id)
 
@@ -189,6 +191,7 @@ class IBMCloudSession(CLISessionPermanentDir):
 
     PLUGINS_DIR = '.bluemix/plugins'
 
+    @override
     def _login(self, logger: gluetool.log.ContextAdapter) -> Result[None, Failure]:
         assert self.pool.pool_config['api-key']
         r_login = self._run_cmd(
@@ -398,6 +401,7 @@ class IBMCloudDriver(
 
         return _Ok(res)
 
+    @override
     @rewrap_to_gluetool
     def acquire_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
@@ -486,6 +490,7 @@ class IBMCloudDriver(
 
     # The following are necessary implementations of abstract methods the driver does not have use for. They are
     # required, but we will remove them in the future.
+    @override
     def acquire_console_url(
         self, logger: gluetool.log.ContextAdapter, guest: GuestRequest
     ) -> Result[ConsoleUrlData, Failure]:

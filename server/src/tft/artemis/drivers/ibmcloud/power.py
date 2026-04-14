@@ -14,7 +14,7 @@ from gluetool.result import Error, Ok, Result
 from returns.pipeline import is_successful
 from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
-from typing_extensions import TypeAlias
+from typing_extensions import TypeAlias, override
 
 from tft.artemis.drivers import CLISessionPermanentDir, PoolDriver, PoolImageInfo, PoolImageInfoT, create_tempfile
 from tft.artemis.drivers.ibmcloud import (
@@ -88,14 +88,17 @@ ConfigImageFilter = TypedDict(
 
 @dataclasses.dataclass
 class IBMCloudPowerInstance(IBMCloudInstance):
+    @override
     @functools.cached_property
     def is_pending(self) -> bool:
         return self.status == 'building'
 
+    @override
     @functools.cached_property
     def is_ready(self) -> bool:
         return self.status == 'active'
 
+    @override
     @functools.cached_property
     def is_error(self) -> bool:
         return self.status == 'error'
@@ -134,6 +137,7 @@ error_cause_extractor = create_error_cause_extractor(
 
 
 class IBMCloudPowerSession(IBMCloudSession):
+    @override
     def _login(self, logger: gluetool.log.ContextAdapter) -> Result[None, Failure]:
         # Login can be reused from parent class as is but need to additionally set the target workspace
 
@@ -178,6 +182,7 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
     ) -> None:
         super().__init__(logger, poolname, pool_config)
 
+    @override
     def _query_backend_flavors(self, logger: gluetool.log.ContextAdapter) -> _Result[list[None], Failure]:
         return _Ok([])
 
@@ -191,6 +196,7 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
 
         return _Ok(capabilities)
 
+    @override
     def list_images(
         self, logger: gluetool.log.ContextAdapter, filters: Optional[ConfigImageFilter] = None
     ) -> Result[list[PoolImageInfo], Failure]:
@@ -397,6 +403,7 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
 
         return Ok(resources)
 
+    @override
     def _create_instance(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -468,6 +475,7 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
             )
         )
 
+    @override
     def update_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
@@ -547,6 +555,7 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
     # Note: the output of this method matches what `pi instance get` returns. In general, `instance get` and
     # `instance list` differ in the output structure significantly, this method may not fit all use cases it
     # fits in other drivers. Be careful when using it.
+    @override
     def _query_backend_instance(
         self, logger: gluetool.log.ContextAdapter, instance_id: str
     ) -> _Result[BackendInstance, Failure]:
@@ -567,6 +576,7 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
 
         return _Ok(cast(BackendInstance, r_instance_info.unwrap()))
 
+    @override
     def list_instances(self, logger: gluetool.log.ContextAdapter) -> Result[list[IBMCloudPowerInstance], Failure]:
         with IBMCloudPowerSession(logger, self) as session:
             r_instances_list = session.run(
@@ -599,6 +609,7 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
 
             return Ok(res)
 
+    @override
     def release_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[None, Failure]:
@@ -621,6 +632,7 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
 
         return Ok(None)
 
+    @override
     def release_pool_resources(
         self, logger: gluetool.log.ContextAdapter, raw_resource_ids: SerializedPoolResourcesIDs
     ) -> Result[ReleasePoolResourcesState, Failure]:
@@ -650,6 +662,7 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
 
         return Ok(ReleasePoolResourcesState.RELEASED)
 
+    @override
     def trigger_reboot(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[None, Failure]:
         pool_data = guest_request.pool_data.mine(self, IBMCloudPoolData)
 

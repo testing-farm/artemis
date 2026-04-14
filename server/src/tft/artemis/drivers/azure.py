@@ -17,7 +17,7 @@ from gluetool.utils import normalize_bool_option
 from returns.pipeline import is_successful
 from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
-from typing_extensions import TypeAlias
+from typing_extensions import TypeAlias, override
 
 from .. import Failure, JSONType, render_template, rewrap_to_gluetool
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
@@ -156,6 +156,7 @@ class ResourceGroup(Resource):
     # shared resource groups are not to be cleaned up on guest cancellation
     is_shared: bool
 
+    @override
     def to_pool_resource_ids(self) -> AzurePoolResourcesIDs:
         if not self.is_shared:
             return AzurePoolResourcesIDs(resource_group=self.name)
@@ -195,18 +196,22 @@ class AzureInstance(Instance):
     def __post_init__(self) -> None:
         self.status = self.status.lower()
 
+    @override
     @functools.cached_property
     def is_pending(self) -> bool:
         return self.status == 'building'
 
+    @override
     @functools.cached_property
     def is_ready(self) -> bool:
         return self.status == 'succeeded'
 
+    @override
     @functools.cached_property
     def is_error(self) -> bool:
         return self.status == 'failed'
 
+    @override
     def to_pool_resource_ids(self) -> AzurePoolResourcesIDs:
         return AzurePoolResourcesIDs(instance_id=self.id)
 
@@ -860,6 +865,7 @@ class AzureDriver(
     def use_public_ip(self) -> bool:
         return normalize_bool_option(self.pool_config.get('use-public-ip', False))
 
+    @override
     def _query_backend_flavors(self, logger: gluetool.log.ContextAdapter) -> _Result[list[BackendFlavor], Failure]:
         list_flavors_cmd = ['vm', 'list-sizes', '--location', self.pool_config['default-location']]
         with AzureSession(logger, self) as session:
@@ -882,6 +888,7 @@ class AzureDriver(
 
         return _Ok(capabilities)
 
+    @override
     def release_pool_resources(
         self, logger: gluetool.log.ContextAdapter, raw_resource_ids: SerializedPoolResourcesIDs
     ) -> Result[ReleasePoolResourcesState, Failure]:
@@ -985,6 +992,7 @@ class AzureDriver(
 
         return Ok(CanAcquire())
 
+    @override
     def update_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
@@ -1037,6 +1045,7 @@ class AzureDriver(
             ProvisioningProgress(state=ProvisioningState.COMPLETE, pool_data=pool_data, address=r_ip_address.unwrap())
         )
 
+    @override
     def release_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[None, Failure]:
@@ -1189,6 +1198,7 @@ class AzureDriver(
             self.logger, self._query_backend_flavors, lambda raw_flavor: cast(str, raw_flavor['name']), _constructor
         )
 
+    @override
     def list_images(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -1253,6 +1263,7 @@ class AzureDriver(
 
         return Ok(res)
 
+    @override
     @rewrap_to_gluetool
     def acquire_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
@@ -1437,6 +1448,7 @@ class AzureDriver(
 
         return Ok(progress)
 
+    @override
     def trigger_reboot(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[None, Failure]:
         pool_data = guest_request.pool_data.mine_or_none(self, AzurePoolData)
 
@@ -1458,6 +1470,7 @@ class AzureDriver(
 
     # The following are necessary implementations of abstract methods the driver does not have use for. They are
     # required, but we will remove them in the future.
+    @override
     def acquire_console_url(
         self, logger: gluetool.log.ContextAdapter, guest: GuestRequest
     ) -> Result[ConsoleUrlData, Failure]:

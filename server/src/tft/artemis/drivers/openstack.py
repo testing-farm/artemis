@@ -23,6 +23,7 @@ from keystoneauth1.identity import v3
 from novaclient import client as nocl
 from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
+from typing_extensions import override
 
 from .. import Failure, JSONType, safe_call
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
@@ -180,6 +181,7 @@ class OpenStackDriver(
         elif self.pool_config.get('project-domain-id'):
             self._os_cmd_base += ['--os-project-domain-id', self.pool_config['project-domain-id']]
 
+    @override
     def _query_backend_flavors(
         self, logger: gluetool.log.ContextAdapter
     ) -> _Result[list[novaclient.v2.flavors.Flavor], Failure]:
@@ -359,6 +361,7 @@ class OpenStackDriver(
                 )
             )
 
+    @override
     def acquire_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
@@ -466,6 +469,7 @@ class OpenStackDriver(
 
         return Ok(instance.status.lower())
 
+    @override
     def acquire_console_url(
         self, logger: gluetool.log.ContextAdapter, guest: GuestRequest
     ) -> Result[ConsoleUrlData, Failure]:
@@ -493,6 +497,7 @@ class OpenStackDriver(
             )
         )
 
+    @override
     def update_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
@@ -560,6 +565,7 @@ class OpenStackDriver(
 
         return Ok(ProvisioningProgress(state=ProvisioningState.COMPLETE, pool_data=pool_data, address=ip_address))
 
+    @override
     def release_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[None, Failure]:
@@ -576,6 +582,7 @@ class OpenStackDriver(
             logger, session, OpenStackPoolResourcesIDs(instance_id=pool_data.instance_id), guest_request=guest_request
         )
 
+    @override
     def release_pool_resources(
         self, logger: gluetool.log.ContextAdapter, raw_resource_ids: SerializedPoolResourcesIDs
     ) -> Result[ReleasePoolResourcesState, Failure]:
@@ -724,6 +731,7 @@ class OpenStackDriver(
 
         return Ok(resources)
 
+    @override
     def list_images(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -881,6 +889,7 @@ class OpenStackDriver(
 
         return Ok(progress)
 
+    @override
     def trigger_reboot(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[None, Failure]:
         pool_data = guest_request.pool_data.mine_or_none(self, OpenStackPoolData)
 

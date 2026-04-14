@@ -15,7 +15,7 @@ from gluetool.result import Error, Ok, Result
 from returns.pipeline import is_successful
 from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
-from typing_extensions import TypeAlias
+from typing_extensions import TypeAlias, override
 
 from tft.artemis.drivers import PoolDriver, PoolImageInfo, create_error_cause_extractor, create_tempfile
 from tft.artemis.drivers.ibmcloud import (
@@ -87,14 +87,17 @@ BackendInstance: TypeAlias = dict[str, Any]
 
 @dataclasses.dataclass
 class IBMCloudVPCInstance(IBMCloudInstance):
+    @override
     @functools.cached_property
     def is_pending(self) -> bool:
         return self.status == 'starting'
 
+    @override
     @functools.cached_property
     def is_ready(self) -> bool:
         return self.status == 'running'
 
+    @override
     @functools.cached_property
     def is_error(self) -> bool:
         return self.status == 'failed'
@@ -182,6 +185,7 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, 
     ) -> None:
         super().__init__(logger, poolname, pool_config)
 
+    @override
     def _query_backend_flavors(self, logger: gluetool.log.ContextAdapter) -> _Result[list[BackendFlavor], Failure]:
         with IBMCloudSession(logger, self) as session:
             r_flavors_list = session.run(
@@ -247,6 +251,7 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, 
             self.logger, self._query_backend_flavors, lambda raw_flavor: cast(str, raw_flavor['name']), _constructor
         )
 
+    @override
     def list_images(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -405,6 +410,7 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, 
 
         return Ok(resources)
 
+    @override
     def list_instances(self, logger: gluetool.log.ContextAdapter) -> Result[list[IBMCloudVPCInstance], Failure]:
         with IBMCloudSession(logger, self) as session:
             r_instances_list = session.run(logger, ['is', 'instances', '--json'], commandname='ibmcloud.is.vm-list')
@@ -435,6 +441,7 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, 
 
             return Ok(res)
 
+    @override
     def _create_instance(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -530,6 +537,7 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, 
             )
         )
 
+    @override
     def _query_backend_instance(
         self, logger: gluetool.log.ContextAdapter, instance_id: str
     ) -> _Result[BackendInstance, Failure]:
@@ -559,6 +567,7 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, 
 
         return _Ok(res)
 
+    @override
     def update_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
@@ -628,6 +637,7 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, 
             )
         )
 
+    @override
     def release_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[None, Failure]:
@@ -650,6 +660,7 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, 
 
         return Ok(None)
 
+    @override
     def release_pool_resources(
         self, logger: gluetool.log.ContextAdapter, raw_resource_ids: SerializedPoolResourcesIDs
     ) -> Result[ReleasePoolResourcesState, Failure]:
@@ -679,6 +690,7 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, 
 
         return Ok(ReleasePoolResourcesState.RELEASED)
 
+    @override
     def trigger_reboot(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[None, Failure]:
         pool_data = guest_request.pool_data.mine(self, IBMCloudPoolData)
 

@@ -23,7 +23,7 @@ from gluetool.utils import ProcessOutput
 from returns.pipeline import is_successful
 from returns.result import Result as _Result, Success as _Ok
 from tmt.hardware import Operator
-from typing_extensions import TypedDict
+from typing_extensions import TypedDict, override
 
 from .. import (
     Failure,
@@ -1371,6 +1371,7 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
 
         return Ok(ProvisioningProgress(state=ProvisioningState.CANCEL, pool_data=pool_data, pool_failures=[failure]))
 
+    @override
     def release_pool_resources(
         self, logger: gluetool.log.ContextAdapter, raw_resource_ids: SerializedPoolResourcesIDs
     ) -> Result[ReleasePoolResourcesState, Failure]:
@@ -1386,6 +1387,7 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
 
         return Ok(ReleasePoolResourcesState.RELEASED)
 
+    @override
     def list_images(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -2160,6 +2162,7 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
         _handle_job_update_failed,
     )
 
+    @override
     def update_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
@@ -2424,6 +2427,7 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
 
         return Ok(CanAcquire())
 
+    @override
     def acquire_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[ProvisioningProgress, Failure]:
@@ -2454,6 +2458,7 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
             )
         )
 
+    @override
     def release_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> Result[None, Failure]:
@@ -2732,6 +2737,7 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
     ) -> Result[GuestLogUpdateProgress, Failure]:
         return self._update_guest_installation_log_blob(logger, guest_request, guest_log, 'ks.cfg')
 
+    @override
     def trigger_reboot(self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest) -> Result[None, Failure]:
         assert guest_request.address is not None
 
@@ -2746,6 +2752,7 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
 
     # The following are necessary implementations of abstract methods the driver does not have use for. They are
     # required, but we will remove them in the future.
+    @override
     def acquire_console_url(
         self, logger: gluetool.log.ContextAdapter, guest: GuestRequest
     ) -> Result[ConsoleUrlData, Failure]:
