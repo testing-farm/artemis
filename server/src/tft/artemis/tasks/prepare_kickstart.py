@@ -147,6 +147,7 @@ class Workspace(_Workspace):
                 guestname=self.guestname,
                 poolname=self.pool.poolname,
                 commandname='prepare-kickstart.check-if-ran',
+                cause_extractor=self.pool.error_cause_extractor,
             )
 
             if r_check.is_ok:
@@ -185,6 +186,7 @@ class Workspace(_Workspace):
                     guestname=self.guestname,
                     poolname=self.pool.poolname,
                     commandname='prepare-kickstart.fetch-files',
+                    cause_extractor=self.pool.error_cause_extractor,
                 )
 
                 if r_copy.is_error:
@@ -229,6 +231,7 @@ class Workspace(_Workspace):
                 guestname=self.guestname,
                 poolname=self.pool.poolname,
                 commandname='prepare-kickstart.installed-pkgs',
+                cause_extractor=self.pool.error_cause_extractor,
             )
 
             if r_pkg_list.is_error:
@@ -355,6 +358,7 @@ class Workspace(_Workspace):
                     guestname=self.guestname,
                     poolname=self.pool.poolname,
                     commandname='prepare-kickstart.validate-kickstart',
+                    cause_extractor=self.pool.error_cause_extractor,
                 )
 
                 if r_validator.is_error:
@@ -372,6 +376,7 @@ class Workspace(_Workspace):
                     guestname=self.guestname,
                     poolname=self.pool.poolname,
                     commandname='prepare-kickstart.copy-kickstart',
+                    cause_extractor=self.pool.error_cause_extractor,
                 )
 
                 if r_ks_upload.is_error:
@@ -391,6 +396,7 @@ class Workspace(_Workspace):
                 guestname=self.guestname,
                 poolname=self.pool.poolname,
                 commandname='prepare-kickstart.copy-script',
+                cause_extractor=self.pool.error_cause_extractor,
             )
 
             if r_script_upload.is_error:
@@ -409,6 +415,7 @@ class Workspace(_Workspace):
                 guestname=self.guestname,
                 poolname=self.pool.poolname,
                 commandname='prepare-kickstart.kexec',
+                cause_extractor=self.pool.error_cause_extractor,
             )
 
             if r_kexec.is_error:

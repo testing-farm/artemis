@@ -276,6 +276,16 @@ class BeakerErrorCauses(enum.Enum):
     JOB_INSTALLATION_TIMEOUT = 'job-installation-timeout'
     JOB_INSTALLATION_KICKSTART_ERROR = 'job-installation-kickstart-error'
 
+    @property
+    def is_recoverable(self) -> bool:
+        return self in (
+            BeakerErrorCauses.JOB_FAILED,
+            BeakerErrorCauses.JOB_ABORTED,
+            BeakerErrorCauses.JOB_CANCELLED,
+            BeakerErrorCauses.JOB_INSTALLATION_TIMEOUT,
+            BeakerErrorCauses.JOB_INSTALLATION_KICKSTART_ERROR,
+        )
+
 
 error_cause_extractor = create_error_cause_extractor(
     BeakerErrorCauses,

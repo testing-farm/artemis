@@ -509,12 +509,20 @@ class ErrorCauses(enum.Enum):
 
     NONE = 'none'
 
+    @property
+    def is_recoverable(self) -> bool:
+        return True
+
 
 class CommonErrorCauses(enum.Enum):
     NONE = 'none'
     RESOURCE_METRICS_REFRESH_FAILED = 'resource-metrics-refresh-failed'
     FLAVOR_INFO_REFRESH_FAILED = 'flavor-info-refresh-failed'
     IMAGE_INFO_REFRESH_FAILED = 'image-info-refresh-failed'
+
+    @property
+    def is_recoverable(self) -> bool:
+        return True
 
 
 ErrorCausesT = TypeVar('ErrorCausesT', bound=enum.Enum, covariant=True)  # noqa: PLC0105
@@ -3231,14 +3239,23 @@ def run_cli_tool(
     def _log_command(output: gluetool.utils.ProcessOutput) -> None:
         command_time = time.monotonic() - start_time
 
+        error_cause = cause_extractor(output=output) if cause_extractor is not None else None
+
         if poolname is not None and commandname is not None:
             PoolMetrics.inc_cli_call(
                 poolname,
                 commandname,
                 output.exit_code,
                 command_time,
-                cause=cause_extractor(output=output) if cause_extractor is not None else None,
+                cause=error_cause,
             )
+
+        if error_cause is not None:
+            if not error_cause.is_recoverable:  # type: ignore[attr-defined]
+                failure_details['recoverable'] = False
+
+            if poolname is not None:
+                PoolMetrics.inc_error(poolname, error_cause)
 
         # We are expected to log the command when either one of these conditions is true:
         #

@@ -205,6 +205,19 @@ class AWSErrorCauses(enum.Enum):
     SPOT_INSTANCE_TERMINATED_NO_CAPACITY = 'spot-instance-terminated-no-capacity'
     SPOT_INSTANCE_TERMINATED_UNEXPECTEDLY = 'spot-instance-terminated-unexpectedly'
 
+    @property
+    def is_recoverable(self) -> bool:
+        return self in (
+            AWSErrorCauses.MISSING_INSTANCE,
+            AWSErrorCauses.MISSING_SPOT_INSTANCE_REQUEST,
+            AWSErrorCauses.MISSING_SECURITY_GROUP,
+            AWSErrorCauses.INSTANCE_BUILDING_TOO_LONG,
+            AWSErrorCauses.INSTANCE_TERMINATED_PREMATURELY,
+            AWSErrorCauses.SPOT_INSTANCE_TERMINATED_PREMATURELY,
+            AWSErrorCauses.SPOT_INSTANCE_TERMINATED_NO_CAPACITY,
+            AWSErrorCauses.SPOT_INSTANCE_TERMINATED_UNEXPECTEDLY,
+        )
+
 
 error_cause_extractor = create_error_cause_extractor(
     AWSErrorCauses,
@@ -1985,23 +1998,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
         )
 
         if r_run.is_error:
-            failure = r_run.unwrap_error()
-
-            # Detect "instance does not exist" - these errors are clearly irrecoverable. No matter how often we would
-            # run these CLI commands, we would never ever made them work with instances that don't exist.
-            if failure.command_output:
-                cause = self.error_cause_extractor(output=failure.command_output)
-
-                if cause in (
-                    AWSErrorCauses.MISSING_INSTANCE,
-                    AWSErrorCauses.MISSING_SPOT_INSTANCE_REQUEST,
-                    AWSErrorCauses.MISSING_SECURITY_GROUP,
-                ):
-                    failure.recoverable = False
-
-                    PoolMetrics.inc_error(self.poolname, cause)
-
-            return Error(failure)
+            return Error(r_run.unwrap_error())
 
         output = r_run.unwrap()
 

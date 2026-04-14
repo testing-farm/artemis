@@ -114,6 +114,13 @@ class IBMCloudVPCErrorCauses(enum.Enum):
     UNEXPECTED_INSTANCE_STATE = 'unexpected-instance-state'
     MISSING_INSTANCE = 'missing-instance'
 
+    @property
+    def is_recoverable(self) -> bool:
+        return self in (
+            IBMCloudVPCErrorCauses.UNEXPECTED_INSTANCE_STATE,
+            IBMCloudVPCErrorCauses.MISSING_INSTANCE,
+        )
+
 
 error_cause_extractor = create_error_cause_extractor(
     IBMCloudVPCErrorCauses,
@@ -676,17 +683,9 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, 
                     json_format=False,
                     commandname='ibmcloud.is.instance-delete',
                 )
+
                 if r_delete_instance.is_error:
-                    failure = r_delete_instance.unwrap_error()
-
-                    if failure.command_output:
-                        cause = self.error_cause_extractor(output=failure.command_output)
-
-                        if cause == IBMCloudVPCErrorCauses.MISSING_INSTANCE:
-                            failure.recoverable = False
-                            PoolMetrics.inc_error(self.poolname, cause)
-
-                    return Error(failure)
+                    return Error(r_delete_instance.unwrap_error())
 
         return Ok(ReleasePoolResourcesState.RELEASED)
 

@@ -124,6 +124,13 @@ class IBMCloudPowerErrorCauses(enum.Enum):
     INSTANCE_NOT_READY = 'instance-not-ready'
     UNEXPECTED_INSTANCE_STATE = 'unexpected-instance-state'
 
+    @property
+    def is_recoverable(self) -> bool:
+        return self in (
+            IBMCloudPowerErrorCauses.MISSING_INSTANCE,
+            IBMCloudPowerErrorCauses.UNEXPECTED_INSTANCE_STATE,
+        )
+
 
 error_cause_extractor = create_error_cause_extractor(
     IBMCloudPowerErrorCauses,
@@ -648,17 +655,9 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
                     json_format=False,
                     commandname='ibmcloud.pi.instance-delete',
                 )
+
                 if r_delete_instance.is_error:
-                    failure = r_delete_instance.unwrap_error()
-
-                    if failure.command_output:
-                        cause = self.error_cause_extractor(output=failure.command_output)
-
-                        if cause == IBMCloudPowerErrorCauses.MISSING_INSTANCE:
-                            failure.recoverable = False
-                            PoolMetrics.inc_error(self.poolname, cause)
-
-                    return Error(failure)
+                    return Error(r_delete_instance.unwrap_error())
 
         return Ok(ReleasePoolResourcesState.RELEASED)
 
@@ -697,15 +696,9 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
                 commandname='ibmcloud.pi.get-console-url',
                 json_format=True,
             )
+
         if r_output.is_error:
-            failure = r_output.unwrap_error()
-            # Detect "instance not ready".
-            if (
-                failure.command_output
-                and self.error_cause_extractor(output=failure.command_output)
-                == IBMCloudPowerErrorCauses.INSTANCE_NOT_READY
-            ):
-                return Ok(None)
+            return Ok(None)
 
         return r_output
 

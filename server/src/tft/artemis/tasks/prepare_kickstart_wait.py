@@ -140,6 +140,7 @@ class Workspace(_Workspace):
                         guestname=self.guestname,
                         poolname=self.pool.poolname,
                         commandname='prepare-kickstart-wait.fetch-log',
+                        cause_extractor=self.pool.error_cause_extractor,
                     )
 
                     with open(dst) as f:
@@ -227,6 +228,7 @@ class Workspace(_Workspace):
                 guestname=self.guestname,
                 poolname=self.pool.poolname,
                 commandname='prepare-kickstart-wait.check-inprogress',
+                cause_extractor=self.pool.error_cause_extractor,
             )
 
             if not r_inprogress.is_error:
@@ -241,6 +243,7 @@ class Workspace(_Workspace):
                     guestname=self.guestname,
                     poolname=self.pool.poolname,
                     commandname='prepare-kickstart-wait.check-error',
+                    cause_extractor=self.pool.error_cause_extractor,
                 )
 
                 if not r_iserror.is_error:
@@ -279,6 +282,7 @@ class Workspace(_Workspace):
                 guestname=self.guestname,
                 poolname=self.pool.poolname,
                 commandname='prepare-kickstart-wait.check-inprogress',
+                cause_extractor=self.pool.error_cause_extractor,
             )
 
             if r_install.is_error:

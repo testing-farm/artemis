@@ -124,6 +124,14 @@ class OpenStackErrorCauses(enum.Enum):
     INSTANCE_IN_ERROR_STATE = 'instance-in-error-state'
     INSTANCE_BUILDING_TOO_LONG = 'instance-building-too-long'
 
+    @property
+    def is_recoverable(self) -> bool:
+        return self in (
+            OpenStackErrorCauses.MISSING_INSTANCE,
+            OpenStackErrorCauses.INSTANCE_IN_ERROR_STATE,
+            OpenStackErrorCauses.INSTANCE_BUILDING_TOO_LONG,
+        )
+
 
 error_cause_extractor = create_error_cause_extractor(
     OpenStackErrorCauses,
@@ -270,19 +278,7 @@ class OpenStackDriver(
         )
 
         if r_run.is_error:
-            failure = r_run.unwrap_error()
-
-            # Detect "instance does not exist" - this error is clearly irrecoverable. No matter how often we would
-            # run this method, we would never evenr made it remove instance that doesn't exist.
-            if (
-                failure.command_output
-                and self.error_cause_extractor(output=failure.command_output) == OpenStackErrorCauses.MISSING_INSTANCE
-            ):
-                failure.recoverable = False
-
-                PoolMetrics.inc_error(self.poolname, OpenStackErrorCauses.MISSING_INSTANCE)
-
-            return Error(failure)
+            return Error(r_run.unwrap_error())
 
         cli_output = r_run.unwrap()
 
@@ -837,14 +833,7 @@ class OpenStackDriver(
         )
 
         if r_output.is_error:
-            failure = r_output.unwrap_error()
-
-            # Detect "instance not ready".
-            if (
-                failure.command_output
-                and self.error_cause_extractor(output=failure.command_output) == OpenStackErrorCauses.INSTANCE_NOT_READY
-            ):
-                return Ok(None)
+            return Ok(None)
 
         return r_output
 
