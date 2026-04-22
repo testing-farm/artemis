@@ -97,6 +97,7 @@ from .knobs import (  # noqa: E402
     KNOB_SENTRY_EVENT_URL_TEMPLATE,
     KNOB_SENTRY_INTEGRATIONS,
     KNOB_SENTRY_ISSUES_SAMPLE_RATE,
+    KNOB_SENTRY_MAX_VALUE_LENGTH,
     KNOB_SENTRY_TRACING_SAMPLE_PATTERN,
     KNOB_SENTRY_TRACING_SAMPLE_RATE,
     KNOB_TEMPLATE_BLOCK_DELIMITERS,
@@ -366,6 +367,8 @@ class Sentry:
             # Profiling
             # We do not use Sentry for profiling
             profiles_sample_rate=0.0,
+            # Limits
+            max_value_length=KNOB_SENTRY_MAX_VALUE_LENGTH.value,
         )
 
     @classmethod

@@ -830,6 +830,17 @@ KNOB_SENTRY_TRACING_SAMPLE_PATTERN: Knob[str] = Knob(
     default='.*',
 )
 
+KNOB_SENTRY_MAX_VALUE_LENGTH: Knob[int] = Knob(
+    'sentry.limits.value-length',
+    """
+    The number of characters after which the values containing text in the event payload will be truncated.
+    """,
+    has_db=False,
+    envvar='ARTEMIS_SENTRY_MAX_VALUE_LENGTH',
+    cast_from_str=int,
+    default=102400,
+)
+
 KNOB_LOGGING_SENTRY: Knob[bool] = Knob(
     'logging.sentry',
     'When enabled, Artemis would log more Sentry-related debug info.',
