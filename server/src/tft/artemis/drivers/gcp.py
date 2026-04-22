@@ -15,16 +15,18 @@ import proto
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 from google.cloud import compute_v1
+from returns.pipeline import is_successful
 from returns.result import Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
 from typing_extensions import TypeAlias, override
 
 from .. import Failure, log_dict_yaml
 from ..db import GuestRequest
-from ..environment import Flavor, FlavorBoot, SizeType
+from ..environment import Flavor, FlavorBoot, FlavorCpu, FlavorNetworks, FlavorVirtualization, SizeType
 from ..knobs import Knob
 from ..metrics import PoolResourcesMetrics, PoolResourcesUsage
 from . import (
+    AnyArchitecture,
     CanAcquire,
     CommonErrorCauses,
     ConfigImageFilter,
@@ -587,7 +589,32 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
         return Ok(None)
 
     def fetch_pool_flavor_info(self) -> Result[list[Flavor], Failure]:
-        return Ok([])
+        r_capabilities = self.capabilities()
+
+        if not is_successful(r_capabilities):
+            return Error(r_capabilities.failure())
+
+        capabilities = r_capabilities.unwrap()
+
+        if capabilities.supported_architectures == AnyArchitecture:
+            return Ok([])
+
+        assert isinstance(capabilities.supported_architectures, list)  # narrow type
+
+        return Ok(
+            [
+                Flavor(
+                    name=self.pool_config['default-flavor'],
+                    id=self.pool_config['default-flavor'],
+                    arch=arch,
+                    boot=FlavorBoot(),
+                    cpu=FlavorCpu(),
+                    network=FlavorNetworks(),
+                    virtualization=FlavorVirtualization(),
+                )
+                for arch in capabilities.supported_architectures
+            ]
+        )
 
     def fetch_pool_resources_metrics(
         self, logger: gluetool.log.ContextAdapter
