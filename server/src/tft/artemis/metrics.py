@@ -2365,6 +2365,23 @@ class ShelvesMetrics(MetricsBase):
             )
 
 
+class TaskFailureCause(enum.Enum):
+    """
+    Causes why a task message may be counted as errored.
+    """
+
+    # The doer returned `Error(Failure(…))` — a normal, expected task-level failure.
+    TASK_ERROR = 'task-error'
+    # An unhandled Python exception escaped the doer — should not happen in well-written tasks.
+    UNHANDLED_EXCEPTION = 'unhandled-exception'
+    # The task's time limit was exhausted (`dramatiq.TimeLimitExceeded`).
+    TIME_LIMIT_EXCEEDED = 'time-limit-exceeded'
+    # The worker process was asked to shut down while the task was running (`dramatiq.Shutdown`).
+    WORKER_SHUTDOWN = 'worker-shutdown'
+    # The message spent too long in the queue and was dropped by the `AgeLimit` middleware.
+    AGE_LIMIT_EXCEEDED = 'age-limit-exceeded'
+
+
 @dataclasses.dataclass
 class TaskMetrics(MetricsBase):
     """
@@ -2372,7 +2389,7 @@ class TaskMetrics(MetricsBase):
     """
 
     overall_message_count: dict[tuple[str, str], int] = dataclasses.field(default_factory=dict)
-    overall_errored_message_count: dict[tuple[str, str], int] = dataclasses.field(default_factory=dict)
+    overall_errored_message_count: dict[tuple[str, str, str, str], int] = dataclasses.field(default_factory=dict)
     overall_retried_message_count: dict[tuple[str, str], int] = dataclasses.field(default_factory=dict)
     overall_rejected_message_count: dict[tuple[str, str], int] = dataclasses.field(default_factory=dict)
     current_message_count: dict[tuple[str, str], int] = dataclasses.field(default_factory=dict)
@@ -2409,19 +2426,31 @@ class TaskMetrics(MetricsBase):
     @staticmethod
     @with_context
     def inc_overall_errored_messages(
-        queue: str, actor: str, logger: gluetool.log.ContextAdapter, cache: redis.Redis
+        queue: str,
+        actor: str,
+        poolname: Optional[str],
+        cause: Optional[TaskFailureCause],
+        logger: gluetool.log.ContextAdapter,
+        cache: redis.Redis,
     ) -> Result[None, Failure]:
         """
         Increment number of all errored messages.
 
         :param queue: name of the queue the message belongs to.
         :param actor: name of the actor requested by the message.
+        :param poolname: if specified, task was working with a particular pool.
+        :param cause: if known, the cause for the task erroring out.
         :param logger: logger to use for logging.
         :param cache: cache instance to use for cache access.
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric_field(logger, cache, TaskMetrics._KEY_OVERALL_ERRORED_MESSAGES, f'{queue}:{actor}')
+        inc_metric_field(
+            logger,
+            cache,
+            TaskMetrics._KEY_OVERALL_ERRORED_MESSAGES,
+            f'{queue}:{actor}:{poolname or UNDEFINED_POOL_NAME}:{cause.value if cause else "unknown"}',
+        )
         return Ok(None)
 
     @staticmethod
@@ -2589,10 +2618,18 @@ class TaskMetrics(MetricsBase):
             cast(tuple[str, str], tuple(field.split(':', 1))): count
             for field, count in get_metric_fields(logger, cache, self._KEY_OVERALL_MESSAGES).items()
         }
-        self.overall_errored_message_count = {
-            cast(tuple[str, str], tuple(field.split(':', 1))): count
-            for field, count in get_metric_fields(logger, cache, self._KEY_OVERALL_ERRORED_MESSAGES).items()
-        }
+        # queue:actor:poolname:cause => count
+        self.overall_errored_message_count = {}
+
+        for field, count in get_metric_fields(logger, cache, self._KEY_OVERALL_ERRORED_MESSAGES).items():
+            field_split = tuple(field.split(':', 3))
+
+            # deal with older entries which had only two dimensions (no poolname/cause)
+            if len(field_split) == 2:
+                field_split = (*field_split, 'unknown', UNDEFINED_POOL_NAME)
+
+            self.overall_errored_message_count[cast(tuple[str, str, str, str], field_split)] = count
+
         self.overall_retried_message_count = {
             cast(tuple[str, str], tuple(field.split(':', 1))): count
             for field, count in get_metric_fields(logger, cache, self._KEY_OVERALL_RETRIED_MESSAGES).items()
@@ -2656,8 +2693,8 @@ class TaskMetrics(MetricsBase):
 
         self.OVERALL_ERRORED_MESSAGE_COUNT = Counter(
             'overall_errored_message_count',
-            'Overall total number of errored messages by queue and actor.',
-            ['queue_name', 'actor_name'],
+            'Overall total number of errored messages by queue, actor, failure cause and pool.',
+            ['queue_name', 'actor_name', 'pool', 'cause'],
             registry=registry,
         )
 
@@ -2722,7 +2759,17 @@ class TaskMetrics(MetricsBase):
                 prom_metric.labels(queue_name=queue_name, actor_name=actor_name)._value.set(count)
 
         _update_counter(self.OVERALL_MESSAGE_COUNT, self.overall_message_count)
-        _update_counter(self.OVERALL_ERRORED_MESSAGE_COUNT, self.overall_errored_message_count)
+
+        reset_counters(self.OVERALL_ERRORED_MESSAGE_COUNT)
+
+        for (queue_name, actor_name, pool, cause), count in self.overall_errored_message_count.items():
+            self.OVERALL_ERRORED_MESSAGE_COUNT.labels(
+                queue_name=queue_name,
+                actor_name=actor_name,
+                pool=pool,
+                cause=cause,
+            )._value.set(count)
+
         _update_counter(self.OVERALL_REJECTED_MESSAGE_COUNT, self.overall_rejected_message_count)
         _update_counter(self.OVERALL_RETRIED_MESSAGE_COUNT, self.overall_retried_message_count)
         _update_counter(self.CURRENT_MESSAGE_COUNT, self.current_message_count)

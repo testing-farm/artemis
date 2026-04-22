@@ -352,27 +352,24 @@ class Prometheus(dramatiq.middleware.Middleware):  # type: ignore[misc]  # canno
         exception: Optional[BaseException] = None,
         skipped: bool = False,
     ) -> None:
-        from .metrics import TaskMetrics
-        from .tasks import TaskCall
+        from .metrics import TaskFailureCause, TaskMetrics
+        from .tasks import RetrySignalError, TaskCall
 
         labels = (message.queue_name, message.actor_name)
 
         task_call = TaskCall.from_message(broker, message)
 
+        # Extract the poolname. `None` is a good starting value, but it turns out that most of the tasks
+        # relate to a particular pool in one way or another. Some tasks are given the poolname as a parameter,
+        # and some can tell us by attaching a note to the message.
+        poolname: ActorArgumentType = task_call.named_args.get('poolname')
+
+        if poolname is None and message.options:
+            poolname = get_metric_note(NOTE_POOLNAME)
+
         if not skipped:
             message_start_time = self._message_start_times.pop(message.message_id, current_millis())
             message_duration = current_millis() - message_start_time
-
-            # Extract the poolname. `None` is a good starting value, but it turns out that most of the tasks
-            # relate to a particular pool in one way or another. Some tasks are given the poolname as a parameter,
-            # and some can tell us by attaching a note to the message.
-            poolname: ActorArgumentType = None
-
-            if 'poolname' in task_call.named_args:
-                poolname = task_call.named_args['poolname']
-
-            elif message.options:
-                poolname = get_metric_note(NOTE_POOLNAME)
 
             TaskMetrics.inc_message_durations(message.queue_name, message.actor_name, message_duration, poolname)
 
@@ -380,7 +377,21 @@ class Prometheus(dramatiq.middleware.Middleware):  # type: ignore[misc]  # canno
         TaskMetrics.inc_overall_messages(*labels)
 
         if exception is not None:
-            TaskMetrics.inc_overall_errored_messages(*labels)
+            # Map a Dramatiq exception to its corresponding :py:class:`TaskFailureCause`.
+            if isinstance(exception, dramatiq.middleware.TimeLimitExceeded):
+                cause = TaskFailureCause.TIME_LIMIT_EXCEEDED
+
+            if isinstance(exception, dramatiq.middleware.Shutdown):
+                cause = TaskFailureCause.WORKER_SHUTDOWN
+
+            from .tasks import RetrySignalError
+
+            if isinstance(exception, RetrySignalError):
+                cause = TaskFailureCause.TASK_ERROR
+
+            cause = TaskFailureCause.UNHANDLED_EXCEPTION
+
+            TaskMetrics.inc_overall_errored_messages(message.queue_name, message.actor_name, poolname, cause)
 
     def after_process_message(
         self,
