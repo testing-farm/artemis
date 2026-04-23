@@ -1652,6 +1652,16 @@ for said guest request again.
 5+|The sampling rate of issues reported to Sentry, between 0.0 (no events reported) and 1.0
 (all events reported).
 
+|`sentry.limits.value-length`
+|`int`
+|`ARTEMIS_SENTRY_MAX_VALUE_LENGTH`
+|`102400`
+|no
+
+
+
+5+|The number of characters after which the values containing text in the event payload will be truncated.
+
 |`sentry.tracing.sample-pattern`
 |`str`
 |`ARTEMIS_SENTRY_TRACING_SAMPLE_PATTERN`
