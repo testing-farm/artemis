@@ -1160,6 +1160,7 @@ class AzureDriver(
 
         return Ok(resources)
 
+    @override
     def fetch_pool_flavor_info(self) -> Result[list[AzureFlavor], Failure]:
         # Flavors are described by az cli as
         # {

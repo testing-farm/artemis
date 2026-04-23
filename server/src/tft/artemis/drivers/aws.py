@@ -35,15 +35,11 @@ from typing_extensions import Literal, TypeAlias, TypedDict, override
 from .. import (
     Failure,
     JSONType,
-    Sentry,
     SerializableContainer,
-    TracingOp,
     log_dict_yaml,
     logging_filter,
     render_template,
 )
-from ..cache import get_cached_mapping_item, get_cached_mapping_values
-from ..context import CACHE
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
 from ..environment import (
     Constraint,
@@ -2880,6 +2876,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
 
         return self.dispatch_resource_cleanup(logger, session, *resource_ids, guest_request=guest_request)
 
+    @override
     def fetch_pool_flavor_info(self) -> Result[list[AWSFlavor], Failure]:
         # See AWS docs: https://docs.aws.amazon.com/cli/latest/reference/ec2/describe-instance-types.html
 
@@ -2951,19 +2948,6 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
         return self._construct_pool_flavor_infos(
             self.logger, self._query_backend_flavors, lambda raw_flavor: raw_flavor['InstanceType'], _constructor
         )
-
-    def get_cached_pool_flavor_info(self, flavorname: str) -> Result[Optional[Flavor], Failure]:
-        return get_cached_mapping_item(CACHE.get(), self.flavor_info_cache_key, flavorname, AWSFlavor)
-
-    def get_cached_pool_flavor_infos(self) -> Result[list[Flavor], Failure]:
-        """
-        Retrieve all flavor info known to the pool.
-        """
-
-        with Sentry.start_span(TracingOp.FUNCTION, description='PoolDriver.get_pool_flavor_infos') as tracing_span:
-            tracing_span.set_tag('poolname', self.poolname)
-
-            return get_cached_mapping_values(CACHE.get(), self.flavor_info_cache_key, AWSFlavor)
 
     def fetch_pool_resources_metrics(
         self, logger: gluetool.log.ContextAdapter

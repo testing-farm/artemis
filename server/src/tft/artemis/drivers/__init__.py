@@ -39,7 +39,7 @@ from gluetool.result import Error, Ok, Result
 from returns.pipeline import is_successful
 from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
-from typing_extensions import Literal, Protocol, Self, TypedDict
+from typing_extensions import Literal, Protocol, Self, TypedDict, final
 
 from .. import (
     Failure,
@@ -2911,6 +2911,7 @@ class FlavorBasedPoolDriver(
 
         return Ok(sorted_suitable_flavors)
 
+    @final
     def _construct_pool_flavor_infos(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -2979,13 +2980,13 @@ class FlavorBasedPoolDriver(
         """
         Responsible for fetching the most up-to-date flavor info..
 
-        This is the only method common driver needs to reimplement. The default
-        implementation yields "no flavors" default as it has no actual pool to query.
-        The real driver would probably to query its pool's API, and retrieve actual data.
+        This is the only method common driver needs to reimplement. The driver would probably query its backend,
+        retrieve flavor-related information, and turn it into :py:class:`Flavor` instances.
         """
 
         raise NotImplementedError
 
+    @final
     def _fetch_custom_pool_flavor_info_from_config(
         self, logger: gluetool.log.ContextAdapter, flavors: Mapping[str, FlavorT]
     ) -> Result[list[FlavorT], Failure]:
@@ -3000,6 +3001,7 @@ class FlavorBasedPoolDriver(
             logger, flavors, cast(list[ConfigCustomFlavorSpecType], self.pool_config.get('custom-flavors', []))
         )
 
+    @final
     def _fetch_patched_pool_flavor_info_from_config(
         self, logger: gluetool.log.ContextAdapter, flavors: Mapping[str, Flavor]
     ) -> Result[None, Failure]:
@@ -3014,6 +3016,7 @@ class FlavorBasedPoolDriver(
             logger, flavors, cast(list[ConfigPatchFlavorSpecType], self.pool_config.get('patch-flavors', []))
         )
 
+    @final
     def _fetch_pool_flavor_info_from_config(
         self, logger: gluetool.log.ContextAdapter, flavors: list[FlavorT]
     ) -> Result[list[Flavor], Failure]:
@@ -3042,6 +3045,7 @@ class FlavorBasedPoolDriver(
 
         return Ok(list(flavors_map.values()))
 
+    @final
     def refresh_pool_flavor_info(self) -> Result[None, Failure]:
         """
         Responsible for updating the cache with the most up-to-date flavor info.
@@ -3079,6 +3083,7 @@ class FlavorBasedPoolDriver(
 
         return Ok(None)
 
+    @final
     def get_pool_flavor_info(self, flavorname: str) -> Result[Optional[FlavorT], Failure]:
         """
         Retrieve flavor info for the given flavor.
@@ -3096,6 +3101,7 @@ class FlavorBasedPoolDriver(
 
             return get_cached_mapping_item(CACHE.get(), self.flavor_info_cache_key, flavorname, self.flavor_info_class)
 
+    @final
     def get_pool_flavor_infos(self) -> Result[list[FlavorT], Failure]:
         """
         Retrieve flavor info for all flavors known to the pool.
