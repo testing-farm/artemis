@@ -201,6 +201,7 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, 
 
         return _Ok(cast(list[dict[str, Any]], r_flavors_list.unwrap()))
 
+    @override
     def fetch_pool_flavor_info(self) -> Result[list[IBMCloudFlavor], Failure]:
         # See https://cloud.ibm.com/docs/vpc?topic=vpc-vs-profiles&interface=cli for more info
 

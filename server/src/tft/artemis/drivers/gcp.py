@@ -588,6 +588,7 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
 
         return Ok(None)
 
+    @override
     def fetch_pool_flavor_info(self) -> Result[list[Flavor], Failure]:
         r_capabilities = self.capabilities()
 
