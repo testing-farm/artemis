@@ -4,8 +4,6 @@
 import dataclasses
 import datetime
 import functools
-import os
-import tempfile
 from collections.abc import Iterator
 from typing import Any, Optional, TypedDict, Union, cast
 
@@ -36,6 +34,7 @@ from ..knobs import Knob
 from ..metrics import PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from . import (
     CanAcquire,
+    CLISessionTemporaryDir,
     CommonErrorCauses,
     ConsoleUrlData,
     FlavorBasedPoolDriver,
@@ -59,7 +58,6 @@ from . import (
     create_error_cause_extractor,
     create_tempfile,
     guest_log_updater,
-    run_cli_tool,
     vm_info_to_ip,
 )
 
@@ -288,7 +286,7 @@ def _azure_arch_to_arch(arch: str) -> str:
     return arch
 
 
-class AzureSession:
+class AzureSession(CLISessionTemporaryDir):
     """
     A representation of a authenticated Azure session.
 
@@ -302,53 +300,9 @@ class AzureSession:
     pools and guest requests.
     """
 
-    def __init__(self, logger: gluetool.log.ContextAdapter, pool: 'AzureDriver') -> None:
-        self.pool = pool
-
-        # Create a temporary directory to serve as az' config directory.
-        self.session_directory = tempfile.TemporaryDirectory(prefix=f'azure-{self.pool.poolname}')
-
-        # Log into the tenant, and since we cannot raise an exception, save the result.
-        # If we fail, any call to `run_az()` would return this saved result.
-        self._login_result = self._login(logger)
-
-    def __enter__(self) -> 'AzureSession':
-        return self
-
-    def __exit__(self, *args: object) -> None:
-        if self.session_directory is not None:
-            self.session_directory.cleanup()
-
-    def _run_cmd(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        options: list[str],
-        *,
-        json_format: bool = True,
-        guestname: Optional[str] = None,
-        commandname: Optional[str] = None,
-    ) -> Result[Union[JSONType, str], Failure]:
-        environ = {**os.environ, 'AZURE_CONFIG_DIR': self.session_directory.name}
-
-        r_run = run_cli_tool(
-            logger,
-            ['az', *options],
-            env=environ,
-            json_output=json_format,
-            command_scrubber=lambda cmd: ['azure', *options],
-            guestname=guestname,
-            poolname=self.pool.poolname,
-            commandname=commandname,
-            cause_extractor=self.pool.error_cause_extractor,
-        )
-
-        if r_run.is_error:
-            return Error(r_run.unwrap_error())
-
-        if json_format:
-            return Ok(r_run.unwrap().json)
-
-        return Ok(r_run.unwrap().stdout)
+    CLI_PREFIX = 'azure'
+    CLI_CMD = 'az'
+    CLI_CONFIG_DIR_ENV_VAR = 'AZURE_CONFIG_DIR'
 
     def _login(self, logger: gluetool.log.ContextAdapter) -> Result[None, Failure]:
         if self.pool.pool_config['username'] and self.pool.pool_config['password']:
@@ -368,19 +322,6 @@ class AzureSession:
                 return Error(Failure.from_failure('failed to log into tenant', r_login.unwrap_error()))
 
         return Ok(None)
-
-    def run_az(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        options: list[str],
-        *,
-        json_format: bool = True,
-        commandname: Optional[str] = None,
-    ) -> Result[Union[JSONType, str], Failure]:
-        if self._login_result is not None and self._login_result.is_error:
-            return Error(self._login_result.unwrap_error())
-
-        return self._run_cmd(logger, options, json_format=json_format, commandname=commandname)
 
 
 class AzureDriver(
@@ -530,7 +471,7 @@ class AzureDriver(
             if resource_group_request.tags:
                 tags_options = ['--tags'] + [f'{tag}={value}' for tag, value in resource_group_request.tags.items()]
 
-            r_create_resource_group = az_session.run_az(
+            r_create_resource_group = az_session.run(
                 logger,
                 [
                     'group',
@@ -579,7 +520,7 @@ class AzureDriver(
             return _Error(Failure.from_failure('failed to get expected resouce group name', r_expected_name.failure()))
 
         with AzureSession(logger, self) as session:
-            r_resource_groups_list = session.run_az(
+            r_resource_groups_list = session.run(
                 logger,
                 ['group', 'list', '--query', f"[?starts_with(name, '{r_expected_name.unwrap()}')]"],
                 commandname='az.resource-groups-list',
@@ -664,7 +605,7 @@ class AzureDriver(
             # If pool config has storage for boot of diagnostics specified -> let's try creating a storage, azure
             # will indeed fail gracefully if it already exists
             if self.pool_config.get('boot-log-storage'):
-                r_create_storage = az_session.run_az(
+                r_create_storage = az_session.run(
                     logger,
                     [
                         'storage',
@@ -689,7 +630,7 @@ class AzureDriver(
                 az_vm_create_options += ['--ssh-key-values', ssh_key_filepath]
 
                 # Resource group / boot log storage pre-created, ssh_key passed -> time to create a vm
-                r_instance_create = az_session.run_az(logger, az_vm_create_options, commandname='az.vm-create')
+                r_instance_create = az_session.run(logger, az_vm_create_options, commandname='az.vm-create')
                 if r_instance_create.is_error:
                     return _Error(
                         Failure.from_failure('Could not execute vm create command', r_instance_create.unwrap_error())
@@ -800,7 +741,7 @@ class AzureDriver(
             list_cmd = ['vm', 'list']
             if self.pool_config.get('guest-resource-group'):
                 list_cmd += ['--resource-group', self.pool_config['guest-resource-group']]
-            r_instances_list = session.run_az(logger, list_cmd, commandname='az.vm-list')
+            r_instances_list = session.run(logger, list_cmd, commandname='az.vm-list')
 
             if r_instances_list.is_error:
                 return Error(Failure.from_failure('failed to list instances', r_instances_list.unwrap_error()))
@@ -869,7 +810,7 @@ class AzureDriver(
     def _query_backend_flavors(self, logger: gluetool.log.ContextAdapter) -> _Result[list[BackendFlavor], Failure]:
         list_flavors_cmd = ['vm', 'list-sizes', '--location', self.pool_config['default-location']]
         with AzureSession(logger, self) as session:
-            r_flavors_list = session.run_az(logger, list_flavors_cmd, commandname='az.vm-flavors-list')
+            r_flavors_list = session.run(logger, list_flavors_cmd, commandname='az.vm-flavors-list')
 
             if r_flavors_list.is_error:
                 return _Error(
@@ -897,7 +838,7 @@ class AzureDriver(
 
         def _delete_resource(resource_id: str) -> Result[JSONType, Failure]:
             with AzureSession(logger, self) as session:
-                return session.run_az(
+                return session.run(
                     logger,
                     ['resource', 'delete', '--verbose', '--ids', resource_id],
                     json_format=False,
@@ -909,7 +850,7 @@ class AzureDriver(
 
         if resource_group:
             with AzureSession(logger, self) as session:
-                r_remove_resource_group = session.run_az(
+                r_remove_resource_group = session.run(
                     logger,
                     ['group', 'delete', '--name', resource_group, '-y'],
                     commandname='az.group-delete',
@@ -924,7 +865,7 @@ class AzureDriver(
         # resource group and can't be tagged out of the box so need special treatment
         if resource_ids.boot_log_container is not None:
             with AzureSession(logger, self) as session:
-                r_remove_storage = session.run_az(
+                r_remove_storage = session.run(
                     logger,
                     [
                         'storage',
@@ -1073,7 +1014,7 @@ class AzureDriver(
 
             # Find other resources by tag
             with AzureSession(logger, self) as az_session:
-                r_tagged_resources = az_session.run_az(
+                r_tagged_resources = az_session.run(
                     logger,
                     ['resource', 'list', '--tag', f'uid={pool_data.instance_name}'],
                     commandname='az.resource-list',
@@ -1111,7 +1052,7 @@ class AzureDriver(
         self, logger: gluetool.log.ContextAdapter, instance_id: str
     ) -> _Result[BackendInstance, Failure]:
         with AzureSession(logger, self) as session:
-            r_output = session.run_az(logger, ['vm', 'show', '-d', '--ids', instance_id], commandname='az.vm-show')
+            r_output = session.run(logger, ['vm', 'show', '-d', '--ids', instance_id], commandname='az.vm-show')
 
         if r_output.is_error:
             return _Error(Failure.from_failure('failed to fetch instance information', r_output.unwrap_error()))
@@ -1130,9 +1071,7 @@ class AzureDriver(
         with AzureSession(logger, self) as session:
             # Resource usage - instances and flavors
             def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[list[Any], Failure]:
-                return cast(
-                    Result[list[Any], Failure], session.run_az(logger, ['vm', 'list'], commandname='az.vm-list')
-                )
+                return cast(Result[list[Any], Failure], session.run(logger, ['vm', 'list'], commandname='az.vm-list'))
 
             def _update_instance_usage(
                 logger: gluetool.log.ContextAdapter,
@@ -1221,7 +1160,7 @@ class AzureDriver(
             list_images_cmd.extend(['--publisher', filters['publisher']])
 
         with AzureSession(logger, self) as session:
-            r_images_list = session.run_az(logger, list_images_cmd, commandname='az.vm-image-list')
+            r_images_list = session.run(logger, list_images_cmd, commandname='az.vm-image-list')
 
             if r_images_list.is_error:
                 return Error(Failure.from_failure('failed to fetch image information', r_images_list.unwrap_error()))
@@ -1316,7 +1255,7 @@ class AzureDriver(
                 '--account-name',
                 self.pool_config['boot-log-storage'],
             ]
-            r_container_list = session.run_az(logger, az_options, commandname='az.storage-container-list')
+            r_container_list = session.run(logger, az_options, commandname='az.storage-container-list')
 
             if r_container_list.is_error:
                 return Error(
@@ -1372,7 +1311,7 @@ class AzureDriver(
                 '--account-name',
                 self.pool_config['boot-log-storage'],
             ]
-            r_blob_list = session.run_az(logger, az_options, commandname='az.storage-blob-list')
+            r_blob_list = session.run(logger, az_options, commandname='az.storage-blob-list')
 
             if r_blob_list.is_error:
                 return Error(Failure.from_failure('Could not get a list of stored blobs', r_blob_list.unwrap_error()))
@@ -1395,9 +1334,7 @@ class AzureDriver(
                 '--account-name',
                 self.pool_config['boot-log-storage'],
             ]
-            r_blob_download = session.run_az(
-                logger, az_options, json_format=False, commandname='az-storage-blob-download'
-            )
+            r_blob_download = session.run(logger, az_options, json_format=False, commandname='az-storage-blob-download')
             if r_blob_download.is_error:
                 return Error(
                     Failure.from_failure('Could not download a serial console log blob', r_blob_download.unwrap_error())
@@ -1459,7 +1396,7 @@ class AzureDriver(
             return Error(Failure('failed to trigger instance reboot without instance ID'))
 
         with AzureSession(logger, self) as session:
-            r_output = session.run_az(
+            r_output = session.run(
                 logger, ['vm', 'restart', '--force', '--ids', pool_data.instance_id], commandname='az.vm-reboot'
             )
 

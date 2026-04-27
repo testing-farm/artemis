@@ -3525,6 +3525,105 @@ def create_tempfile(file_contents: Optional[str] = None, **kwargs: Any) -> Itera
         os.unlink(temp_file.name)
 
 
+class CLISessionTemporaryDir(abc.ABC):
+    """
+    A representation of an authenticated cli session that is using a temporary directory.
+
+    When it's not possible to pass credentials to distinct cli commands (azure, ibmcloud),
+    one needs to authenticate using cli directories. For cases when there is no specific session
+    directory configuration involved (like no need for plugins installation or extra configuration effort like
+    choosing a workspace) we can get away with just a temporary directory that will be create for the purpose of
+    running a specific command and later cleaned up.
+
+    This class uses ``CLI_CONFIG_DIR`` to store credentials in a dedicated
+    directory.
+    """
+
+    CLI_PREFIX = 'cli'
+    CLI_CMD = 'cli'
+    CLI_CONFIG_DIR_ENV_VAR = 'CLI_CONFIG_DIR'
+
+    def __init__(self, logger: gluetool.log.ContextAdapter, pool: 'PoolDriver[Any, Any]') -> None:
+        self.pool = pool
+
+        # Create a temporary directory to serve as az' config directory.
+        self.session_directory = tempfile.TemporaryDirectory(prefix=f'{self.CLI_PREFIX}-{self.pool.poolname}')
+
+        # Now let's attempt to set it up
+        r_session_dir = self._prepare_session_dir(logger)
+
+        if r_session_dir.is_error:
+            self._login_result: Result[None, Failure] = Error(r_session_dir.unwrap_error())
+            return
+
+        # Log into the tenant, and since we cannot raise an exception, save the result.
+        # If we fail, any call to `run()` would return this saved result.
+        self._login_result = self._login(logger)
+
+    def _prepare_session_dir(self, logger: gluetool.log.ContextAdapter) -> Result[None, Failure]:
+        """
+        In case some more work is needed to end up with a functional session dir (like choosing a workspace)
+        this will be done by this method.
+        """
+        return Ok(None)
+
+    def __enter__(self) -> 'CLISessionTemporaryDir':
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        if self.session_directory is not None:
+            self.session_directory.cleanup()
+
+    def _run_cmd(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        options: list[str],
+        *,
+        json_format: bool = True,
+        guestname: Optional[str] = None,
+        commandname: Optional[str] = None,
+    ) -> Result[Union[JSONType, str], Failure]:
+        environ = {**os.environ, self.CLI_CONFIG_DIR_ENV_VAR: self.session_directory.name}
+
+        r_run = run_cli_tool(
+            logger,
+            [self.CLI_CMD, *options],
+            env=environ,
+            json_output=json_format,
+            command_scrubber=lambda cmd: [self.CLI_PREFIX, *options],
+            guestname=guestname,
+            poolname=self.pool.poolname,
+            commandname=commandname,
+            cause_extractor=self.pool.error_cause_extractor,
+        )
+
+        if r_run.is_error:
+            return Error(r_run.unwrap_error())
+
+        if json_format:
+            return Ok(r_run.unwrap().json)
+
+        return Ok(r_run.unwrap().stdout)
+
+    @abc.abstractmethod
+    def _login(self, logger: gluetool.log.ContextAdapter) -> Result[None, Failure]:
+        """Will be overridden by the particular implementation"""
+        raise NotImplementedError
+
+    def run(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        options: list[str],
+        *,
+        json_format: bool = True,
+        commandname: Optional[str] = None,
+    ) -> Result[Union[JSONType, str], Failure]:
+        if self._login_result is not None and self._login_result.is_error:
+            return Error(self._login_result.unwrap_error())
+
+        return self._run_cmd(logger, options, json_format=json_format, commandname=commandname)
+
+
 class CLISessionPermanentDir(abc.ABC):
     """
     A representation of an authenticated cli session that is using same config directory.
