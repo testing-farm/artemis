@@ -3633,7 +3633,7 @@ class CLISessionTemporaryDir(abc.ABC):
         """
         return Ok(None)
 
-    def __enter__(self) -> 'CLISessionTemporaryDir':
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *args: object) -> None:
@@ -3684,7 +3684,7 @@ class CLISessionTemporaryDir(abc.ABC):
         json_format: bool = True,
         commandname: Optional[str] = None,
     ) -> Result[Union[JSONType, str], Failure]:
-        if self._login_result is not None and self._login_result.is_error:
+        if self._login_result and self._login_result.is_error:
             return Error(self._login_result.unwrap_error())
 
         return self._run_cmd(logger, options, json_format=json_format, commandname=commandname)
@@ -3760,7 +3760,7 @@ class CLISessionPermanentDir(abc.ABC):
         """
         return Ok(None)
 
-    def __enter__(self) -> 'CLISessionPermanentDir':
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *args: object) -> None:
@@ -3831,7 +3831,7 @@ class CLISessionPermanentDir(abc.ABC):
         json_format: bool = True,
         commandname: Optional[str] = None,
     ) -> Result[Union[JSONType, str], Failure]:
-        if self._login_result is not None and self._login_result.is_error:
+        if self._login_result and self._login_result.is_error:
             return Error(self._login_result.unwrap_error())
 
         return self._run_cmd(logger, options, json_format=json_format, commandname=commandname)
