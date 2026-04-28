@@ -3546,7 +3546,7 @@ class CLISessionTemporaryDir(abc.ABC):
     def __init__(self, logger: gluetool.log.ContextAdapter, pool: 'PoolDriver[Any, Any]') -> None:
         self.pool = pool
 
-        # Create a temporary directory to serve as az' config directory.
+        # Create a temporary directory to serve as cli config directory.
         self.session_directory = tempfile.TemporaryDirectory(prefix=f'{self.CLI_PREFIX}-{self.pool.poolname}')
 
         # Now let's attempt to set it up
