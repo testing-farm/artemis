@@ -58,6 +58,7 @@ from ..environment import (
 )
 from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
+from ..routing_policies import KNOB_USE_SPOT_LABEL
 from ..security_group_rules import SecurityGroupRule, SecurityGroupRules
 from . import (
     ConsoleUrlData,
@@ -2818,6 +2819,14 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
             commandname='aws.tag-resources',
         )
 
+    def _should_use_spot_request(self, guest_request: GuestRequest) -> bool:
+        spot_label_value = guest_request.user_data.get(KNOB_USE_SPOT_LABEL.value)
+
+        if spot_label_value is not None:
+            return normalize_bool_option(spot_label_value)
+
+        return normalize_bool_option(self.pool_config.get('use-spot-request', False))
+
     @override
     def acquire_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
@@ -2847,7 +2856,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
 
         self.log_acquisition_attempt(logger, session, guest_request, flavor=flavor, image=image)
 
-        if normalize_bool_option(self.pool_config.get('use-spot-request', False)):
+        if self._should_use_spot_request(guest_request):
             return self._request_spot_instance(logger, session, guest_request, flavor, image)
 
         return self._request_instance(logger, session, guest_request, flavor, image)
