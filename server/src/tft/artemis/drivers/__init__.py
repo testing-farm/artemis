@@ -162,7 +162,12 @@ class ConfigFlavorTPMSpecType(TypedDict):
 #: pools[].parameters.{custom-flavors,patch-flavors}[].virtualization
 ConfigFlavorVirtualizationSpecType = TypedDict(
     'ConfigFlavorVirtualizationSpecType',
-    {'is-supported': Optional[bool], 'is-virtualized': Optional[bool], 'hypervisor': Optional[str]},
+    {
+        'confidential': Optional[bool],
+        'is-supported': Optional[bool],
+        'is-virtualized': Optional[bool],
+        'hypervisor': Optional[str],
+    },
 )
 
 
@@ -1052,6 +1057,9 @@ def _apply_flavor_specification(flavor: Flavor, flavor_spec: ConfigFlavorSpecTyp
 
     if 'virtualization' in flavor_spec:
         virtualization_patch = flavor_spec['virtualization']
+
+        if 'confidential' in virtualization_patch:
+            flavor.virtualization.confidential = virtualization_patch['confidential']
 
         if 'is-supported' in virtualization_patch:
             flavor.virtualization.is_supported = virtualization_patch['is-supported']
