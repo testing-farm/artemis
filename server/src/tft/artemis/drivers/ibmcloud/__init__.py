@@ -185,11 +185,19 @@ def _serialize_tags(tags: Tags) -> list[str]:
 
 
 class IBMCloudSession(CLISessionPermanentDir):
-    CLI_PREFIX = 'ibmcloud'
-    CLI_CMD = 'ibmcloud'
-    CLI_CONFIG_DIR_ENV_VAR = 'IBMCLOUD_HOME'
-
     PLUGINS_DIR = '.bluemix/plugins'
+
+    @property
+    def cli_prefix(self) -> str:
+        return 'ibmcloud'
+
+    @property
+    def cli_cmd(self) -> str:
+        return 'ibmcloud'
+
+    @property
+    def cli_config_dir_env_var(self) -> str:
+        return 'IBMCLOUD_HOME'
 
     @override
     def _login(self, logger: gluetool.log.ContextAdapter) -> Result[None, Failure]:

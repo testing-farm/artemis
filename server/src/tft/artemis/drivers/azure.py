@@ -300,9 +300,17 @@ class AzureSession(CLISessionTemporaryDir):
     pools and guest requests.
     """
 
-    CLI_PREFIX = 'azure'
-    CLI_CMD = 'az'
-    CLI_CONFIG_DIR_ENV_VAR = 'AZURE_CONFIG_DIR'
+    @property
+    def cli_prefix(self) -> str:
+        return 'azure'
+
+    @property
+    def cli_cmd(self) -> str:
+        return 'az'
+
+    @property
+    def cli_config_dir_env_var(self) -> str:
+        return 'AZURE_CONFIG_DIR'
 
     def _login(self, logger: gluetool.log.ContextAdapter) -> Result[None, Failure]:
         if self.pool.pool_config['username'] and self.pool.pool_config['password']:

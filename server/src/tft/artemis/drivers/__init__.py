@@ -3535,19 +3535,15 @@ class CLISessionTemporaryDir(abc.ABC):
     choosing a workspace) we can get away with just a temporary directory that will be create for the purpose of
     running a specific command and later cleaned up.
 
-    This class uses ``CLI_CONFIG_DIR`` to store credentials in a dedicated
+    This class uses ``cli_config_dir`` env var to store credentials in a dedicated
     directory.
     """
-
-    CLI_PREFIX = 'cli'
-    CLI_CMD = 'cli'
-    CLI_CONFIG_DIR_ENV_VAR = 'CLI_CONFIG_DIR'
 
     def __init__(self, logger: gluetool.log.ContextAdapter, pool: 'PoolDriver[Any, Any]') -> None:
         self.pool = pool
 
         # Create a temporary directory to serve as cli config directory.
-        self.session_directory = tempfile.TemporaryDirectory(prefix=f'{self.CLI_PREFIX}-{self.pool.poolname}')
+        self.session_directory = tempfile.TemporaryDirectory(prefix=f'{self.cli_prefix}-{self.pool.poolname}')
 
         # Now let's attempt to set it up
         r_session_dir = self._prepare_session_dir(logger)
@@ -3559,6 +3555,18 @@ class CLISessionTemporaryDir(abc.ABC):
         # Log into the tenant, and since we cannot raise an exception, save the result.
         # If we fail, any call to `run()` would return this saved result.
         self._login_result = self._login(logger)
+
+    @abc.abstractproperty
+    def cli_prefix(self) -> str:
+        pass
+
+    @abc.abstractproperty
+    def cli_cmd(self) -> str:
+        pass
+
+    @abc.abstractproperty
+    def cli_config_dir_env_var(self) -> str:
+        pass
 
     def _prepare_session_dir(self, logger: gluetool.log.ContextAdapter) -> Result[None, Failure]:
         """
@@ -3583,14 +3591,14 @@ class CLISessionTemporaryDir(abc.ABC):
         guestname: Optional[str] = None,
         commandname: Optional[str] = None,
     ) -> Result[Union[JSONType, str], Failure]:
-        environ = {**os.environ, self.CLI_CONFIG_DIR_ENV_VAR: self.session_directory.name}
+        environ = {**os.environ, self.cli_config_dir_env_var: self.session_directory.name}
 
         r_run = run_cli_tool(
             logger,
-            [self.CLI_CMD, *options],
+            [self.cli_cmd, *options],
             env=environ,
             json_output=json_format,
-            command_scrubber=lambda cmd: [self.CLI_PREFIX, *options],
+            command_scrubber=lambda cmd: [self.cli_prefix, *options],
             guestname=guestname,
             poolname=self.pool.poolname,
             commandname=commandname,
@@ -3636,15 +3644,11 @@ class CLISessionPermanentDir(abc.ABC):
     To prevent possible problems with simultaneous execution there is an exclusive lock in place for config directory
     access.
 
-    This class uses ``CLI_CONFIG_DIR`` to store credentials in a dedicated
+    This class uses ``cli_config_dir`` env var to store credentials in a dedicated
     directory, all commands executed by the session would then share these
     credentials, which in turn enables concurrent use of cloud cli for different
     pools and guest requests.
     """
-
-    CLI_PREFIX = 'cli'
-    CLI_CMD = 'cli'
-    CLI_CONFIG_DIR_ENV_VAR = 'CLI_CONFIG_DIR'
 
     def __init__(self, logger: gluetool.log.ContextAdapter, pool: 'PoolDriver[Any, Any]') -> None:
         self.pool = pool
@@ -3665,7 +3669,7 @@ class CLISessionPermanentDir(abc.ABC):
 
         self.session_dir_path = os.path.join(
             r_session_dir_path.unwrap(),
-            f'{self.CLI_PREFIX}-{self.pool.poolname}-{random.randint(1, self.parallel_sessions)}',
+            f'{self.cli_prefix}-{self.pool.poolname}-{random.randint(1, self.parallel_sessions)}',
         )
 
         if not os.path.exists(self.session_dir_path):
@@ -3686,6 +3690,18 @@ class CLISessionPermanentDir(abc.ABC):
         # Log into the tenant, and since we cannot raise an exception, save the result.
         # If we fail, any call to `run` would return this saved result.
         self._login_result = self._login(logger)
+
+    @abc.abstractproperty
+    def cli_prefix(self) -> str:
+        pass
+
+    @abc.abstractproperty
+    def cli_cmd(self) -> str:
+        pass
+
+    @abc.abstractproperty
+    def cli_config_dir_env_var(self) -> str:
+        pass
 
     def _prepare_session_dir(self, logger: gluetool.log.ContextAdapter) -> Result[None, Failure]:
         """
@@ -3709,7 +3725,7 @@ class CLISessionPermanentDir(abc.ABC):
         guestname: Optional[str] = None,
         commandname: Optional[str] = None,
     ) -> Result[Union[JSONType, str], Failure]:
-        environ = {**os.environ, self.CLI_CONFIG_DIR_ENV_VAR: self.session_dir_path}
+        environ = {**os.environ, self.cli_config_dir_env_var: self.session_dir_path}
 
         session_dir_fd = os.open(self.session_dir_path, os.O_RDONLY)
 
@@ -3730,10 +3746,10 @@ class CLISessionPermanentDir(abc.ABC):
         # Run command, isolation should be guaranteed now
         r_run = run_cli_tool(
             logger,
-            [self.CLI_CMD, *options],
+            [self.cli_cmd, *options],
             env=environ,
             json_output=json_format,
-            command_scrubber=lambda cmd: [self.CLI_PREFIX, *options],
+            command_scrubber=lambda cmd: [self.cli_prefix, *options],
             guestname=guestname,
             poolname=self.pool.poolname,
             commandname=commandname,
