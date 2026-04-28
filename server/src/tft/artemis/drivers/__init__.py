@@ -162,7 +162,12 @@ class ConfigFlavorTPMSpecType(TypedDict):
 #: pools[].parameters.{custom-flavors,patch-flavors}[].virtualization
 ConfigFlavorVirtualizationSpecType = TypedDict(
     'ConfigFlavorVirtualizationSpecType',
-    {'is-supported': Optional[bool], 'is-virtualized': Optional[bool], 'hypervisor': Optional[str]},
+    {
+        'confidential': Optional[bool],
+        'is-supported': Optional[bool],
+        'is-virtualized': Optional[bool],
+        'hypervisor': Optional[str],
+    },
 )
 
 
