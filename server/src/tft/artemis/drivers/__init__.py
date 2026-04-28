@@ -3532,7 +3532,7 @@ class CLISessionTemporaryDir(abc.ABC):
     When it's not possible to pass credentials to distinct cli commands (azure, ibmcloud),
     one needs to authenticate using cli directories. For cases when there is no specific session
     directory configuration involved (like no need for plugins installation or extra configuration effort like
-    choosing a workspace) we can get away with just a temporary directory that will be create for the purpose of
+    choosing a workspace) we can get away with just a temporary directory that will be created for the purpose of
     running a specific command and later cleaned up.
 
     This class uses ``cli_config_dir`` env var to store credentials in a dedicated
