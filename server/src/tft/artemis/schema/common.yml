@@ -190,6 +190,9 @@ definitions:
     type: object
 
     properties:
+      confidential:
+        type: boolean
+
       is-virtualized:
         type: boolean
 
