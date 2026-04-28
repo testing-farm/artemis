@@ -300,15 +300,15 @@ class AzureSession(CLISessionTemporaryDir):
     pools and guest requests.
     """
 
-    @property
+    @functools.cached_property
     def cli_prefix(self) -> str:
         return 'azure'
 
-    @property
+    @functools.cached_property
     def cli_cmd(self) -> str:
         return 'az'
 
-    @property
+    @functools.cached_property
     def cli_config_dir_env_var(self) -> str:
         return 'AZURE_CONFIG_DIR'
 

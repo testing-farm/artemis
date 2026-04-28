@@ -3622,15 +3622,18 @@ class CLISessionTemporaryDir(abc.ABC):
         # If we fail, any call to `run()` would return this saved result.
         self._login_result = self._login(logger)
 
-    @abc.abstractproperty
+    @property
+    @abc.abstractmethod
     def cli_prefix(self) -> str:
         pass
 
-    @abc.abstractproperty
+    @property
+    @abc.abstractmethod
     def cli_cmd(self) -> str:
         pass
 
-    @abc.abstractproperty
+    @property
+    @abc.abstractmethod
     def cli_config_dir_env_var(self) -> str:
         pass
 
@@ -3757,15 +3760,18 @@ class CLISessionPermanentDir(abc.ABC):
         # If we fail, any call to `run` would return this saved result.
         self._login_result = self._login(logger)
 
-    @abc.abstractproperty
+    @property
+    @abc.abstractmethod
     def cli_prefix(self) -> str:
         pass
 
-    @abc.abstractproperty
+    @property
+    @abc.abstractmethod
     def cli_cmd(self) -> str:
         pass
 
-    @abc.abstractproperty
+    @property
+    @abc.abstractmethod
     def cli_config_dir_env_var(self) -> str:
         pass
 
