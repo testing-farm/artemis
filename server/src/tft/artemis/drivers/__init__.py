@@ -3731,11 +3731,6 @@ class CLISessionTemporaryDir(CLISessionDir):
 
         return Ok(r_run.unwrap().stdout)
 
-    @abc.abstractmethod
-    def _login(self, logger: gluetool.log.ContextAdapter) -> Result[None, Failure]:
-        """Will be overridden by the particular implementation"""
-        raise NotImplementedError
-
 
 class CLISessionPermanentDir(CLISessionDir):
     """
@@ -3850,11 +3845,6 @@ class CLISessionPermanentDir(CLISessionDir):
             return Ok(r_run.unwrap().json)
 
         return Ok(r_run.unwrap().stdout)
-
-    @abc.abstractmethod
-    def _login(self, logger: gluetool.log.ContextAdapter) -> Result[None, Failure]:
-        """Will be overridden by particular implementation"""
-        raise NotImplementedError
 
 
 #
