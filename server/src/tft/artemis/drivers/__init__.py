@@ -3591,7 +3591,148 @@ def create_tempfile(file_contents: Optional[str] = None, **kwargs: Any) -> Itera
         os.unlink(temp_file.name)
 
 
-class CLISessionPermanentDir(abc.ABC):
+class CLISessionDir(abc.ABC):
+    """
+    A base representation of an authenticated cli session.
+
+    When it's not possible to pass credentials to distinct cli commands (azure, ibmcloud),
+    one needs to authenticate using cli directories. Subclasses define the directory
+    management strategy (temporary vs permanent).
+
+    For cases when there is no specific session directory configuration involved
+    (no need for plugins installation or extra configuration effort like choosing a workspace) we can get away
+    with just a temporary directory that will be created for the purpose of running a specific command and
+    later cleaned up.
+
+    This class uses ``cli_config_dir`` env var to store credentials in a dedicated
+    directory.
+    """
+
+    pool: 'PoolDriver[Any, Any]'
+    _login_result: Result[None, Failure]
+
+    @property
+    @abc.abstractmethod
+    def cli_prefix(self) -> str:
+        pass
+
+    @property
+    @abc.abstractmethod
+    def cli_cmd(self) -> str:
+        pass
+
+    @property
+    @abc.abstractmethod
+    def cli_config_dir_env_var(self) -> str:
+        pass
+
+    def _prepare_session_dir(self, logger: gluetool.log.ContextAdapter) -> Result[None, Failure]:
+        """
+        In case some more work is needed to end up with a functional session dir (like choosing a workspace,
+        installing / copying plugins etc) this will be done by this method.
+        """
+        return Ok(None)
+
+    def __enter__(self) -> Self:
+        return self
+
+    @abc.abstractmethod
+    def __exit__(self, *args: object) -> None:
+        pass
+
+    @abc.abstractmethod
+    def _login(self, logger: gluetool.log.ContextAdapter) -> Result[None, Failure]:
+        pass
+
+    @abc.abstractmethod
+    def _run_cmd(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        options: list[str],
+        *,
+        json_format: bool = True,
+        guestname: Optional[str] = None,
+        commandname: Optional[str] = None,
+    ) -> Result[Union[JSONType, str], Failure]:
+        pass
+
+    def run(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        options: list[str],
+        *,
+        json_format: bool = True,
+        commandname: Optional[str] = None,
+    ) -> Result[Union[JSONType, str], Failure]:
+        if self._login_result and self._login_result.is_error:
+            return Error(self._login_result.unwrap_error())
+
+        return self._run_cmd(logger, options, json_format=json_format, commandname=commandname)
+
+
+class CLISessionTemporaryDir(CLISessionDir):
+    """
+    A representation of an authenticated cli session that is using a temporary directory.
+
+    For cases when there is no specific session directory configuration involved (like no need for plugins
+    installation or extra configuration effort like choosing a workspace) we can get away with just a temporary
+    directory that will be created for the purpose of running a specific command and later cleaned up.
+    """
+
+    def __init__(self, logger: gluetool.log.ContextAdapter, pool: 'PoolDriver[Any, Any]') -> None:
+        self.pool = pool
+
+        # Create a temporary directory to serve as cli config directory.
+        self.session_directory = tempfile.TemporaryDirectory(prefix=f'{self.cli_prefix}-{self.pool.poolname}')
+
+        # Now let's attempt to set it up
+        r_session_dir = self._prepare_session_dir(logger)
+
+        if r_session_dir.is_error:
+            self._login_result: Result[None, Failure] = Error(r_session_dir.unwrap_error())
+            return
+
+        # Log into the tenant, and since we cannot raise an exception, save the result.
+        # If we fail, any call to `run()` would return this saved result.
+        self._login_result = self._login(logger)
+
+    def __exit__(self, *args: object) -> None:
+        if self.session_directory is not None:
+            self.session_directory.cleanup()
+
+    def _run_cmd(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        options: list[str],
+        *,
+        json_format: bool = True,
+        guestname: Optional[str] = None,
+        commandname: Optional[str] = None,
+    ) -> Result[Union[JSONType, str], Failure]:
+        environ = {**os.environ, self.cli_config_dir_env_var: self.session_directory.name}
+
+        r_run = run_cli_tool(
+            logger,
+            [self.cli_cmd, *options],
+            env=environ,
+            json_output=json_format,
+            command_scrubber=lambda cmd: [self.cli_prefix, *options],
+            guestname=guestname,
+            poolname=self.pool.poolname,
+            commandname=commandname,
+            cause_extractor=self.pool.error_cause_extractor,
+        )
+
+        if r_run.is_error:
+            return Error(r_run.unwrap_error())
+
+        if json_format:
+            return Ok(r_run.unwrap().json)
+
+        return Ok(r_run.unwrap().stdout)
+
+
+class CLISessionPermanentDir(CLISessionDir):
     """
     A representation of an authenticated cli session that is using same config directory.
 
@@ -3603,15 +3744,11 @@ class CLISessionPermanentDir(abc.ABC):
     To prevent possible problems with simultaneous execution there is an exclusive lock in place for config directory
     access.
 
-    This class uses ``CLI_CONFIG_DIR`` to store credentials in a dedicated
+    This class uses ``cli_config_dir`` env var to store credentials in a dedicated
     directory, all commands executed by the session would then share these
     credentials, which in turn enables concurrent use of cloud cli for different
     pools and guest requests.
     """
-
-    CLI_PREFIX = 'cli'
-    CLI_CMD = 'cli'
-    CLI_CONFIG_DIR_ENV_VAR = 'CLI_CONFIG_DIR'
 
     def __init__(self, logger: gluetool.log.ContextAdapter, pool: 'PoolDriver[Any, Any]') -> None:
         self.pool = pool
@@ -3632,7 +3769,7 @@ class CLISessionPermanentDir(abc.ABC):
 
         self.session_dir_path = os.path.join(
             r_session_dir_path.unwrap(),
-            f'{self.CLI_PREFIX}-{self.pool.poolname}-{random.randint(1, self.parallel_sessions)}',
+            f'{self.cli_prefix}-{self.pool.poolname}-{random.randint(1, self.parallel_sessions)}',
         )
 
         if not os.path.exists(self.session_dir_path):
@@ -3654,16 +3791,6 @@ class CLISessionPermanentDir(abc.ABC):
         # If we fail, any call to `run` would return this saved result.
         self._login_result = self._login(logger)
 
-    def _prepare_session_dir(self, logger: gluetool.log.ContextAdapter) -> Result[None, Failure]:
-        """
-        In case some more work is needed to end up with a functional session dir (like installing / copying plugins
-        etc) this will be done by this method.
-        """
-        return Ok(None)
-
-    def __enter__(self) -> 'CLISessionPermanentDir':
-        return self
-
     def __exit__(self, *args: object) -> None:
         return
 
@@ -3676,7 +3803,7 @@ class CLISessionPermanentDir(abc.ABC):
         guestname: Optional[str] = None,
         commandname: Optional[str] = None,
     ) -> Result[Union[JSONType, str], Failure]:
-        environ = {**os.environ, self.CLI_CONFIG_DIR_ENV_VAR: self.session_dir_path}
+        environ = {**os.environ, self.cli_config_dir_env_var: self.session_dir_path}
 
         session_dir_fd = os.open(self.session_dir_path, os.O_RDONLY)
 
@@ -3697,10 +3824,10 @@ class CLISessionPermanentDir(abc.ABC):
         # Run command, isolation should be guaranteed now
         r_run = run_cli_tool(
             logger,
-            [self.CLI_CMD, *options],
+            [self.cli_cmd, *options],
             env=environ,
             json_output=json_format,
-            command_scrubber=lambda cmd: [self.CLI_PREFIX, *options],
+            command_scrubber=lambda cmd: [self.cli_prefix, *options],
             guestname=guestname,
             poolname=self.pool.poolname,
             commandname=commandname,
@@ -3718,24 +3845,6 @@ class CLISessionPermanentDir(abc.ABC):
             return Ok(r_run.unwrap().json)
 
         return Ok(r_run.unwrap().stdout)
-
-    @abc.abstractmethod
-    def _login(self, logger: gluetool.log.ContextAdapter) -> Result[None, Failure]:
-        """Will be overridden by particular implementation"""
-        raise NotImplementedError
-
-    def run(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        options: list[str],
-        *,
-        json_format: bool = True,
-        commandname: Optional[str] = None,
-    ) -> Result[Union[JSONType, str], Failure]:
-        if self._login_result is not None and self._login_result.is_error:
-            return Error(self._login_result.unwrap_error())
-
-        return self._run_cmd(logger, options, json_format=json_format, commandname=commandname)
 
 
 #

@@ -105,7 +105,7 @@ AZURE_SIZE_LIST = [
 
 
 class AzureSessionMock:
-    def run_az(  # type: ignore[misc]
+    def run(  # type: ignore[misc]
         logger: gluetool.log.ContextAdapter,  # noqa: N805
         options: list[str],
         commandname: Optional[str] = None,
