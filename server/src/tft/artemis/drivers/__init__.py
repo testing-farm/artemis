@@ -3642,8 +3642,7 @@ class CLISessionDir(abc.ABC):
 
     @abc.abstractmethod
     def _login(self, logger: gluetool.log.ContextAdapter) -> Result[None, Failure]:
-        """Will be overridden by the particular implementation"""
-        raise NotImplementedError
+        pass
 
     @abc.abstractmethod
     def _run_cmd(
