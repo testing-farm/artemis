@@ -3591,36 +3591,20 @@ def create_tempfile(file_contents: Optional[str] = None, **kwargs: Any) -> Itera
         os.unlink(temp_file.name)
 
 
-class CLISessionTemporaryDir(abc.ABC):
+class CLISessionDir(abc.ABC):
     """
-    A representation of an authenticated cli session that is using a temporary directory.
+    A base representation of an authenticated cli session.
 
     When it's not possible to pass credentials to distinct cli commands (azure, ibmcloud),
-    one needs to authenticate using cli directories. For cases when there is no specific session
-    directory configuration involved (like no need for plugins installation or extra configuration effort like
-    choosing a workspace) we can get away with just a temporary directory that will be create for the purpose of
-    running a specific command and later cleaned up.
+    one needs to authenticate using cli directories. Subclasses define the directory
+    management strategy (temporary vs permanent).
 
     This class uses ``cli_config_dir`` env var to store credentials in a dedicated
     directory.
     """
 
-    def __init__(self, logger: gluetool.log.ContextAdapter, pool: 'PoolDriver[Any, Any]') -> None:
-        self.pool = pool
-
-        # Create a temporary directory to serve as cli config directory.
-        self.session_directory = tempfile.TemporaryDirectory(prefix=f'{self.cli_prefix}-{self.pool.poolname}')
-
-        # Now let's attempt to set it up
-        r_session_dir = self._prepare_session_dir(logger)
-
-        if r_session_dir.is_error:
-            self._login_result: Result[None, Failure] = Error(r_session_dir.unwrap_error())
-            return
-
-        # Log into the tenant, and since we cannot raise an exception, save the result.
-        # If we fail, any call to `run()` would return this saved result.
-        self._login_result = self._login(logger)
+    pool: 'PoolDriver[Any, Any]'
+    _login_result: Result[None, Failure]
 
     @property
     @abc.abstractmethod
@@ -3639,13 +3623,74 @@ class CLISessionTemporaryDir(abc.ABC):
 
     def _prepare_session_dir(self, logger: gluetool.log.ContextAdapter) -> Result[None, Failure]:
         """
-        In case some more work is needed to end up with a functional session dir (like choosing a workspace)
-        this will be done by this method.
+        In case some more work is needed to end up with a functional session dir (like choosing a workspace,
+        installing / copying plugins etc) this will be done by this method.
         """
         return Ok(None)
 
     def __enter__(self) -> Self:
         return self
+
+    @abc.abstractmethod
+    def __exit__(self, *args: object) -> None:
+        pass
+
+    @abc.abstractmethod
+    def _login(self, logger: gluetool.log.ContextAdapter) -> Result[None, Failure]:
+        """Will be overridden by the particular implementation"""
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def _run_cmd(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        options: list[str],
+        *,
+        json_format: bool = True,
+        guestname: Optional[str] = None,
+        commandname: Optional[str] = None,
+    ) -> Result[Union[JSONType, str], Failure]:
+        pass
+
+    def run(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        options: list[str],
+        *,
+        json_format: bool = True,
+        commandname: Optional[str] = None,
+    ) -> Result[Union[JSONType, str], Failure]:
+        if self._login_result and self._login_result.is_error:
+            return Error(self._login_result.unwrap_error())
+
+        return self._run_cmd(logger, options, json_format=json_format, commandname=commandname)
+
+
+class CLISessionTemporaryDir(CLISessionDir):
+    """
+    A representation of an authenticated cli session that is using a temporary directory.
+
+    For cases when there is no specific session directory configuration involved (like no need for plugins
+    installation or extra configuration effort like choosing a workspace) we can get away with just a temporary
+    directory that will be created for the purpose of running a specific command and later cleaned up.
+    """
+
+    def __init__(self, logger: gluetool.log.ContextAdapter, pool: 'PoolDriver[Any, Any]') -> None:
+        self.pool = pool
+
+        # Create a temporary directory to serve as cli config directory.
+        self.session_directory = tempfile.TemporaryDirectory(prefix=f'{self.cli_prefix}-{self.pool.poolname}')
+
+        # Now let's attempt to set it up
+        r_session_dir = self._prepare_session_dir(logger)
+
+        if r_session_dir.is_error:
+            self._login_result: Result[None, Failure] = Error(r_session_dir.unwrap_error())
+            return
+
+        # Log into the tenant, and since we cannot raise an exception, save the result.
+        # If we fail, any call to `run()` would return this saved result.
+        self._login_result = self._login(logger)
 
     def __exit__(self, *args: object) -> None:
         if self.session_directory is not None:
@@ -3687,21 +3732,8 @@ class CLISessionTemporaryDir(abc.ABC):
         """Will be overridden by the particular implementation"""
         raise NotImplementedError
 
-    def run(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        options: list[str],
-        *,
-        json_format: bool = True,
-        commandname: Optional[str] = None,
-    ) -> Result[Union[JSONType, str], Failure]:
-        if self._login_result and self._login_result.is_error:
-            return Error(self._login_result.unwrap_error())
 
-        return self._run_cmd(logger, options, json_format=json_format, commandname=commandname)
-
-
-class CLISessionPermanentDir(abc.ABC):
+class CLISessionPermanentDir(CLISessionDir):
     """
     A representation of an authenticated cli session that is using same config directory.
 
@@ -3759,31 +3791,6 @@ class CLISessionPermanentDir(abc.ABC):
         # Log into the tenant, and since we cannot raise an exception, save the result.
         # If we fail, any call to `run` would return this saved result.
         self._login_result = self._login(logger)
-
-    @property
-    @abc.abstractmethod
-    def cli_prefix(self) -> str:
-        pass
-
-    @property
-    @abc.abstractmethod
-    def cli_cmd(self) -> str:
-        pass
-
-    @property
-    @abc.abstractmethod
-    def cli_config_dir_env_var(self) -> str:
-        pass
-
-    def _prepare_session_dir(self, logger: gluetool.log.ContextAdapter) -> Result[None, Failure]:
-        """
-        In case some more work is needed to end up with a functional session dir (like installing / copying plugins
-        etc) this will be done by this method.
-        """
-        return Ok(None)
-
-    def __enter__(self) -> Self:
-        return self
 
     def __exit__(self, *args: object) -> None:
         return
@@ -3844,19 +3851,6 @@ class CLISessionPermanentDir(abc.ABC):
     def _login(self, logger: gluetool.log.ContextAdapter) -> Result[None, Failure]:
         """Will be overridden by particular implementation"""
         raise NotImplementedError
-
-    def run(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        options: list[str],
-        *,
-        json_format: bool = True,
-        commandname: Optional[str] = None,
-    ) -> Result[Union[JSONType, str], Failure]:
-        if self._login_result and self._login_result.is_error:
-            return Error(self._login_result.unwrap_error())
-
-        return self._run_cmd(logger, options, json_format=json_format, commandname=commandname)
 
 
 #
