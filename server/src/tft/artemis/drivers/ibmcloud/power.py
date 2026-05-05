@@ -680,6 +680,10 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
 
         return Ok(None)
 
+    @override
+    def fetch_pool_flavor_info(self) -> Result[list[IBMCloudFlavor], Failure]:
+        return Ok([])
+
     def _do_fetch_console(
         self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
     ) -> Result[Optional[JSONType], Failure]:

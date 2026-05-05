@@ -15,20 +15,23 @@ import proto
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 from google.cloud import compute_v1
+from returns.pipeline import is_successful
 from returns.result import Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
-from typing_extensions import override
+from typing_extensions import TypeAlias, override
 
 from .. import Failure, log_dict_yaml
 from ..db import GuestRequest
-from ..environment import Flavor, FlavorBoot, SizeType
+from ..environment import Flavor, FlavorBoot, FlavorCpu, FlavorNetworks, FlavorVirtualization, SizeType
 from ..knobs import Knob
 from ..metrics import PoolResourcesMetrics, PoolResourcesUsage
 from . import (
+    AnyArchitecture,
     CanAcquire,
     CommonErrorCauses,
     ConfigImageFilter,
     ConsoleUrlData,
+    FlavorBasedPoolDriver,
     Instance,
     PoolCapabilities,
     PoolData,
@@ -73,6 +76,9 @@ GCPErrorCauses = CommonErrorCauses
 error_cause_extractor = create_error_cause_extractor(GCPErrorCauses)
 
 
+BackendFlavor: TypeAlias = str
+
+
 @dataclasses.dataclass
 class GCPPoolData(PoolData):
     name: str
@@ -88,7 +94,7 @@ class GCPPoolResourcesIDs(PoolResourcesIDs):
     zone: Optional[str] = None
 
 
-class GCPDriver(PoolDriver[GCPErrorCauses, Instance]):
+class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, BackendFlavor, Instance]):
     drivername = 'gcp'
 
     pool_data_class = GCPPoolData
@@ -202,6 +208,10 @@ class GCPDriver(PoolDriver[GCPErrorCauses, Instance]):
             return Ok(CanAcquire.cannot('HW constraints are not supported by the GCP driver'))
 
         return Ok(CanAcquire())
+
+    @override
+    def _query_backend_flavors(self, logger: gluetool.log.ContextAdapter) -> _Result[list[BackendFlavor], Failure]:
+        return _Ok([])
 
     def _query_instance_id(self, instance_name: str, project: str, zone: str) -> Result[int, Failure]:
         """Perform API call to GCP, asking about the given instance"""
@@ -577,6 +587,35 @@ class GCPDriver(PoolDriver[GCPErrorCauses, Instance]):
             return Error(Failure.from_exc('Failed to reboot instance', exc))
 
         return Ok(None)
+
+    @override
+    def fetch_pool_flavor_info(self) -> Result[list[Flavor], Failure]:
+        r_capabilities = self.capabilities()
+
+        if not is_successful(r_capabilities):
+            return Error(r_capabilities.failure())
+
+        capabilities = r_capabilities.unwrap()
+
+        if capabilities.supported_architectures == AnyArchitecture:
+            return Ok([])
+
+        assert isinstance(capabilities.supported_architectures, list)  # narrow type
+
+        return Ok(
+            [
+                Flavor(
+                    name=self.pool_config['default-flavor'],
+                    id=self.pool_config['default-flavor'],
+                    arch=arch,
+                    boot=FlavorBoot(),
+                    cpu=FlavorCpu(),
+                    network=FlavorNetworks(),
+                    virtualization=FlavorVirtualization(),
+                )
+                for arch in capabilities.supported_architectures
+            ]
+        )
 
     def fetch_pool_resources_metrics(
         self, logger: gluetool.log.ContextAdapter

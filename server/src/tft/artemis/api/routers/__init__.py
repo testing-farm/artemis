@@ -1223,7 +1223,7 @@ class CacheManager:
         return self._get_pool_object_infos(logger, poolname, 'get_cached_pool_image_infos')
 
     def get_pool_flavor_info(self, logger: gluetool.log.ContextAdapter, poolname: str) -> Response:
-        return self._get_pool_object_infos(logger, poolname, 'get_cached_pool_flavor_infos')
+        return self._get_pool_object_infos(logger, poolname, 'get_pool_flavor_infos')
 
 
 class UserManager:

@@ -780,6 +780,7 @@ class OpenStackDriver(
 
         return Ok(res)
 
+    @override
     def fetch_pool_flavor_info(self) -> Result[list[Flavor], Failure]:
         # Flavors are described by OpenStack CLI with the following structure:
         # [
@@ -818,7 +819,7 @@ class OpenStackDriver(
                 )
             )
 
-        return self.do_fetch_pool_flavor_info(
+        return self._construct_pool_flavor_infos(
             self.logger, self._query_backend_flavors, lambda raw_flavor: cast(str, raw_flavor.name), _constructor
         )
 
