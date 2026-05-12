@@ -840,6 +840,50 @@ def test_example_virtualization_hypervisor(logger: ContextAdapter) -> None:
     )
 
 
+def test_example_virtualization_confidential(logger: ContextAdapter) -> None:
+    constraint = parse_hw(
+        """
+        ---
+
+        virtualization:
+          confidential: true
+        """
+    )
+
+    assert (
+        eval_flavor(
+            logger,
+            constraint,
+            tft.artemis.environment.Flavor(
+                name='dummy-flavor', id='dummy-flavor', virtualization=FlavorVirtualization(confidential=True)
+            ),
+        )
+        is True
+    )
+
+    assert (
+        eval_flavor(
+            logger,
+            constraint,
+            tft.artemis.environment.Flavor(
+                name='dummy-flavor', id='dummy-flavor', virtualization=FlavorVirtualization(confidential=False)
+            ),
+        )
+        is False
+    )
+
+    assert (
+        eval_flavor(
+            logger,
+            constraint,
+            tft.artemis.environment.Flavor(
+                name='dummy-flavor', id='dummy-flavor', virtualization=FlavorVirtualization()
+            ),
+        )
+        is False
+    )
+
+
 def test_example_operators(logger: ContextAdapter) -> None:
     flavor_big = tft.artemis.environment.Flavor(name='dummy-flavor', id='dummy-flavor', memory=UNITS('9 GiB'))
 
@@ -1332,6 +1376,7 @@ def test_parse_maximal_constraint() -> None:
                 is-supported: true
                 is-virtualized: false
                 hypervisor: xen
+                confidential: true
             zcrypt:
                 adapter: CEX8C
                 mode: CCA
