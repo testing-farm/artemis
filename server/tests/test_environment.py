@@ -1,11 +1,14 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
+import dataclasses
+import os
 import textwrap
 from typing import Any
 from unittest.mock import MagicMock
 
 import gluetool.utils
+import pkg_resources
 import pytest
 from gluetool.log import ContextAdapter
 from gluetool.result import Result
@@ -22,9 +25,15 @@ from tft.artemis.environment import (
     FlavorBoot,
     FlavorCompatible,
     FlavorCpu,
+    FlavorDevice,
+    FlavorDisk,
+    FlavorGpu,
+    FlavorIommu,
     FlavorNetwork,
     FlavorNetworks,
+    FlavorTPM,
     FlavorVirtualization,
+    FlavorZcrypt,
 )
 
 
@@ -1889,3 +1898,128 @@ def test_kickstart_schema(kickstart_schema: tft.artemis.JSONSchemaType, logger: 
     environment = Environment.unserialize(spec)
 
     assert environment.serialize() == expected_serialization
+
+
+# Oldest schema version to include in consistency checks. Earlier versions had
+# intentional renames (e.g. `tpm` -> `hw_tpm`) that break the superset invariant.
+_SCHEMA_CONSISTENCY_MIN_VERSION = 'v0.0.55'
+
+
+def _get_milestone_schema_files() -> list[str]:
+    from tft.artemis.api.environment import API_MILESTONES
+
+    schema_dir = pkg_resources.resource_filename('tft.artemis', 'schema')
+
+    min_parts = [int(x) for x in _SCHEMA_CONSISTENCY_MIN_VERSION.lstrip('v').split('.')]
+    milestone_versions = [
+        version for version, _ in API_MILESTONES if [int(x) for x in version.lstrip('v').split('.')] >= min_parts
+    ]
+
+    return sorted(
+        [
+            os.path.join(schema_dir, f'environment-{version}.yml')
+            for version in milestone_versions
+            if os.path.exists(os.path.join(schema_dir, f'environment-{version}.yml'))
+        ],
+        key=lambda f: [int(x) for x in os.path.basename(f).replace('environment-v', '').replace('.yml', '').split('.')],
+    )
+
+
+def _get_consecutive_schema_pairs() -> list[tuple[str, str]]:
+    files = _get_milestone_schema_files()
+    return list(zip(files[:-1], files[1:]))
+
+
+def _get_consecutive_schema_pair_ids() -> list[str]:
+    pairs = _get_consecutive_schema_pairs()
+    return [f'{os.path.basename(prev)} -> {os.path.basename(curr)}' for prev, curr in pairs]
+
+
+@pytest.mark.parametrize(
+    'previous_schema_file, current_schema_file',
+    _get_consecutive_schema_pairs(),
+    ids=_get_consecutive_schema_pair_ids(),
+)
+def test_schema_version_consistency(
+    previous_schema_file: str,
+    current_schema_file: str,
+) -> None:
+    prev = gluetool.utils.load_yaml(previous_schema_file)
+    curr = gluetool.utils.load_yaml(current_schema_file)
+
+    prev_name = os.path.basename(previous_schema_file)
+    curr_name = os.path.basename(current_schema_file)
+
+    prev_defs = set(prev.get('definitions', {}).keys())
+    curr_defs = set(curr.get('definitions', {}).keys())
+    missing_defs = prev_defs - curr_defs
+    assert not missing_defs, f'{curr_name} missing definitions from {prev_name}: {missing_defs}'
+
+    for def_name in prev_defs & curr_defs:
+        prev_props = set(prev['definitions'][def_name].get('properties', {}).keys())
+        curr_props = set(curr['definitions'][def_name].get('properties', {}).keys())
+        missing_props = prev_props - curr_props
+        assert not missing_props, (
+            f'{curr_name} definition `{def_name}` missing properties from {prev_name}: {missing_props}'
+        )
+
+    prev_top_props = set(prev.get('properties', {}).keys())
+    curr_top_props = set(curr.get('properties', {}).keys())
+    missing_top = prev_top_props - curr_top_props
+    assert not missing_top, f'{curr_name} missing top-level properties from {prev_name}: {missing_top}'
+
+    prev_required = set(prev.get('required', []))
+    curr_required = set(curr.get('required', []))
+    missing_required = prev_required - curr_required
+    assert not missing_required, f'{curr_name} missing required fields from {prev_name}: {missing_required}'
+
+
+# Flavor dataclass fields that are internal and not part of the HW spec schema.
+_FLAVOR_INTERNAL_FIELDS: dict[str, set[str]] = {
+    'hw_disk': {'is_expansion', 'max_additional_items', 'min_size', 'max_size'},
+    'hw_network': {'is_expansion', 'max_additional_items'},
+}
+
+_FLAVOR_TO_SCHEMA: list[tuple[type, str]] = [
+    (FlavorBoot, 'hw_boot'),
+    (FlavorCompatible, 'hw_compatible'),
+    (FlavorCpu, 'hw_cpu'),
+    (FlavorDevice, 'hw_device'),
+    (FlavorDisk, 'hw_disk'),
+    (FlavorGpu, 'hw_gpu'),
+    (FlavorIommu, 'hw_iommu'),
+    (FlavorNetwork, 'hw_network'),
+    (FlavorTPM, 'hw_tpm'),
+    (FlavorZcrypt, 'hw_zcrypt'),
+    (FlavorVirtualization, 'hw_virtualization'),
+]
+
+
+@pytest.mark.parametrize(
+    'flavor_class, schema_def_name',
+    _FLAVOR_TO_SCHEMA,
+    ids=[schema_def for _, schema_def in _FLAVOR_TO_SCHEMA],
+)
+def test_latest_schema_matches_flavor_fields(
+    flavor_class: type,
+    schema_def_name: str,
+) -> None:
+    from tft.artemis.api.environment import CURRENT_MILESTONE_VERSION
+
+    schema_dir = pkg_resources.resource_filename('tft.artemis', 'schema')
+    schema_file = os.path.join(schema_dir, f'environment-{CURRENT_MILESTONE_VERSION}.yml')
+    schema = gluetool.utils.load_yaml(schema_file)
+
+    schema_props = set(schema.get('definitions', {}).get(schema_def_name, {}).get('properties', {}).keys())
+    internal_fields = _FLAVOR_INTERNAL_FIELDS.get(schema_def_name, set())
+
+    flavor_fields = {field.name for field in dataclasses.fields(flavor_class)} - internal_fields
+
+    # Convert Python field names (underscore) to schema property names (hyphen).
+    flavor_schema_names = {name.replace('_', '-') for name in flavor_fields}
+
+    missing_from_schema = flavor_schema_names - schema_props
+    assert not missing_from_schema, (
+        f'{CURRENT_MILESTONE_VERSION} schema definition `{schema_def_name}` missing properties '
+        f'defined in {flavor_class.__name__}: {missing_from_schema}'
+    )
