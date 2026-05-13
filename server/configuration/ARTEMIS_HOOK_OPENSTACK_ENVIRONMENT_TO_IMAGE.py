@@ -5,6 +5,7 @@ import os.path
 
 import gluetool.glue
 import gluetool.log
+import sqlalchemy.orm.session
 from gluetool.result import Error
 
 from tft.artemis.drivers import ImageInfoMapperResultType, PoolImageInfo
@@ -20,6 +21,7 @@ from tft.artemis.environment import Environment
 def hook_OPENSTACK_ENVIRONMENT_TO_IMAGE(  # noqa: N802
     *,
     logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
     pool: OpenStackDriver,
     environment: Environment,
 ) -> ImageInfoMapperResultType[PoolImageInfo]:
@@ -35,6 +37,7 @@ def hook_OPENSTACK_ENVIRONMENT_TO_IMAGE(  # noqa: N802
 
     return map_environment_to_image_info(
         logger,
+        session,
         pool,
         environment,
         r_needle_template.unwrap(),

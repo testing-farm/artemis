@@ -1609,7 +1609,13 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
 
         r_images = cast(
             Result[list[PoolImageInfoT], Failure],
-            engine.run_hook(self._image_map_hook_name, logger=logger, pool=self, environment=guest_request.environment),
+            engine.run_hook(
+                self._image_map_hook_name,
+                logger=logger,
+                session=session,
+                pool=self,
+                environment=guest_request.environment,
+            ),
         )
 
         if r_images.is_error:

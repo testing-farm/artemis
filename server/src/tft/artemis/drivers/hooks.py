@@ -11,6 +11,7 @@ from typing import Any, Optional
 
 import gluetool.log
 import gluetool.utils
+import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 from returns.pipeline import is_successful
 
@@ -79,6 +80,7 @@ def get_pattern_map(
 
 def map_environment_to_imagename_by_pattern_map(
     logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
     pool: PoolDriver[Any, Any],
     environment: Environment,
     needle_template: str,
@@ -108,7 +110,14 @@ def map_environment_to_imagename_by_pattern_map(
     else:
         return Error(Failure('no compose/image mapping file specified', environment=environment))
 
-    r_needle = render_template(needle_template, **environment.serialize())
+    r_pool_tags = pool.get_pool_tags(logger, session)
+
+    if r_pool_tags.is_error:
+        return Error(
+            Failure.from_failure('failed to fetch pool tags', r_pool_tags.unwrap_error(), environment=environment)
+        )
+
+    r_needle = render_template(needle_template, POOL=pool, POOL_TAGS=r_pool_tags.unwrap(), **environment.serialize())
 
     if not is_successful(r_needle):
         return Error(r_needle.failure())
@@ -141,6 +150,7 @@ def map_environment_to_imagename_by_pattern_map(
 
 def map_environment_to_image_info(
     logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
     pool: PoolDriver[Any, Any],
     environment: Environment,
     needle_template: str,
@@ -170,6 +180,7 @@ def map_environment_to_image_info(
     try:
         r_image_names = map_environment_to_imagename_by_pattern_map(
             logger,
+            session,
             pool,
             environment,
             needle_template,
