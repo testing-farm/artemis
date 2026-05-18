@@ -520,6 +520,12 @@ class CommonErrorCauses(enum.Enum):
     RESOURCE_METRICS_REFRESH_FAILED = 'resource-metrics-refresh-failed'
     FLAVOR_INFO_REFRESH_FAILED = 'flavor-info-refresh-failed'
     IMAGE_INFO_REFRESH_FAILED = 'image-info-refresh-failed'
+    CLI_SESSION_FLOCK_FAILED = 'cli-session-flock-failed'
+
+
+COMMON_ERROR_CAUSE_PATTERNS: dict[enum.Enum, Pattern[str]] = {
+    CommonErrorCauses.CLI_SESSION_FLOCK_FAILED: re.compile(r'cli-session-flock-failed'),
+}
 
 
 ErrorCausesT = TypeVar('ErrorCausesT', bound=enum.Enum, covariant=True)  # noqa: PLC0105
@@ -539,7 +545,10 @@ def create_error_cause_extractor(
         if content is None:
             return None
 
-        for cause, pattern in (patterns or {}).items():
+        actual_patterns = cast(dict[ErrorCausesT, Pattern[str]], COMMON_ERROR_CAUSE_PATTERNS).copy()
+        actual_patterns.update(patterns or {})
+
+        for cause, pattern in actual_patterns.items():
             if not pattern.search(content):
                 continue
 
@@ -3816,9 +3825,26 @@ class CLISessionPermanentDir(CLISessionDir):
         # Obtain lock
         try:
             fcntl.flock(session_dir_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+            PoolMetrics.inc_cli_call(
+                self.pool.poolname,
+                'cli-session-acquire-lock',
+                0,
+                0.0,
+            )
+
         except OSError as err:
             fcntl.flock(session_dir_fd, fcntl.LOCK_UN)
             os.close(session_dir_fd)
+
+            PoolMetrics.inc_cli_call(
+                self.pool.poolname,
+                'cli-session-acquire-lock',
+                err.errno,
+                0.0,
+                cause=self.pool.error_cause_extractor(content='cli-session-flock-failed'),
+            )
+
             return Error(
                 Failure.from_exc(
                     'Failed to obtain the lock - another command is running',

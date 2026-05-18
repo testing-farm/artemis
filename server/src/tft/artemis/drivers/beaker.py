@@ -263,6 +263,7 @@ class BeakerErrorCauses(enum.Enum):
     RESOURCE_METRICS_REFRESH_FAILED = 'resource-metrics-refresh-failed'
     FLAVOR_INFO_REFRESH_FAILED = 'flavor-info-refresh-failed'
     IMAGE_INFO_REFRESH_FAILED = 'image-info-refresh-failed'
+    CLI_SESSION_FLOCK_FAILED = 'cli-session-flock-failed'
 
     # Beaker specific
     NO_DISTRO_MATCHES_RECIPE = 'no-distro-matches-recipe'
