@@ -1226,6 +1226,36 @@ class CacheManager:
         return self._get_pool_object_infos(logger, poolname, 'get_pool_flavor_infos')
 
 
+class PoolManager:
+    def __init__(self, db: Annotated[artemis_db.DB, Depends(get_db)]) -> None:
+        self.db = db
+
+    @staticmethod
+    def entry_get_pools(
+        manager: 'PoolManager', logger: gluetool.log.ContextAdapter, driver: Optional[str] = None
+    ) -> dict[str, list[str]]:
+        return manager.get_pools(logger, driver=driver)
+
+    def get_pools(self, logger: gluetool.log.ContextAdapter, driver: Optional[str] = None) -> dict[str, list[str]]:
+        with get_session(logger, self.db, read_only=True) as (session, _):
+            query = artemis_db.SafeQuery.from_session(session, artemis_db.Pool)
+
+            if driver is not None:
+                query = query.filter(artemis_db.Pool.driver == driver)
+
+            r_pools = query.all()
+
+            if r_pools.is_error:
+                raise errors.InternalServerError(caused_by=r_pools.unwrap_error())
+
+            pools_by_driver: dict[str, list[str]] = {}
+
+            for pool in r_pools.unwrap():
+                pools_by_driver.setdefault(pool.driver, []).append(pool.poolname)
+
+            return pools_by_driver
+
+
 class UserManager:
     """
     Manager class for operations involving management of user accounts.

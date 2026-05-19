@@ -3,8 +3,9 @@
 
 # flake8: noqa: FS003 f-string missing prefix
 
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, Optional
 
+import fastapi
 import gluetool.log
 from fastapi import APIRouter, Depends, Request, Response, status
 
@@ -21,6 +22,7 @@ from ..models import (
 from . import (
     CacheManager,
     KnobManager,
+    PoolManager,
     StatusManager,
     UserManager,
     get_about,
@@ -43,6 +45,10 @@ router__status = APIRouter(
     prefix='/_status', tags=['status'], responses={status.HTTP_404_NOT_FOUND: {'description': 'Not found'}}
 )
 
+router_pools = APIRouter(
+    prefix='/pools', tags=['pools'], responses={status.HTTP_404_NOT_FOUND: {'description': 'Not found'}}
+)
+
 router_default = APIRouter(responses={status.HTTP_404_NOT_FOUND: {'description': 'Not found'}})
 
 
@@ -60,6 +66,17 @@ def show_metrics(
 @with_tracing
 def show_about(request: Request) -> AboutResponse:
     return get_about(request)
+
+
+@router_pools.get('/', status_code=status.HTTP_200_OK)
+@with_tracing
+def get_pools(
+    manager: Annotated[PoolManager, Depends(PoolManager)],
+    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
+    request: Request,
+    driver: Annotated[Optional[str], fastapi.Query(description='Filter pools by driver type')] = None,
+) -> dict[str, list[str]]:
+    return PoolManager.entry_get_pools(manager=manager, logger=logger, driver=driver)
 
 
 @router_knobs.get('/', status_code=status.HTTP_200_OK)
