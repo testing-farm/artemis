@@ -1784,6 +1784,35 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
             )
         )
 
+    def _filter_flavors_compose_compatible(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        image: PoolImageInfo,
+        suitable_flavors: list[AWSFlavor],
+    ) -> Result[list[AWSFlavor], Failure]:
+        """
+        Drop flavors whose ``compatible.distro`` list does not match the requested compose.
+        Flavors with an empty ``compatible.distro`` are not restricted.
+        """
+
+        compose = guest_request.environment.os.compose.lower()
+
+        return Ok(
+            list(
+                logging_filter(
+                    logger,
+                    suitable_flavors,
+                    'compose and flavor distro compatibility',
+                    lambda logger, flavor: (
+                        not flavor.compatible.distro
+                        or any(distro in compose for distro in flavor.compatible.distro)
+                    ),
+                )
+            )
+        )
+
     def _filter_flavors_image_boot_method(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -1903,6 +1932,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
             self._filter_flavors_image_arch,
             self._filter_flavors_console_url_support,
             self._filter_flavors_image_ena_support,
+            self._filter_flavors_compose_compatible,
             self._filter_flavors_image_boot_method,
             self._filter_flavors_prefer_default_flavor,
             self._filter_flavors_default_fallback,
