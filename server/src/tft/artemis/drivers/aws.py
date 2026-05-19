@@ -64,6 +64,7 @@ from . import (
     PoolCapabilities,
     PoolData,
     PoolDriver,
+    PoolImageCompatible,
     PoolImageInfo,
     PoolImageSSHInfo,
     PoolResourcesIDs,
@@ -1639,6 +1640,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
                         else FlavorBoot(),
                         ssh=PoolImageSSHInfo(),
                         supports_kickstart=False,
+                        compatible=PoolImageCompatible(),
                         platform_details=image['PlatformDetails'],
                         block_device_mappings=image['BlockDeviceMappings'],
                         # some AMI lack this field, and we need to make sure it's really a boolean, not `null` or
@@ -1904,6 +1906,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
             self._filter_flavors_image_arch,
             self._filter_flavors_console_url_support,
             self._filter_flavors_image_ena_support,
+            self._filter_flavors_image_compatible,
             self._filter_flavors_image_boot_method,
             self._filter_flavors_prefer_default_flavor,
             self._filter_flavors_default_fallback,

@@ -16,7 +16,14 @@ from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
 from typing_extensions import TypeAlias, override
 
-from tft.artemis.drivers import CLISessionPermanentDir, PoolDriver, PoolImageInfo, PoolImageInfoT, create_tempfile
+from tft.artemis.drivers import (
+    CLISessionPermanentDir,
+    PoolDriver,
+    PoolImageCompatible,
+    PoolImageInfo,
+    PoolImageInfoT,
+    create_tempfile,
+)
 from tft.artemis.drivers.ibmcloud import (
     IBMCloudDriver,
     IBMCloudFlavor,
@@ -245,6 +252,7 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
                         boot=FlavorBoot(),
                         ssh=PoolImageSSHInfo(),
                         supports_kickstart=False,
+                        compatible=PoolImageCompatible(),
                         created_at=created_at.unwrap(),
                     )
                 )

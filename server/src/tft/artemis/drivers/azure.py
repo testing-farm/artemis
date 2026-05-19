@@ -43,6 +43,7 @@ from . import (
     PoolCapabilities,
     PoolData,
     PoolDriver,
+    PoolImageCompatible,
     PoolImageInfo,
     PoolImageSSHInfo,
     PoolResourcesIDs,
@@ -1191,6 +1192,7 @@ class AzureDriver(
                         boot=FlavorBoot(),
                         ssh=PoolImageSSHInfo(),
                         supports_kickstart=False,
+                        compatible=PoolImageCompatible(),
                         # azure image list command doesn't show creation date
                         created_at=None,
                     )

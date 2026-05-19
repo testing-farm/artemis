@@ -59,6 +59,7 @@ from . import (
     PoolCapabilities,
     PoolData,
     PoolDriver,
+    PoolImageCompatible,
     PoolImageInfo,
     PoolImageSSHInfo,
     PoolResourcesIDs,
@@ -1435,6 +1436,7 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
                 boot=FlavorBoot(),
                 ssh=PoolImageSSHInfo(),
                 supports_kickstart=True,
+                compatible=PoolImageCompatible(),
                 # beaker images don't have a concept of creation date
                 created_at=None,
             )

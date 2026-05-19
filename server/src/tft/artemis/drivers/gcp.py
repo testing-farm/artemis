@@ -36,6 +36,7 @@ from . import (
     PoolCapabilities,
     PoolData,
     PoolDriver,
+    PoolImageCompatible,
     PoolImageInfo,
     PoolImageSSHInfo,
     PoolResourcesIDs,
@@ -170,6 +171,7 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
             boot=FlavorBoot(),
             ssh=ssh_info,
             supports_kickstart=False,
+            compatible=PoolImageCompatible(),
             created_at=ctime.unwrap(),
         )
 
@@ -446,6 +448,7 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
                         boot=FlavorBoot(),
                         ssh=ssh_info,
                         supports_kickstart=False,
+                        compatible=PoolImageCompatible(),
                         created_at=created_at.unwrap(),
                     )
                 )

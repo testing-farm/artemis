@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 import pytest
 from tmt.hardware import UNITS
 
-from tft.artemis.drivers import PoolImageSSHInfo
+from tft.artemis.drivers import PoolImageCompatible, PoolImageSSHInfo
 from tft.artemis.drivers.aws import AWSFlavor, AWSPoolImageInfo
 from tft.artemis.environment import FlavorBoot
 
@@ -29,6 +29,7 @@ def fixture_image() -> AWSPoolImageInfo:
         ena_support=False,
         boot_mode=None,
         supports_kickstart=False,
+        compatible=PoolImageCompatible(),
         created_at=None,
     )
 

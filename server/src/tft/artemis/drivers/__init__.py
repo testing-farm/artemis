@@ -224,8 +224,20 @@ class ConfigImageSSHSpecType(TypedDict, total=False):
     port: int
 
 
+#: pools[].parameters.patch-images[].compatible
+class ConfigImageCompatibleSpecType(TypedDict, total=False):
+    distro: list[str]
+
+
 ConfigImageSpecType = TypedDict(
-    'ConfigImageSpecType', {'name': str, 'name-regex': str, 'ssh': ConfigImageSSHSpecType, 'supports-kickstart': bool}
+    'ConfigImageSpecType',
+    {
+        'name': str,
+        'name-regex': str,
+        'ssh': ConfigImageSSHSpecType,
+        'supports-kickstart': bool,
+        'compatible': ConfigImageCompatibleSpecType,
+    },
 )
 
 
@@ -596,6 +608,11 @@ class PoolImageSSHInfo(SerializableContainer):
 
 
 @dataclasses.dataclass(repr=False)
+class PoolImageCompatible(SerializableContainer):
+    distro: list[str] = dataclasses.field(default_factory=list)
+
+
+@dataclasses.dataclass(repr=False)
 class PoolImageInfo(SerializableContainer):
     """
     Describes important information about a pool image.
@@ -622,6 +639,8 @@ class PoolImageInfo(SerializableContainer):
 
     supports_kickstart: bool
 
+    compatible: PoolImageCompatible
+
     created_at: Optional[datetime.datetime]
 
     def serialize_scrubbed(self) -> dict[str, Any]:
@@ -647,6 +666,9 @@ class PoolImageInfo(SerializableContainer):
 
     @classmethod
     def unserialize(cls, serialized: dict[str, Any]) -> 'PoolImageInfo':
+        if 'compatible' not in serialized:
+            serialized['compatible'] = {'distro': []}
+
         pool_image_info = super().unserialize(serialized)
 
         if serialized['created_at']:
@@ -1222,6 +1244,12 @@ def _apply_image_specification(image: PoolImageInfo, image_spec: ConfigImageSpec
 
     if 'supports-kickstart' in image_spec:
         image.supports_kickstart = image_spec['supports-kickstart']
+
+    if 'compatible' in image_spec:
+        compatible_patch = image_spec['compatible']
+
+        if 'distro' in compatible_patch:
+            image.compatible.distro = compatible_patch['distro']
 
     return Ok(None)
 
@@ -2560,6 +2588,37 @@ class FlavorBasedPoolDriver(
                     suitable_flavors,
                     'image and flavor arch matches',
                     lambda logger, flavor: flavor.arch == image.arch,
+                )
+            )
+        )
+
+    def _filter_flavors_image_compatible(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        image: PoolImageInfo,
+        suitable_flavors: list[FlavorT],
+    ) -> Result[list[FlavorT], Failure]:
+        """
+        Drop flavors whose ``compatible.distro`` does not overlap with the image's ``compatible.distro``.
+        If either side has an empty list, no filtering is applied.
+        """
+
+        image_distros = set(image.compatible.distro)
+
+        if not image_distros:
+            return Ok(suitable_flavors)
+
+        return Ok(
+            list(
+                logging_filter(
+                    logger,
+                    suitable_flavors,
+                    'image and flavor distro compatibility',
+                    lambda logger, flavor: (
+                        not flavor.compatible.distro or bool(image_distros.intersection(flavor.compatible.distro))
+                    ),
                 )
             )
         )
