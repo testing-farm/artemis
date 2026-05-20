@@ -751,7 +751,7 @@ def fixture_schema_pools(session: sqlalchemy.orm.session.Session, schema_actual:
 def test_api_get_pools(
     api_client: fastapi.testclient.TestClient, db: tft.artemis.db.DB, logger: gluetool.log.ContextAdapter
 ) -> None:
-    response = api_client.request('GET', f'/{CURRENT_MILESTONE_VERSION}/pools/')
+    response = api_client.request('GET', f'/{CURRENT_MILESTONE_VERSION}/_status/pools')
 
     assert response.status_code == 200
 
@@ -763,36 +763,11 @@ def test_api_get_pools(
     assert data['aws'] == ['pool-aws-1']
 
 
-@pytest.mark.usefixtures('schema_pools')
-def test_api_get_pools_filter_by_driver(
-    api_client: fastapi.testclient.TestClient, db: tft.artemis.db.DB, logger: gluetool.log.ContextAdapter
-) -> None:
-    response = api_client.request('GET', f'/{CURRENT_MILESTONE_VERSION}/pools/', params={'driver': 'azure'})
-
-    assert response.status_code == 200
-
-    data = response.json()
-
-    assert 'azure' in data
-    assert 'aws' not in data
-    assert sorted(data['azure']) == ['pool-azure-1', 'pool-azure-2']
-
-
-@pytest.mark.usefixtures('schema_pools')
-def test_api_get_pools_filter_by_driver_no_match(
-    api_client: fastapi.testclient.TestClient, db: tft.artemis.db.DB, logger: gluetool.log.ContextAdapter
-) -> None:
-    response = api_client.request('GET', f'/{CURRENT_MILESTONE_VERSION}/pools/', params={'driver': 'nonexistent'})
-
-    assert response.status_code == 200
-    assert response.json() == {}
-
-
 @pytest.mark.usefixtures('schema_actual')
 def test_api_get_pools_empty(
     api_client: fastapi.testclient.TestClient, db: tft.artemis.db.DB, logger: gluetool.log.ContextAdapter
 ) -> None:
-    response = api_client.request('GET', f'/{CURRENT_MILESTONE_VERSION}/pools/')
+    response = api_client.request('GET', f'/{CURRENT_MILESTONE_VERSION}/_status/pools')
 
     assert response.status_code == 200
     assert response.json() == {}

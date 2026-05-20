@@ -1231,19 +1231,12 @@ class PoolManager:
         self.db = db
 
     @staticmethod
-    def entry_get_pools(
-        manager: 'PoolManager', logger: gluetool.log.ContextAdapter, driver: Optional[str] = None
-    ) -> dict[str, list[str]]:
-        return manager.get_pools(logger, driver=driver)
+    def entry_get_pools(manager: 'PoolManager', logger: gluetool.log.ContextAdapter) -> dict[str, list[str]]:
+        return manager.get_pools(logger)
 
-    def get_pools(self, logger: gluetool.log.ContextAdapter, driver: Optional[str] = None) -> dict[str, list[str]]:
+    def get_pools(self, logger: gluetool.log.ContextAdapter) -> dict[str, list[str]]:
         with get_session(logger, self.db, read_only=True) as (session, _):
-            query = artemis_db.SafeQuery.from_session(session, artemis_db.Pool)
-
-            if driver is not None:
-                query = query.filter(artemis_db.Pool.driver == driver)
-
-            r_pools = query.all()
+            r_pools = artemis_db.SafeQuery.from_session(session, artemis_db.Pool).all()
 
             if r_pools.is_error:
                 raise errors.InternalServerError(caused_by=r_pools.unwrap_error())

@@ -28,7 +28,7 @@ from . import (
     get_guest_requests,
     with_tracing,
 )
-from .common import router__status, router_default, router_knobs, router_pools, router_users
+from .common import router__status, router_default, router_knobs, router_users
 from .v0_0_53 import router__cache
 from .v0_0_56 import router_shelves
 
@@ -156,7 +156,6 @@ def register_routes(app: fastapi.FastAPI) -> None:
     app.include_router(router_shelves)
     app.include_router(router_knobs)
     app.include_router(router_users)
-    app.include_router(router_pools)
     app.include_router(router__cache)
     app.include_router(router__status)
     app.include_router(router_default)
