@@ -910,6 +910,26 @@ def print_tasks(
     print_collection(cfg, tasks, tabulate, console=console, panel_title='Tasks')
 
 
+def print_pools(
+    cfg: Configuration,
+    pools: Dict[str, List[str]],
+    console: Optional[rich.console.Console] = None,
+) -> None:
+    def tabulate(pools: Dict[str, List[str]]) -> rich.table.Table:
+        table = rich.table.Table()
+
+        table.add_column('Pool')
+        table.add_column('Driver')
+
+        for driver in sorted(pools.keys()):
+            for poolname in sorted(pools[driver]):
+                table.add_row(poolname, driver)
+
+        return table
+
+    print_collection(cfg, pools, tabulate, console=console)
+
+
 def print_broker_tasks(
     cfg: Configuration,
     tasks: CollectionType,
