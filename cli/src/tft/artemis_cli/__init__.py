@@ -915,19 +915,24 @@ def print_pools(
     pools: Dict[str, List[str]],
     console: Optional[rich.console.Console] = None,
 ) -> None:
-    def tabulate(pools: Dict[str, List[str]]) -> rich.table.Table:
+    def tabulate(collection: CollectionType) -> rich.table.Table:
         table = rich.table.Table()
 
         table.add_column('Pool')
         table.add_column('Driver')
 
-        for driver in sorted(pools.keys()):
-            for poolname in sorted(pools[driver]):
-                table.add_row(poolname, driver)
+        for entry in sorted(collection, key=lambda e: e['poolname']):
+            table.add_row(entry['poolname'], entry['driver'])
 
         return table
 
-    print_collection(cfg, pools, tabulate, console=console)
+    collection: CollectionType = [
+        {'poolname': poolname, 'driver': driver}
+        for driver in sorted(pools.keys())
+        for poolname in sorted(pools[driver])
+    ]
+
+    print_collection(cfg, collection, tabulate, console=console)
 
 
 def print_broker_tasks(
