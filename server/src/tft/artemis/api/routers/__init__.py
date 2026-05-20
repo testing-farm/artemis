@@ -1,6 +1,7 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
+import collections
 import contextlib
 import dataclasses
 import datetime
@@ -1241,10 +1242,10 @@ class PoolManager:
             if r_pools.is_error:
                 raise errors.InternalServerError(caused_by=r_pools.unwrap_error())
 
-            pools_by_driver: dict[str, list[str]] = {}
+            pools_by_driver: dict[str, list[str]] = collections.defaultdict(list)
 
             for pool in r_pools.unwrap():
-                pools_by_driver.setdefault(pool.driver, []).append(pool.poolname)
+                pools_by_driver[pool.driver].append(pool.poolname)
 
             return pools_by_driver
 
