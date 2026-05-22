@@ -910,6 +910,39 @@ def print_tasks(
     print_collection(cfg, tasks, tabulate, console=console, panel_title='Tasks')
 
 
+def parse_metrics(raw_metrics: str) -> List[Any]:
+    from prometheus_client.parser import text_string_to_metric_families
+
+    return [
+        sample
+        for family in text_string_to_metric_families(raw_metrics)
+        for sample in family.samples
+    ]
+
+
+def extract_metric(
+    metrics: List[Any],
+    name: str,
+    labels: Optional[Callable[[Dict[str, str]], bool]] = None,
+) -> float:
+    return float(
+        sum(
+            sample[2]
+            for sample in metrics
+            if sample[0] == name and (labels is None or labels(sample[1]))
+        )
+    )
+
+
+def fetch_metrics(cfg: 'Configuration') -> List[Any]:
+    response = fetch_artemis(cfg, '/metrics')
+
+    if not response.ok:
+        cfg.logger.unhandled_api_response(response)
+
+    return parse_metrics(response.text)
+
+
 def print_pools(
     cfg: Configuration,
     pools: CollectionType,
@@ -927,6 +960,58 @@ def print_pools(
         return table
 
     print_collection(cfg, pools, tabulate, console=console)
+
+
+def print_image_cache_update(
+    cfg: Configuration,
+    pools: CollectionType,
+    metrics: List[Any],
+    console: Optional[rich.console.Console] = None,
+) -> None:
+    pool_to_driver = {entry['poolname']: entry['driver'] for entry in pools}
+
+    collection: CollectionType = []
+
+    for sample in metrics:
+        if sample[0] != 'pool_image_info_updated_timestamp':
+            continue
+
+        poolname = sample[1].get('pool', '')
+        timestamp = sample[2]
+
+        if poolname not in pool_to_driver:
+            continue
+
+        collection.append(
+            {
+                'poolname': poolname,
+                'driver': pool_to_driver[poolname],
+                'updated': timestamp,
+            }
+        )
+
+    collection.sort(key=lambda e: e['poolname'])
+
+    def tabulate(collection: CollectionType) -> rich.table.Table:
+        table = rich.table.Table()
+
+        table.add_column('Pool')
+        table.add_column('Driver')
+        table.add_column('Last Updated')
+
+        for entry in collection:
+            timestamp = entry['updated']
+            if timestamp != timestamp:
+                updated = 'N/A'
+            else:
+                updated = datetime.datetime.utcfromtimestamp(timestamp).strftime(
+                    '%Y-%m-%d %H:%M:%S UTC'
+                )
+            table.add_row(entry['poolname'], entry['driver'], updated)
+
+        return table
+
+    print_collection(cfg, collection, tabulate, console=console)
 
 
 def print_broker_tasks(
