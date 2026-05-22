@@ -1232,10 +1232,10 @@ class PoolManager:
         self.db = db
 
     @staticmethod
-    def entry_get_pools(manager: 'PoolManager', logger: gluetool.log.ContextAdapter) -> dict[str, list[str]]:
+    def entry_get_pools(manager: 'PoolManager', logger: gluetool.log.ContextAdapter) -> Response:
         return manager.get_pools(logger)
 
-    def get_pools(self, logger: gluetool.log.ContextAdapter) -> dict[str, list[str]]:
+    def get_pools(self, logger: gluetool.log.ContextAdapter) -> Response:
         with get_session(logger, self.db, read_only=True) as (session, _):
             r_pools = artemis_db.SafeQuery.from_session(session, artemis_db.Pool).all()
 
@@ -1247,7 +1247,11 @@ class PoolManager:
             for pool in r_pools.unwrap():
                 pools_by_driver[pool.driver].append(pool.poolname)
 
-            return pools_by_driver
+            return Response(
+                status_code=status.HTTP_200_OK,
+                content=json.dumps(pools_by_driver),
+                headers={'Content-Type': 'application/json'},
+            )
 
 
 class UserManager:
