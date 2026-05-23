@@ -1816,11 +1816,11 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
         self, logger: gluetool.log.ContextAdapter, job_results: bs4.BeautifulSoup
     ) -> Result[tuple[str, str, Optional[str]], Failure]:
         """
-        Parse job results and return its result and status.
+        Parse job results and return its result, status, and beaker system.
 
         :param bs4.BeautifulSoup job_results: Job results in xml format.
         :rtype: result.Result[Tuple[str, str], Failure]
-        :returns: a tuple with two items, job result and status, or specification of error.
+        :returns: a tuple with three items: job result, status, or specification of error, and the beaker system.
         """
 
         if not job_results.find('job') or len(job_results.find_all('job')) != 1:
