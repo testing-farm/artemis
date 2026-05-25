@@ -415,6 +415,16 @@ class CreateUserRequest:
 
 
 @dataclasses.dataclass
+class PoolResponse:
+    poolname: str
+    driver: str
+
+    @classmethod
+    def from_db(cls, pool: artemis_db.Pool) -> 'PoolResponse':
+        return cls(poolname=pool.poolname, driver=pool.driver)
+
+
+@dataclasses.dataclass
 class UserResponse:
     """
     Schema describing a response to "inspect user" queries.

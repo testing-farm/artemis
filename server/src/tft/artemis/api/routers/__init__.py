@@ -61,6 +61,7 @@ from ..models import (
     GuestShelfResponse,
     KnobResponse,
     KnobUpdateRequest,
+    PoolResponse,
     PreprovisioningRequest,
     TokenResetResponse,
     TokenTypes,
@@ -1231,23 +1232,17 @@ class PoolManager:
         self.db = db
 
     @staticmethod
-    def entry_get_pools(manager: 'PoolManager', logger: gluetool.log.ContextAdapter) -> Response:
+    def entry_get_pools(manager: 'PoolManager', logger: gluetool.log.ContextAdapter) -> list[PoolResponse]:
         return manager.get_pools(logger)
 
-    def get_pools(self, logger: gluetool.log.ContextAdapter) -> Response:
+    def get_pools(self, logger: gluetool.log.ContextAdapter) -> list[PoolResponse]:
         with get_session(logger, self.db, read_only=True) as (session, _):
             r_pools = artemis_db.SafeQuery.from_session(session, artemis_db.Pool).all()
 
             if r_pools.is_error:
                 raise errors.InternalServerError(caused_by=r_pools.unwrap_error())
 
-            pools = [{'poolname': pool.poolname, 'driver': pool.driver} for pool in r_pools.unwrap()]
-
-            return Response(
-                status_code=status.HTTP_200_OK,
-                content=json.dumps(pools),
-                headers={'Content-Type': 'application/json'},
-            )
+            return [PoolResponse.from_db(pool) for pool in r_pools.unwrap()]
 
 
 class UserManager:

@@ -15,6 +15,7 @@ from ..models import (
     CreateUserRequest,
     KnobResponse,
     KnobUpdateRequest,
+    PoolResponse,
     TokenResetResponse,
     UserResponse,
 )
@@ -69,7 +70,7 @@ def get_pools(
     manager: Annotated[PoolManager, Depends(PoolManager)],
     logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
     request: Request,
-) -> Response:
+) -> list[PoolResponse]:
     return PoolManager.entry_get_pools(manager=manager, logger=logger)
 
 
