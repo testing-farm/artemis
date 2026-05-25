@@ -184,6 +184,8 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, 
 
     _image_map_hook_name = 'IBMCLOUD_VPC_ENVIRONMENT_TO_IMAGE'
 
+    _flavor_filter_hook_name = 'IBMCLOUD_VPC_FLAVOR_FILTERS'
+
     def __init__(
         self,
         logger: gluetool.log.ContextAdapter,

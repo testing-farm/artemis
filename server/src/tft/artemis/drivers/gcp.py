@@ -106,6 +106,8 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
 
     _image_map_hook_name = 'GCP_ENVIRONMENT_TO_IMAGE'
 
+    _flavor_filter_hook_name = 'GCP_FLAVOR_FILTERS'
+
     def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str, pool_config: dict[str, Any]) -> None:
         super().__init__(logger, poolname, pool_config)
 
