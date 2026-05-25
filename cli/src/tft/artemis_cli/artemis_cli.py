@@ -49,6 +49,7 @@ from . import (
     print_guests,
     print_json,
     print_knobs,
+    print_pools,
     print_shelves,
     print_table,
     print_tasks,
@@ -1380,6 +1381,17 @@ def cmd_status_tasks(cfg: Configuration) -> None:
         cfg.logger.unhandled_api_response(response)
 
     print_tasks(cfg, response.json())
+
+
+@cmd_status.command(name='pools', short_help='Display registered pools')
+@click.pass_obj
+def cmd_status_pools(cfg: Configuration) -> None:
+    response = fetch_artemis(cfg, '/_status/pools')
+
+    if not response.ok:
+        cfg.logger.unhandled_api_response(response)
+
+    print_pools(cfg, response.json())
 
 
 def _status_top_raw(cfg: Configuration) -> None:

@@ -61,6 +61,7 @@ from ..models import (
     GuestShelfResponse,
     KnobResponse,
     KnobUpdateRequest,
+    PoolResponse,
     PreprovisioningRequest,
     TokenResetResponse,
     TokenTypes,
@@ -1224,6 +1225,24 @@ class CacheManager:
 
     def get_pool_flavor_info(self, logger: gluetool.log.ContextAdapter, poolname: str) -> Response:
         return self._get_pool_object_infos(logger, poolname, 'get_pool_flavor_infos')
+
+
+class PoolManager:
+    def __init__(self, db: Annotated[artemis_db.DB, Depends(get_db)]) -> None:
+        self.db = db
+
+    @staticmethod
+    def entry_get_pools(manager: 'PoolManager', logger: gluetool.log.ContextAdapter) -> list[PoolResponse]:
+        return manager.get_pools(logger)
+
+    def get_pools(self, logger: gluetool.log.ContextAdapter) -> list[PoolResponse]:
+        with get_session(logger, self.db, read_only=True) as (session, _):
+            r_pools = artemis_db.SafeQuery.from_session(session, artemis_db.Pool).all()
+
+            if r_pools.is_error:
+                raise errors.InternalServerError(caused_by=r_pools.unwrap_error())
+
+            return [PoolResponse.from_db(pool) for pool in r_pools.unwrap()]
 
 
 class UserManager:
