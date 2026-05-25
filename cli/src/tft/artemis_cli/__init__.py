@@ -912,7 +912,7 @@ def print_tasks(
 
 def print_pools(
     cfg: Configuration,
-    pools: Dict[str, List[str]],
+    pools: CollectionType,
     console: Optional[rich.console.Console] = None,
 ) -> None:
     def tabulate(collection: CollectionType) -> rich.table.Table:
@@ -926,13 +926,7 @@ def print_pools(
 
         return table
 
-    collection: CollectionType = [
-        {'poolname': poolname, 'driver': driver}
-        for driver in sorted(pools.keys())
-        for poolname in sorted(pools[driver])
-    ]
-
-    print_collection(cfg, collection, tabulate, console=console)
+    print_collection(cfg, pools, tabulate, console=console)
 
 
 def print_broker_tasks(

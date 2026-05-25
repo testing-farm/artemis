@@ -757,10 +757,14 @@ def test_api_get_pools(
 
     data = response.json()
 
-    assert 'azure' in data
-    assert 'aws' in data
-    assert sorted(data['azure']) == ['pool-azure-1', 'pool-azure-2']
-    assert data['aws'] == ['pool-aws-1']
+    assert isinstance(data, list)
+    assert len(data) == 3
+
+    pools_by_name = {entry['poolname']: entry['driver'] for entry in data}
+
+    assert pools_by_name['pool-azure-1'] == 'azure'
+    assert pools_by_name['pool-azure-2'] == 'azure'
+    assert pools_by_name['pool-aws-1'] == 'aws'
 
 
 @pytest.mark.usefixtures('schema_actual')
@@ -770,4 +774,4 @@ def test_api_get_pools_empty(
     response = api_client.request('GET', f'/{CURRENT_MILESTONE_VERSION}/_status/pools')
 
     assert response.status_code == 200
-    assert response.json() == {}
+    assert response.json() == []
