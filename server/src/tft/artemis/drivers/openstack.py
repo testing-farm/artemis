@@ -48,6 +48,7 @@ from . import (
     PoolCapabilities,
     PoolData,
     PoolDriver,
+    PoolImageCompatible,
     PoolImageInfo,
     PoolImageSSHInfo,
     PoolResourcesIDs,
@@ -761,6 +762,7 @@ class OpenStackDriver(
                         boot=FlavorBoot(method=[image.get('hw_firmware_type', 'bios')]),
                         ssh=PoolImageSSHInfo(),
                         supports_kickstart=False,
+                        compatible=PoolImageCompatible(),
                         # openstack image list command doesn't show creation date
                         created_at=None,
                     )

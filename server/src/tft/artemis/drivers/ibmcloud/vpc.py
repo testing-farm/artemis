@@ -17,7 +17,13 @@ from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
 from typing_extensions import TypeAlias, override
 
-from tft.artemis.drivers import PoolDriver, PoolImageInfo, create_error_cause_extractor, create_tempfile
+from tft.artemis.drivers import (
+    PoolDriver,
+    PoolImageCompatible,
+    PoolImageInfo,
+    create_error_cause_extractor,
+    create_tempfile,
+)
 from tft.artemis.drivers.ibmcloud import (
     IBMCloudDriver,
     IBMCloudFlavor,
@@ -306,6 +312,7 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, 
                         boot=FlavorBoot(),
                         ssh=PoolImageSSHInfo(),
                         supports_kickstart=False,
+                        compatible=PoolImageCompatible(),
                         created_at=created_at.unwrap(),
                     )
                 )
