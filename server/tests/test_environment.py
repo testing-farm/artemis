@@ -2,13 +2,13 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import dataclasses
+import importlib.resources
 import os
 import textwrap
 from typing import Any
 from unittest.mock import MagicMock
 
 import gluetool.utils
-import pkg_resources
 import pytest
 from gluetool.log import ContextAdapter
 from gluetool.result import Result
@@ -1908,7 +1908,7 @@ _SCHEMA_CONSISTENCY_MIN_VERSION = 'v0.0.55'
 def _get_milestone_schema_files() -> list[str]:
     from tft.artemis.api.environment import API_MILESTONES
 
-    schema_dir = pkg_resources.resource_filename('tft.artemis', 'schema')
+    schema_dir = str(importlib.resources.files('tft.artemis').joinpath('schema'))
 
     min_parts = [int(x) for x in _SCHEMA_CONSISTENCY_MIN_VERSION.lstrip('v').split('.')]
     milestone_versions = [
@@ -2006,7 +2006,7 @@ def test_latest_schema_matches_flavor_fields(
 ) -> None:
     from tft.artemis.api.environment import CURRENT_MILESTONE_VERSION
 
-    schema_dir = pkg_resources.resource_filename('tft.artemis', 'schema')
+    schema_dir = str(importlib.resources.files('tft.artemis').joinpath('schema'))
     schema_file = os.path.join(schema_dir, f'environment-{CURRENT_MILESTONE_VERSION}.yml')
     schema = gluetool.utils.load_yaml(schema_file)
 
