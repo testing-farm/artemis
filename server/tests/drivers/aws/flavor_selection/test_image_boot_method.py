@@ -10,7 +10,7 @@ import sqlalchemy.orm.session
 from gluetool.result import Ok
 
 from tft.artemis.db import GuestRequest
-from tft.artemis.drivers.aws import AWSDriver, AWSFlavor, AWSPoolImageInfo
+from tft.artemis.drivers.aws import AWSDriver, AWSFlavor, AWSPoolImageInfo, filter_flavors_image_boot_method
 from tft.artemis.environment import FlavorBootMethodType, constraints_from_environment_requirements
 
 
@@ -26,9 +26,9 @@ def test_irrelevant_hw_constraints(
         return_value=constraints_from_environment_requirements({'memory': '> 0'})
     )
 
-    r_suitable_flavors = aws_pool._filter_flavors_image_boot_method(logger, session, guest_request, image, flavors)
+    r_suitable_flavors = filter_flavors_image_boot_method(logger, session, aws_pool, guest_request, image, flavors)
 
-    assert r_suitable_flavors.unwrap() == flavors
+    assert r_suitable_flavors.unwrap().matched_flavors == flavors
 
 
 def test_no_constraints(
@@ -41,9 +41,9 @@ def test_no_constraints(
 ) -> None:
     cast(MagicMock, guest_request).environment.get_hw_constraints = MagicMock(return_value=Ok(None))
 
-    r_suitable_flavors = aws_pool._filter_flavors_image_boot_method(logger, session, guest_request, image, flavors)
+    r_suitable_flavors = filter_flavors_image_boot_method(logger, session, aws_pool, guest_request, image, flavors)
 
-    assert r_suitable_flavors.unwrap() == flavors
+    assert r_suitable_flavors.unwrap().matched_flavors == flavors
 
 
 _BOOT_METHOD_MATRIX = [
@@ -87,6 +87,6 @@ def test_boot_method(
         return_value=constraints_from_environment_requirements({'boot': {'method': boot_method_constraint}})
     )
 
-    r_suitable_flavors = aws_pool._filter_flavors_image_boot_method(logger, session, guest_request, image, flavors)
+    r_suitable_flavors = filter_flavors_image_boot_method(logger, session, aws_pool, guest_request, image, flavors)
 
-    assert [flavor.id for flavor in r_suitable_flavors.unwrap()] == expected_flavors
+    assert [flavor.id for flavor in r_suitable_flavors.unwrap().matched_flavors] == expected_flavors

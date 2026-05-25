@@ -8,7 +8,7 @@ import gluetool.log
 import sqlalchemy.orm.session
 
 from tft.artemis.db import GuestRequest
-from tft.artemis.drivers.aws import AWSDriver, AWSFlavor, AWSPoolImageInfo
+from tft.artemis.drivers.aws import AWSDriver, AWSFlavor, AWSPoolImageInfo, filter_flavors_console_url_support
 
 
 def test_sanity(
@@ -21,9 +21,13 @@ def test_sanity(
 ) -> None:
     cast(MagicMock, guest_request).requests_guest_log = MagicMock('guest_request.requests_guest_log', return_value=True)
 
-    r_suitable_flavors = aws_pool._filter_flavors_console_url_support(logger, session, guest_request, image, flavors)
+    r_suitable_flavors = filter_flavors_console_url_support(logger, session, aws_pool, guest_request, image, flavors)
 
-    assert [flavor.id for flavor in r_suitable_flavors.unwrap()] == ['x86_64.1', 'x86_64.3', 'aarch64.1']
+    assert [flavor.id for flavor in r_suitable_flavors.unwrap().matched_flavors] == [
+        'x86_64.1',
+        'x86_64.3',
+        'aarch64.1',
+    ]
 
 
 def test_not_requested(
@@ -38,6 +42,6 @@ def test_not_requested(
         'guest_request.requests_guest_log', return_value=False
     )
 
-    r_suitable_flavors = aws_pool._filter_flavors_console_url_support(logger, session, guest_request, image, flavors)
+    r_suitable_flavors = filter_flavors_console_url_support(logger, session, aws_pool, guest_request, image, flavors)
 
-    assert r_suitable_flavors.unwrap() == flavors
+    assert r_suitable_flavors.unwrap().matched_flavors == flavors

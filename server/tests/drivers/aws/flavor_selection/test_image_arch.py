@@ -6,6 +6,7 @@ import gluetool.log
 import sqlalchemy.orm.session
 
 from tft.artemis.db import GuestRequest
+from tft.artemis.drivers._image_flavor_filtering import filter_flavors_image_arch
 from tft.artemis.drivers.aws import AWSDriver, AWSFlavor, AWSPoolImageInfo
 
 
@@ -17,9 +18,9 @@ def test_sanity(
     flavors: list[AWSFlavor],
     image: AWSPoolImageInfo,
 ) -> None:
-    r_suitable_flavors = aws_pool._filter_flavors_image_arch(logger, session, guest_request, image, flavors)
+    r_suitable_flavors = filter_flavors_image_arch(logger, session, aws_pool, guest_request, image, flavors)
 
-    assert [flavor.id for flavor in r_suitable_flavors.unwrap()] == ['x86_64.1', 'x86_64.2', 'x86_64.3']
+    assert [flavor.id for flavor in r_suitable_flavors.unwrap().matched_flavors] == ['x86_64.1', 'x86_64.2', 'x86_64.3']
 
 
 def test_no_arch(
@@ -32,6 +33,6 @@ def test_no_arch(
 ) -> None:
     image.arch = None
 
-    r_suitable_flavors = aws_pool._filter_flavors_image_arch(logger, session, guest_request, image, flavors)
+    r_suitable_flavors = filter_flavors_image_arch(logger, session, aws_pool, guest_request, image, flavors)
 
-    assert r_suitable_flavors.unwrap() == flavors
+    assert r_suitable_flavors.unwrap().matched_flavors == flavors

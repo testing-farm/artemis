@@ -6,6 +6,7 @@ import datetime
 import enum
 import functools
 import re
+from collections.abc import Sequence
 from typing import Any, Optional, TypedDict, cast
 
 import gluetool.log
@@ -16,14 +17,7 @@ from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
 from typing_extensions import TypeAlias, override
 
-from tft.artemis.drivers import (
-    CLISessionPermanentDir,
-    PoolDriver,
-    PoolImageCompatible,
-    PoolImageInfo,
-    PoolImageInfoT,
-    create_tempfile,
-)
+from tft.artemis.drivers import CLISessionPermanentDir, PoolDriver, PoolImageCompatible, PoolImageInfo, create_tempfile
 from tft.artemis.drivers.ibmcloud import (
     IBMCloudDriver,
     IBMCloudFlavor,
@@ -35,7 +29,7 @@ from tft.artemis.drivers.ibmcloud import (
     InstanceCreationRequest,
 )
 
-from ... import Failure, JSONType, logging_filter
+from ... import Failure, JSONType
 from ...db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
 from ...environment import Flavor, FlavorBoot
 from ...knobs import Knob
@@ -50,6 +44,11 @@ from .. import (
     SerializedPoolResourcesIDs,
     create_error_cause_extractor,
     guest_log_updater,
+)
+from .._image_flavor_filtering import (
+    FilterReturnType,
+    FilterRuling,
+    image_flavor_filter,
 )
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
@@ -172,6 +171,24 @@ class IBMCloudPowerPoolImageInfo(PoolImageInfo):
     href: str
 
 
+@image_flavor_filter
+def filter_flavors_required_fields_defined(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    pool: 'IBMCloudPowerDriver',
+    guest_request: GuestRequest,
+    image: PoolImageInfo,
+    flavors: Sequence[IBMCloudFlavor],
+) -> FilterReturnType[IBMCloudFlavor]:
+    return Ok(
+        FilterRuling.from_flavors(
+            image,
+            flavors,
+            matcher=lambda flavor: flavor.cpu.processors is not None and flavor.cpu.threads_per_core is not None,
+        )
+    )
+
+
 class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstance, IBMCloudPowerInstance, None]):
     drivername = 'ibmcloud-power'
 
@@ -181,6 +198,8 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
     error_cause_extractor = staticmethod(error_cause_extractor)
 
     _image_map_hook_name = 'IBMCLOUD_POWER_ENVIRONMENT_TO_IMAGE'
+
+    _flavor_filter_hook_name = 'IBMCLOUD_POWER_FLAVOR_FILTERS'
 
     def __init__(
         self,
@@ -271,56 +290,6 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
             res.append(r_image.unwrap())
 
         return Ok(res)
-
-    def _filter_flavors_required_fields_defined(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        image: PoolImageInfo,
-        suitable_flavors: list[IBMCloudFlavor],
-    ) -> Result[list[IBMCloudFlavor], Failure]:
-        return Ok(
-            list(
-                logging_filter(
-                    logger,
-                    suitable_flavors,
-                    'processors and threads-per-core are defined',
-                    lambda logger, flavor: (
-                        flavor.cpu.processors is not None and flavor.cpu.threads_per_core is not None
-                    ),
-                )
-            )
-        )
-
-    def _guest_request_to_flavor_or_none(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        image: PoolImageInfoT,
-    ) -> Result[Optional[IBMCloudFlavor], Failure]:
-        """
-        Map a guest request and image to the most fitting flavor.
-
-        :param logger: logger to use for logging.
-        :param session: DB session to use for DB access.
-        :param guest_request: guest request to map to a flavor.
-        :param image: image selected for the provisioning.
-        :returns: flavor most suitable for the given combination of the guest request and image, or ``None`` if no
-            suitable flavor was found.
-        """
-
-        return self._do_guest_request_to_flavor_or_none(
-            logger,
-            session,
-            guest_request,
-            image,
-            self._filter_flavors_image_arch,
-            self._filter_flavors_required_fields_defined,
-            self._filter_flavors_prefer_default_flavor,
-            self._filter_flavors_default_fallback,
-        )
 
     def fetch_pool_resources_metrics(
         self, logger: gluetool.log.ContextAdapter
