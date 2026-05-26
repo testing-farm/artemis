@@ -35,7 +35,7 @@ import tft.artemis.db
 import tft.artemis.drivers.localhost
 import tft.artemis.routing_policies
 from tft.artemis.drivers import PoolDriver
-from tft.artemis.metrics import PoolMetrics
+from tft.artemis.metrics import PoolMetrics, PoolResourcesUsage
 
 from . import MockPatcher
 from .tasks import DummyPool
@@ -719,3 +719,165 @@ def test_policy_use_only_when_addressed_marked_pool_with_requested(mock_inputs: 
     do_test_policy_use_only_when_addressed(
         mock_inputs, 'not-so-dummy-pool', 'dummy-pool', [pool.poolname for pool in mock_inputs.pools]
     )
+
+
+def _mock_least_crowded_flavor(
+    mockpatch: MockPatcher,
+    enabled_pools: list[str],
+    flavor_usage: dict[str, dict[str, int]],
+) -> None:
+    """
+    Set up mocks for policy_least_crowded_flavor tests.
+
+    :param enabled_pools: poolnames with the knob enabled.
+    :param flavor_usage: mapping of poolname -> {flavor_name: usage_count}.
+    """
+
+    def _mock_get_value(*args: Any, session: Any = None, entityname: Optional[str] = None, **kwargs: Any) -> Any:
+        if entityname in enabled_pools:
+            return Ok(True)
+        return Ok(False)
+
+    mockpatch(tft.artemis.drivers.KNOB_ROUTE_POOL_LEAST_CROWDED_FLAVOR, 'get_value').side_effect = _mock_get_value
+
+    def _mock_pool_resources_usage(poolname: str) -> MagicMock:
+        mock_usage = MagicMock(spec=PoolResourcesUsage)
+        mock_usage.flavors = flavor_usage.get(poolname, {})
+        mock_usage.do_sync = MagicMock()
+        return mock_usage
+
+    mockpatch(tft.artemis.routing_policies, 'PoolResourcesUsage').side_effect = _mock_pool_resources_usage
+
+
+def test_policy_least_crowded_flavor_single_pool(mockpatch: MockPatcher, mock_inputs: MockInputs) -> None:
+    mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
+
+    r_ruling = tft.artemis.routing_policies.policy_least_crowded_flavor(
+        mock_logger, mock_session, mock_pools[:1], mock_guest_request
+    )
+
+    assert r_ruling.is_ok
+
+    ruling = r_ruling.unwrap()
+    assert ruling.cancel is False
+    assert ruling.allowed_pools == mock_pools[:1]
+
+
+def test_policy_least_crowded_flavor_no_knob_enabled(mockpatch: MockPatcher, mock_inputs: MockInputs) -> None:
+    mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
+
+    _mock_least_crowded_flavor(mockpatch, enabled_pools=[], flavor_usage={})
+
+    r_ruling = tft.artemis.routing_policies.policy_least_crowded_flavor(
+        mock_logger, mock_session, mock_pools, mock_guest_request
+    )
+
+    assert r_ruling.is_ok
+
+    ruling = r_ruling.unwrap()
+    assert ruling.cancel is False
+    assert ruling.allowed_pools == mock_pools
+
+
+def test_policy_least_crowded_flavor_one_less_crowded(mockpatch: MockPatcher, mock_inputs: MockInputs) -> None:
+    mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
+
+    _mock_least_crowded_flavor(
+        mockpatch,
+        enabled_pools=['dummy-pool', 'not-so-dummy-pool', 'another-cool-pool'],
+        flavor_usage={
+            'dummy-pool': {'m5.large': 10, 'm5.xlarge': 5},
+            'not-so-dummy-pool': {'c5.large': 20, 'c5.xlarge': 15},
+            'another-cool-pool': {'r5.large': 3, 'r5.xlarge': 8},
+        },
+    )
+
+    r_ruling = tft.artemis.routing_policies.policy_least_crowded_flavor(
+        mock_logger, mock_session, mock_pools, mock_guest_request
+    )
+
+    assert r_ruling.is_ok
+
+    ruling = r_ruling.unwrap()
+    assert ruling.cancel is False
+    # another-cool-pool has min flavor usage of 3 (lowest), others have 5 and 15
+    assert [p.poolname for p in ruling.allowed_pools] == ['another-cool-pool']
+
+
+def test_policy_least_crowded_flavor_all_equal(mockpatch: MockPatcher, mock_inputs: MockInputs) -> None:
+    mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
+
+    _mock_least_crowded_flavor(
+        mockpatch,
+        enabled_pools=['dummy-pool', 'not-so-dummy-pool', 'another-cool-pool'],
+        flavor_usage={
+            'dummy-pool': {'m5.large': 10},
+            'not-so-dummy-pool': {'c5.large': 10},
+            'another-cool-pool': {'r5.large': 10},
+        },
+    )
+
+    r_ruling = tft.artemis.routing_policies.policy_least_crowded_flavor(
+        mock_logger, mock_session, mock_pools, mock_guest_request
+    )
+
+    assert r_ruling.is_ok
+
+    ruling = r_ruling.unwrap()
+    assert ruling.cancel is False
+    assert ruling.allowed_pools == mock_pools
+
+
+def test_policy_least_crowded_flavor_empty_usage(mockpatch: MockPatcher, mock_inputs: MockInputs) -> None:
+    mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
+
+    _mock_least_crowded_flavor(
+        mockpatch,
+        enabled_pools=['dummy-pool', 'not-so-dummy-pool'],
+        flavor_usage={
+            'dummy-pool': {},
+            'not-so-dummy-pool': {'c5.large': 5},
+        },
+    )
+
+    r_ruling = tft.artemis.routing_policies.policy_least_crowded_flavor(
+        mock_logger, mock_session, mock_pools, mock_guest_request
+    )
+
+    assert r_ruling.is_ok
+
+    ruling = r_ruling.unwrap()
+    assert ruling.cancel is False
+    # dummy-pool has empty flavors -> defaults to 0, preferred over not-so-dummy-pool (5)
+    # another-cool-pool has knob disabled -> always allowed
+    allowed_names = [p.poolname for p in ruling.allowed_pools]
+    assert 'dummy-pool' in allowed_names
+    assert 'another-cool-pool' in allowed_names
+    assert 'not-so-dummy-pool' not in allowed_names
+
+
+def test_policy_least_crowded_flavor_mixed_knob(mockpatch: MockPatcher, mock_inputs: MockInputs) -> None:
+    mock_logger, mock_session, mock_pools, mock_guest_request = mock_inputs
+
+    _mock_least_crowded_flavor(
+        mockpatch,
+        enabled_pools=['dummy-pool', 'not-so-dummy-pool'],
+        flavor_usage={
+            'dummy-pool': {'m5.large': 10},
+            'not-so-dummy-pool': {'c5.large': 5},
+        },
+    )
+
+    r_ruling = tft.artemis.routing_policies.policy_least_crowded_flavor(
+        mock_logger, mock_session, mock_pools, mock_guest_request
+    )
+
+    assert r_ruling.is_ok
+
+    ruling = r_ruling.unwrap()
+    assert ruling.cancel is False
+    # not-so-dummy-pool has min usage 5 (lowest among knob-enabled), another-cool-pool has knob disabled
+    allowed_names = [p.poolname for p in ruling.allowed_pools]
+    assert 'not-so-dummy-pool' in allowed_names
+    assert 'another-cool-pool' in allowed_names
+    assert 'dummy-pool' not in allowed_names
