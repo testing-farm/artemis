@@ -1443,7 +1443,7 @@ def _get_image_cache_timestamps(
 
 
 @cmd_cache_update.command(
-    name='image-cache', short_help='Refresh image cache for given pools'
+    name='image-info', short_help='Refresh image info cache for given pools'
 )
 @click.option(
     '--pool', 'pools', multiple=True, required=True, help='Pool name to refresh'
@@ -1488,11 +1488,10 @@ def cmd_cache_update_image_cache(
         return
 
     pending = set(pools)
-    elapsed = 0
+    deadline = datetime.datetime.now() + datetime.timedelta(seconds=wait_timeout)
 
-    while pending and elapsed < wait_timeout:
+    while pending and datetime.datetime.now() < deadline:
         time.sleep(wait_tick)
-        elapsed += wait_tick
 
         new_timestamps = _get_image_cache_timestamps(cfg, tuple(pending))
 
