@@ -4,14 +4,14 @@
 import dataclasses
 import functools
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Callable, Generic, Optional, Protocol, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Callable, Generic, Optional, Protocol, TypedDict, TypeVar, cast
 
 import gluetool.log
 import sqlalchemy
 from gluetool.result import Error, Ok, Result
 from typing_extensions import Self, TypeAlias
 
-from .. import Failure, log_dict_yaml
+from .. import Failure, SerializableContainer
 from ..db import GuestRequest
 from ..environment import Flavor
 
@@ -24,8 +24,20 @@ PoolImageInfoT = TypeVar('PoolImageInfoT', bound='PoolImageInfo')
 PoolT = TypeVar('PoolT', bound='FlavorBasedPoolDriver[Any, Any, Any, Any, Any]', contravariant=True)  # noqa: PLC0105
 
 
+class SerializedPairRuling(TypedDict):
+    imagename: str
+    flavorname: str
+    match: bool
+    note: Optional[str]
+
+
+class SerializedFilterRuling(TypedDict):
+    filtername: Optional[str]
+    rulings: list[SerializedPairRuling]
+
+
 @dataclasses.dataclass(repr=False)
-class PairRuling(Generic[FlavorT]):
+class PairRuling(SerializableContainer, Generic[FlavorT]):
     image: 'PoolImageInfo'
     flavor: FlavorT
     match: bool
@@ -35,10 +47,20 @@ class PairRuling(Generic[FlavorT]):
     def __repr__(self) -> str:
         return f'<PairRuling: image={self.image.name} flavor={self.flavor.name} match={self.match} note={self.note}>'
 
+    def serialize(self) -> SerializedPairRuling:  # type: ignore[override]
+        return {'imagename': self.image.name, 'flavorname': self.flavor.name, 'match': self.match, 'note': self.note}
+
+    @classmethod
+    def unserialize(cls, serialized: SerializableContainer) -> Self:  # type: ignore[override]
+        raise NotImplementedError
+
 
 @dataclasses.dataclass(repr=False)
-class FilterRuling(Generic[FlavorT]):
+class FilterRuling(SerializableContainer, Generic[FlavorT]):
     rulings: list[PairRuling[FlavorT]] = dataclasses.field(default_factory=list)
+
+    filtername: Optional[str] = None
+    previous_ruling: Optional[Self] = None
 
     @property
     def matched_rulings(self) -> list[PairRuling[FlavorT]]:
@@ -62,6 +84,28 @@ class FilterRuling(Generic[FlavorT]):
 
         return cls(rulings=[PairRuling(image=image, flavor=flavor, match=matcher(flavor)) for flavor in flavors])
 
+    def serialize(self) -> SerializedFilterRuling:  # type: ignore[override]
+        return {'filtername': self.filtername, 'rulings': [pair_ruling.serialize() for pair_ruling in self.rulings]}
+
+    @classmethod
+    def unserialize(cls, serialized: SerializedFilterRuling) -> Self:  # type: ignore[override]
+        raise NotImplementedError
+
+    @property
+    def serialized_history(self) -> list[SerializedFilterRuling]:
+        serialized: list[SerializedFilterRuling] = []
+
+        filter_ruling: Optional[FilterRuling[FlavorT]] = self.previous_ruling
+
+        while filter_ruling is not None:
+            serialized.append(filter_ruling.serialize())
+
+            filter_ruling = filter_ruling.previous_ruling
+
+        serialized.reverse()
+
+        return serialized
+
 
 FilterReturnType: TypeAlias = Result[FilterRuling[FlavorT], Failure]
 
@@ -84,11 +128,11 @@ class FilterWrapperType(Protocol):
 
 class FilterLogger(gluetool.log.ContextAdapter):
     def __init__(self, logger: gluetool.log.ContextAdapter, filter_name: str) -> None:
-        super().__init__(logger, {'ctx_policy_name': (60, filter_name)})
+        super().__init__(logger, {'ctx_flavor_filter_name': (60, filter_name)})
 
     @property
     def filtername(self) -> str:
-        return cast(str, self._contexts['filter_name'][1])
+        return cast(str, self._contexts['flavor_filter_name'][1])
 
 
 def image_flavor_filter(fn: Filter[PoolT, PoolImageInfoT, FlavorT]) -> Filter[PoolT, PoolImageInfoT, FlavorT]:
@@ -223,6 +267,7 @@ def run_image_flavor_filters(
     filters: Sequence[Filter[PoolT, PoolImageInfoT, FlavorT]],
 ) -> FilterReturnType[FlavorT]:
     final_ruling = FilterRuling(rulings=[PairRuling(image=image, flavor=flavor, match=True) for flavor in flavors])
+    current_filter_ruling: Optional[FilterRuling[FlavorT]]
 
     for filter_ in filters:
         r = filter_(
@@ -239,21 +284,12 @@ def run_image_flavor_filters(
             )
 
         current_filter_ruling = r.unwrap()
-
-        log_dict_yaml(
-            logger.debug,
-            f'{filter_.filter_name} outcome',  # type: ignore[attr-defined]
-            [
-                {
-                    'image': pair_ruling.image.name,
-                    'flavor': pair_ruling.flavor.name,
-                    'match': pair_ruling.match,
-                    'note': pair_ruling.note,
-                }
-                for pair_ruling in current_filter_ruling.rulings
-            ],
-        )
+        current_filter_ruling.filtername = filter_.filter_name  # type: ignore[attr-defined]
 
         final_ruling.rulings = [pair_ruling for pair_ruling in current_filter_ruling.rulings if pair_ruling.match]
+
+        # Maintain the history chain
+        current_filter_ruling.previous_ruling = final_ruling.previous_ruling
+        final_ruling.previous_ruling = current_filter_ruling
 
     return Ok(final_ruling)
