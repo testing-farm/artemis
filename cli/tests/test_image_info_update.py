@@ -6,7 +6,7 @@ import json
 from unittest import mock
 
 import rich.console
-from tft.artemis_cli import parse_metrics, print_image_cache_update
+from tft.artemis_cli import parse_metrics, print_image_info_update
 
 
 SAMPLE_POOLS = [
@@ -26,11 +26,11 @@ pool_image_info_updated_timestamp{pool="pool-azure-2"} 1.9e+09
 SAMPLE_METRICS = parse_metrics(SAMPLE_METRICS_RAW)
 
 
-def test_print_image_cache_update_table():
+def test_print_image_info_update_table():
     cfg = mock.Mock(output_format='table')
     console = rich.console.Console(file=io.StringIO(), width=120)
 
-    print_image_cache_update(cfg, SAMPLE_POOLS, SAMPLE_METRICS, console)
+    print_image_info_update(cfg, SAMPLE_POOLS, SAMPLE_METRICS, console)
 
     output = console.file.getvalue()
 
@@ -44,11 +44,11 @@ def test_print_image_cache_update_table():
     assert 'azure' in output
 
 
-def test_print_image_cache_update_sorted():
+def test_print_image_info_update_sorted():
     cfg = mock.Mock(output_format='table')
     console = rich.console.Console(file=io.StringIO(), width=120)
 
-    print_image_cache_update(cfg, SAMPLE_POOLS, SAMPLE_METRICS, console)
+    print_image_info_update(cfg, SAMPLE_POOLS, SAMPLE_METRICS, console)
 
     output = console.file.getvalue()
 
@@ -56,11 +56,11 @@ def test_print_image_cache_update_sorted():
     assert output.index('pool-azure-1') < output.index('pool-azure-2')
 
 
-def test_print_image_cache_update_json():
+def test_print_image_info_update_json():
     cfg = mock.Mock(output_format='json')
     console = rich.console.Console(file=io.StringIO(), width=120)
 
-    print_image_cache_update(cfg, SAMPLE_POOLS, SAMPLE_METRICS, console)
+    print_image_info_update(cfg, SAMPLE_POOLS, SAMPLE_METRICS, console)
 
     output = console.file.getvalue()
     data = json.loads(output)
@@ -73,11 +73,11 @@ def test_print_image_cache_update_json():
     assert all(isinstance(entry['updated'], float) for entry in data)
 
 
-def test_print_image_cache_update_empty():
+def test_print_image_info_update_empty():
     cfg = mock.Mock(output_format='table')
     console = rich.console.Console(file=io.StringIO(), width=120)
 
-    print_image_cache_update(cfg, [], SAMPLE_METRICS, console)
+    print_image_info_update(cfg, [], SAMPLE_METRICS, console)
 
     output = console.file.getvalue()
 
@@ -86,7 +86,7 @@ def test_print_image_cache_update_empty():
     assert 'Last Updated' in output
 
 
-def test_print_image_cache_update_nan_timestamp():
+def test_print_image_info_update_nan_timestamp():
     cfg = mock.Mock(output_format='table')
     console = rich.console.Console(file=io.StringIO(), width=120)
 
@@ -97,7 +97,7 @@ pool_image_info_updated_timestamp{pool="pool-aws-1"} NaN
 """
     nan_metrics = parse_metrics(nan_metrics_raw)
 
-    print_image_cache_update(cfg, SAMPLE_POOLS, nan_metrics, console)
+    print_image_info_update(cfg, SAMPLE_POOLS, nan_metrics, console)
 
     output = console.file.getvalue()
 

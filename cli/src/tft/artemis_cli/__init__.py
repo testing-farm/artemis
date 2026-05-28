@@ -964,7 +964,7 @@ def print_pools(
     print_collection(cfg, pools, tabulate, console=console)
 
 
-def print_image_cache_update(
+def print_image_info_update(
     cfg: Configuration,
     pools: CollectionType,
     metrics: List[Sample],

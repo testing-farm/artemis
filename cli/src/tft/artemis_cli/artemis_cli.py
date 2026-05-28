@@ -51,7 +51,7 @@ from . import (
     print_events,
     print_guest_logs,
     print_guests,
-    print_image_cache_update,
+    print_image_info_update,
     print_json,
     print_knobs,
     print_pools,
@@ -1399,11 +1399,9 @@ def cmd_status_pools(cfg: Configuration) -> None:
     print_pools(cfg, response.json())
 
 
-@cmd_status.command(
-    name='image-info', short_help='Display image info cache update times'
-)
+@cmd_status.command(name='image-info', short_help='Display image cache update times')
 @click.pass_obj
-def cmd_status_image_cache(cfg: Configuration) -> None:
+def cmd_status_image_info(cfg: Configuration) -> None:
     response = fetch_artemis(cfg, '/_status/pools')
 
     if not response.ok:
@@ -1411,7 +1409,7 @@ def cmd_status_image_cache(cfg: Configuration) -> None:
 
     metrics = fetch_metrics(cfg)
 
-    print_image_cache_update(cfg, response.json(), metrics)
+    print_image_info_update(cfg, response.json(), metrics)
 
 
 @cli_root.group(name='cache', short_help='Cache management commands')
@@ -1426,7 +1424,7 @@ def cmd_cache_update(cfg: Configuration) -> None:
     pass
 
 
-def _get_image_cache_timestamps(
+def _get_image_info_timestamps(
     cfg: Configuration, pools: tuple[str, ...]
 ) -> Dict[str, float]:
     metrics = fetch_metrics(cfg)
@@ -1446,7 +1444,7 @@ def _get_image_cache_timestamps(
 
 
 @cmd_cache_update.command(
-    name='image-info', short_help='Refresh image info cache for given pools'
+    name='image-info', short_help='Refresh image cache for given pools'
 )
 @click.option(
     '--pool', 'pools', multiple=True, required=True, help='Pool name to refresh'
@@ -1465,14 +1463,14 @@ def _get_image_cache_timestamps(
     help='Poll interval in seconds when waiting (default: 10)',
 )
 @click.pass_obj
-def cmd_cache_update_image_cache(
+def cmd_cache_update_image_info(
     cfg: Configuration,
     pools: tuple[str, ...],
     wait: bool,
     wait_timeout: int,
     wait_tick: int,
 ) -> None:
-    old_timestamps = _get_image_cache_timestamps(cfg, pools) if wait else {}
+    old_timestamps = _get_image_info_timestamps(cfg, pools) if wait else {}
 
     for poolname in pools:
         response = fetch_artemis(
@@ -1496,7 +1494,7 @@ def cmd_cache_update_image_cache(
     while pending and datetime.datetime.now() < deadline:
         time.sleep(wait_tick)
 
-        new_timestamps = _get_image_cache_timestamps(cfg, tuple(pending))
+        new_timestamps = _get_image_info_timestamps(cfg, tuple(pending))
 
         for poolname in list(pending):
             old_ts = old_timestamps.get(poolname, float('nan'))
