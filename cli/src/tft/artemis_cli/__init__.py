@@ -13,6 +13,7 @@ import jq
 import jsonschema
 import pkg_resources
 import pydantic
+from prometheus_client.samples import Sample
 import requests
 import requests.adapters
 import rich.console
@@ -910,7 +911,7 @@ def print_tasks(
     print_collection(cfg, tasks, tabulate, console=console, panel_title='Tasks')
 
 
-def parse_metrics(raw_metrics: str) -> List[Any]:
+def parse_metrics(raw_metrics: str) -> List[Sample]:
     from prometheus_client.parser import text_string_to_metric_families
 
     return [
@@ -921,7 +922,7 @@ def parse_metrics(raw_metrics: str) -> List[Any]:
 
 
 def extract_metric(
-    metrics: List[Any],
+    metrics: List[Sample],
     name: str,
     labels: Optional[Callable[[Dict[str, str]], bool]] = None,
 ) -> float:
@@ -934,7 +935,7 @@ def extract_metric(
     )
 
 
-def fetch_metrics(cfg: 'Configuration') -> List[Any]:
+def fetch_metrics(cfg: 'Configuration') -> List[Sample]:
     response = fetch_artemis(cfg, '/metrics')
 
     if not response.ok:
@@ -965,32 +966,26 @@ def print_pools(
 def print_image_cache_update(
     cfg: Configuration,
     pools: CollectionType,
-    metrics: List[Any],
+    metrics: List[Sample],
     console: Optional[rich.console.Console] = None,
 ) -> None:
     pool_to_driver = {entry['poolname']: entry['driver'] for entry in pools}
 
     collection: CollectionType = []
 
-    for sample in metrics:
-        if sample[0] != 'pool_image_info_updated_timestamp':
-            continue
-
-        poolname = sample[1].get('pool', '')
-        timestamp = sample[2]
-
-        if poolname not in pool_to_driver:
-            continue
-
-        collection.append(
-            {
-                'poolname': poolname,
-                'driver': pool_to_driver[poolname],
-                'updated': timestamp,
-            }
+    for poolname, driver in sorted(pool_to_driver.items()):
+        timestamp = next(
+            (
+                s[2]
+                for s in metrics
+                if s[0] == 'pool_image_info_updated_timestamp'
+                and s[1].get('pool') == poolname
+            ),
+            float('nan'),
         )
-
-    collection.sort(key=lambda e: e['poolname'])
+        collection.append(
+            {'poolname': poolname, 'driver': driver, 'updated': timestamp}
+        )
 
     def tabulate(collection: CollectionType) -> rich.table.Table:
         table = rich.table.Table()

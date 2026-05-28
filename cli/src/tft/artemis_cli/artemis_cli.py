@@ -1398,7 +1398,9 @@ def cmd_status_pools(cfg: Configuration) -> None:
     print_pools(cfg, response.json())
 
 
-@cmd_status.command(name='image-cache', short_help='Display image cache update times')
+@cmd_status.command(
+    name='image-info', short_help='Display image info cache update times'
+)
 @click.pass_obj
 def cmd_status_image_cache(cfg: Configuration) -> None:
     response = fetch_artemis(cfg, '/_status/pools')
