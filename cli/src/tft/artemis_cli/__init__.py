@@ -4,6 +4,7 @@
 import dataclasses
 import datetime
 import json
+import math
 import re
 import sys
 from typing import Any, Callable, Dict, List, NamedTuple, Optional, cast
@@ -996,7 +997,7 @@ def print_image_cache_update(
 
         for entry in collection:
             timestamp = entry['updated']
-            if timestamp != timestamp:
+            if math.isnan(timestamp):
                 updated = 'N/A'
             else:
                 updated = datetime.datetime.utcfromtimestamp(timestamp).strftime(

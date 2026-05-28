@@ -5,6 +5,7 @@ import contextlib
 import datetime
 import ipaddress
 import json
+import math
 import os.path
 import re
 import shutil
@@ -1501,10 +1502,10 @@ def cmd_cache_update_image_cache(
             old_ts = old_timestamps.get(poolname, float('nan'))
             new_ts = new_timestamps.get(poolname, float('nan'))
 
-            if new_ts != new_ts:
+            if math.isnan(new_ts):
                 continue
 
-            if old_ts != old_ts or new_ts > old_ts:
+            if math.isnan(old_ts) or new_ts > old_ts:
                 cfg.logger.success(f'Image cache updated for pool {poolname}')
                 pending.discard(poolname)
 
