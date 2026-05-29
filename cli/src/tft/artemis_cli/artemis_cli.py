@@ -1399,9 +1399,17 @@ def cmd_status_pools(cfg: Configuration) -> None:
     print_pools(cfg, response.json())
 
 
-@cmd_status.command(name='image-info', short_help='Display image cache update times')
+@cli_root.group(name='cache', short_help='Cache management commands')
 @click.pass_obj
-def cmd_status_image_info(cfg: Configuration) -> None:
+def cmd_cache(cfg: Configuration) -> None:
+    pass
+
+
+@cmd_cache.command(
+    name='image-info', short_help='Display image info cache update times'
+)
+@click.pass_obj
+def cmd_cache_image_info(cfg: Configuration) -> None:
     response = fetch_artemis(cfg, '/_status/pools')
 
     if not response.ok:
@@ -1410,12 +1418,6 @@ def cmd_status_image_info(cfg: Configuration) -> None:
     metrics = fetch_metrics(cfg)
 
     print_image_info_update(cfg, response.json(), metrics)
-
-
-@cli_root.group(name='cache', short_help='Cache management commands')
-@click.pass_obj
-def cmd_cache(cfg: Configuration) -> None:
-    pass
 
 
 @cmd_cache.group(name='update', short_help='Trigger cache updates')
@@ -1444,7 +1446,7 @@ def _get_image_info_timestamps(
 
 
 @cmd_cache_update.command(
-    name='image-info', short_help='Refresh image cache for given pools'
+    name='image-info', short_help='Refresh image info cache for given pools'
 )
 @click.option(
     '--pool', 'pools', multiple=True, required=True, help='Pool name to refresh'
