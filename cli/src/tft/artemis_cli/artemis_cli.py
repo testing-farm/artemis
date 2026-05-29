@@ -1493,21 +1493,22 @@ def cmd_cache_update_image_info(
     pending = set(pools)
     deadline = datetime.datetime.now() + datetime.timedelta(seconds=wait_timeout)
 
-    while pending and datetime.datetime.now() < deadline:
-        time.sleep(wait_tick)
+    with cfg.console.status('Waiting for image cache update...', spinner='dots'):
+        while pending and datetime.datetime.now() < deadline:
+            time.sleep(wait_tick)
 
-        new_timestamps = _get_image_info_timestamps(cfg, tuple(pending))
+            new_timestamps = _get_image_info_timestamps(cfg, tuple(pending))
 
-        for poolname in list(pending):
-            old_ts = old_timestamps.get(poolname, float('nan'))
-            new_ts = new_timestamps.get(poolname, float('nan'))
+            for poolname in list(pending):
+                old_ts = old_timestamps.get(poolname, float('nan'))
+                new_ts = new_timestamps.get(poolname, float('nan'))
 
-            if math.isnan(new_ts):
-                continue
+                if math.isnan(new_ts):
+                    continue
 
-            if math.isnan(old_ts) or new_ts > old_ts:
-                cfg.logger.success(f'Image cache updated for pool {poolname}')
-                pending.discard(poolname)
+                if math.isnan(old_ts) or new_ts > old_ts:
+                    cfg.logger.success(f'Image cache updated for pool {poolname}')
+                    pending.discard(poolname)
 
     for poolname in pending:
         cfg.logger.error(
