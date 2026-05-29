@@ -16,7 +16,7 @@ import time
 import urllib
 import urllib.parse
 from time import sleep
-from typing import Any, Dict, Generator, Iterator, List, Optional, cast
+from typing import Any, Dict, Generator, Iterator, List, Optional, Tuple, cast
 
 import click
 import click_completion
@@ -1427,7 +1427,7 @@ def cmd_cache_update(cfg: Configuration) -> None:
 
 
 def _get_image_info_timestamps(
-    cfg: Configuration, pools: tuple[str, ...]
+    cfg: Configuration, pools: Tuple[str, ...]
 ) -> Dict[str, float]:
     metrics = fetch_metrics(cfg)
 
@@ -1467,7 +1467,7 @@ def _get_image_info_timestamps(
 @click.pass_obj
 def cmd_cache_update_image_info(
     cfg: Configuration,
-    pools: tuple[str, ...],
+    pools: Tuple[str, ...],
     wait: bool,
     wait_timeout: int,
     wait_tick: int,
