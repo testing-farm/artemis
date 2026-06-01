@@ -5,6 +5,7 @@ import contextlib
 import datetime
 import ipaddress
 import json
+import math
 import os.path
 import re
 import shutil
@@ -15,7 +16,7 @@ import time
 import urllib
 import urllib.parse
 from time import sleep
-from typing import Any, Callable, Dict, Generator, Iterator, List, Optional, cast
+from typing import Any, Dict, Generator, Iterator, List, Optional, Tuple, cast
 
 import click
 import click_completion
@@ -41,12 +42,16 @@ from . import (
     artemis_inspect,
     artemis_update,
     confirm,
+    extract_metric,
     fetch_artemis,
+    fetch_metrics,
     load_yaml,
+    parse_metrics,
     print_broker_tasks,
     print_events,
     print_guest_logs,
     print_guests,
+    print_image_info_update,
     print_json,
     print_knobs,
     print_pools,
@@ -1394,6 +1399,123 @@ def cmd_status_pools(cfg: Configuration) -> None:
     print_pools(cfg, response.json())
 
 
+@cli_root.group(name='cache', short_help='Cache management commands')
+@click.pass_obj
+def cmd_cache(cfg: Configuration) -> None:
+    pass
+
+
+@cmd_cache.command(
+    name='image-info', short_help='Display image info cache update times'
+)
+@click.pass_obj
+def cmd_cache_image_info(cfg: Configuration) -> None:
+    response = fetch_artemis(cfg, '/_status/pools')
+
+    if not response.ok:
+        cfg.logger.unhandled_api_response(response)
+
+    metrics = fetch_metrics(cfg)
+
+    print_image_info_update(cfg, response.json(), metrics)
+
+
+@cmd_cache.group(name='update', short_help='Trigger cache updates')
+@click.pass_obj
+def cmd_cache_update(cfg: Configuration) -> None:
+    pass
+
+
+def _get_image_info_timestamps(
+    cfg: Configuration, pools: Tuple[str, ...]
+) -> Dict[str, float]:
+    metrics = fetch_metrics(cfg)
+
+    timestamps: Dict[str, float] = {}
+
+    for sample in metrics:
+        if sample[0] != 'pool_image_info_updated_timestamp':
+            continue
+
+        poolname = sample[1].get('pool', '')
+
+        if poolname in pools:
+            timestamps[poolname] = sample[2]
+
+    return timestamps
+
+
+@cmd_cache_update.command(
+    name='image-info', short_help='Refresh image info cache for given pools'
+)
+@click.option(
+    '--pool', 'pools', multiple=True, required=True, help='Pool name to refresh'
+)
+@click.option('--wait', is_flag=True, default=False, help='Wait until cache is updated')
+@click.option(
+    '--wait-timeout',
+    type=int,
+    default=300,
+    help='Timeout in seconds when waiting (default: 300)',
+)
+@click.option(
+    '--wait-tick',
+    type=int,
+    default=10,
+    help='Poll interval in seconds when waiting (default: 10)',
+)
+@click.pass_obj
+def cmd_cache_update_image_info(
+    cfg: Configuration,
+    pools: Tuple[str, ...],
+    wait: bool,
+    wait_timeout: int,
+    wait_tick: int,
+) -> None:
+    old_timestamps = _get_image_info_timestamps(cfg, pools) if wait else {}
+
+    for poolname in pools:
+        response = fetch_artemis(
+            cfg,
+            f'/_cache/pools/{poolname}/image-info',
+            method='post',
+            allow_statuses=[204],
+        )
+
+        if not response.ok:
+            cfg.logger.unhandled_api_response(response, exit=False)
+        else:
+            cfg.logger.success(f'Image cache refresh triggered for pool {poolname}')
+
+    if not wait:
+        return
+
+    pending = set(pools)
+    deadline = datetime.datetime.now() + datetime.timedelta(seconds=wait_timeout)
+
+    with cfg.console.status('Waiting for image cache update...', spinner='dots'):
+        while pending and datetime.datetime.now() < deadline:
+            time.sleep(wait_tick)
+
+            new_timestamps = _get_image_info_timestamps(cfg, tuple(pending))
+
+            for poolname in list(pending):
+                old_ts = old_timestamps.get(poolname, float('nan'))
+                new_ts = new_timestamps.get(poolname, float('nan'))
+
+                if math.isnan(new_ts):
+                    continue
+
+                if math.isnan(old_ts) or new_ts > old_ts:
+                    cfg.logger.success(f'Image cache updated for pool {poolname}')
+                    pending.discard(poolname)
+
+    for poolname in pending:
+        cfg.logger.error(
+            f'Timed out waiting for image cache update for pool {poolname}', exit=False
+        )
+
+
 def _status_top_raw(cfg: Configuration) -> None:
     response = fetch_artemis(cfg, '/_status/workers/traffic')
 
@@ -1407,8 +1529,6 @@ def _status_top_raw(cfg: Configuration) -> None:
 
 
 def _status_top_full(cfg: Configuration, tick: int) -> None:
-    from prometheus_client.parser import text_string_to_metric_families
-    from prometheus_client.samples import Sample
     from rich.align import Align
     from rich.layout import Layout
     from rich.live import Live
@@ -1478,10 +1598,10 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
             with status('Updating broker stats...'):
                 response = fetch_artemis(cfg, '', url=str(cfg.tree.broker.metrics))
 
-            metrics = _parse_metrics(response.text)
+            metrics = parse_metrics(response.text)
 
-            ready = _extract_metric(metrics, 'rabbitmq_queue_messages_ready')
-            unacked = _extract_metric(metrics, 'rabbitmq_queue_messages_unacked')
+            ready = extract_metric(metrics, 'rabbitmq_queue_messages_ready')
+            unacked = extract_metric(metrics, 'rabbitmq_queue_messages_unacked')
 
             return ' | '.join(
                 [
@@ -1540,9 +1660,9 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
             with status('Updating DB stats...'):
                 response = fetch_artemis(cfg, '', url=str(cfg.tree.db.metrics))
 
-            metrics = _parse_metrics(response.text)
+            metrics = parse_metrics(response.text)
 
-            active = _extract_metric(
+            active = extract_metric(
                 metrics,
                 'pg_stat_activity_count',
                 labels=lambda labels: labels.get('application_name', '').startswith(
@@ -1550,7 +1670,7 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
                 )
                 and labels.get('state') == 'active',
             )
-            idle = _extract_metric(
+            idle = extract_metric(
                 metrics,
                 'pg_stat_activity_count',
                 labels=lambda labels: labels.get('application_name', '').startswith(
@@ -1558,7 +1678,7 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
                 )
                 and labels.get('state') == 'idle',
             )
-            idle_in_transaction = _extract_metric(
+            idle_in_transaction = extract_metric(
                 metrics,
                 'pg_stat_activity_count',
                 labels=lambda labels: labels.get('application_name', '').startswith(
@@ -1642,10 +1762,10 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
             if not response.ok:
                 cfg.logger.unhandled_api_response(response)
 
-            metrics = _parse_metrics(response.text)
+            metrics = parse_metrics(response.text)
 
             states = {
-                state: _extract_metric(
+                state: extract_metric(
                     metrics,
                     'current_guest_request_count',
                     labels=lambda labels: labels.get('state') == state,
@@ -1708,24 +1828,6 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
             layout['footer'].update(f'Next update in {remains} seconds...')
 
             sleep(1)
-
-    def _parse_metrics(raw_metrics: str) -> List[Sample]:
-        def _parse() -> Iterator[Sample]:
-            for family in text_string_to_metric_families(raw_metrics):
-                yield from family.samples
-
-        return list(_parse())
-
-    def _extract_metric(
-        metrics: List[Sample],
-        name: str,
-        labels: Optional[Callable[[Dict[str, str]], bool]] = None,
-    ) -> float:
-        return sum(
-            sample[2]
-            for sample in metrics
-            if sample[0] == name and (labels is None or labels(sample[1]))
-        )
 
     fast_panels: List[RefreshablePanel] = [
         cast(AboutPanel, layout['header-top.right'].renderable),
