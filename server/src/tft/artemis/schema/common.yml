@@ -396,7 +396,7 @@ properties:
       required:
        - name
 
-  guest_tags:
+  guest-tags:
     type: object
 
     patternProperties:
@@ -421,7 +421,7 @@ properties:
             ^.*$:
               type: string
 
-        guest_tags:
+        guest-tags:
           type: object
 
           patternProperties:
