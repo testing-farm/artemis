@@ -350,10 +350,6 @@ class IBMCloudDriver(
 
         instance_request = InstanceCreationRequest(image=pairs[0][0], flavor=pairs[0][1])
 
-        self.log_acquisition_attempt(
-            logger, session, guest_request, flavor=instance_request.flavor, image=instance_request.image
-        )
-
         r_post_install_script = self.generate_post_install_script(guest_request)
         if r_post_install_script.is_error:
             return _Error(

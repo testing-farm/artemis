@@ -4081,7 +4081,7 @@ ResourceCreationOutcomeT = TypeVar(  # noqa: PLC0105
 
 
 @dataclasses.dataclass
-class ResourceCreationRequest:
+class ResourceCreationRequest(SerializableContainer):
     """
     Bundles components needed to create a resource.
     """
@@ -4186,6 +4186,7 @@ class ResourceManager(Generic[ResourceT, ResourceCreationRequestT, ResourceCreat
             return _Error(r_resource_request.failure().update(**failure_details))
 
         resource_request = r_resource_request.unwrap()
+        failure_details['resource_request'] = resource_request.serialize()
 
         r_resource_name = self.resource_name(guest_request)
         if not is_successful(r_resource_name):
@@ -4193,6 +4194,11 @@ class ResourceManager(Generic[ResourceT, ResourceCreationRequestT, ResourceCreat
                 Failure.from_failure('Could not get resource name', r_resource_name.failure(), **failure_details)
             )
         resource_name = r_resource_name.unwrap()
+        failure_details['resource_name'] = resource_name
+
+        log_dict_yaml(logger.info, 'acquiring resource', failure_details['resource_request'])
+
+        guest_request.log_event(logger, session, 'resource-acquisition-attempt', **failure_details)
 
         r_existing_resources = self.list_resources(logger, guest_request)
         if not is_successful(r_existing_resources):
