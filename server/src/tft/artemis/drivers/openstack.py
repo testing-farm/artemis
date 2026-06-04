@@ -21,11 +21,12 @@ import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 from keystoneauth1.identity import v3
 from novaclient import client as nocl
+from returns.pipeline import is_successful
 from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
 from typing_extensions import override
 
-from .. import Failure, JSONType, safe_call
+from .. import Failure, JSONType, rewrap_from_gluetool, rewrap_to_gluetool, safe_call
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
 from ..environment import (
     Environment,
@@ -55,7 +56,11 @@ from . import (
     ProvisioningProgress,
     ProvisioningState,
     ReleasePoolResourcesState,
+    ResourceCreationOutcome,
+    ResourceCreationRequest,
+    ResourceManager,
     SerializedPoolResourcesIDs,
+    Tags,
     create_error_cause_extractor,
     create_tempfile,
     guest_log_updater,
@@ -147,6 +152,66 @@ class OpenStackPoolResourcesIDs(PoolResourcesIDs):
     instance_id: Optional[str] = None
 
 
+@dataclasses.dataclass
+class OpenStackInstance(Instance):
+    status: str
+    created_at: datetime.datetime
+
+    def __post_init__(self) -> None:
+        self.status = self.status.lower()
+
+    @override
+    @functools.cached_property
+    def is_pending(self) -> bool:
+        return self.status == 'build'
+
+    @override
+    @functools.cached_property
+    def is_ready(self) -> bool:
+        return self.status == 'active'
+
+    @override
+    @functools.cached_property
+    def is_error(self) -> bool:
+        return self.status == 'error'
+
+    @override
+    def to_pool_resource_ids(self) -> OpenStackPoolResourcesIDs:
+        return OpenStackPoolResourcesIDs(instance_id=self.id)
+
+    def serialize(self) -> dict[str, Any]:
+        serialized = super().serialize()
+
+        if self.created_at:
+            serialized['created_at'] = self.created_at.strftime(OPENSTACK_DATETIME_FORMAT)
+
+        return serialized
+
+    @classmethod
+    def unserialize(cls, serialized: dict[str, Any]) -> 'OpenStackInstance':
+        instance = super().unserialize(serialized)
+
+        if serialized['created_at']:
+            instance.created_at = datetime.datetime.strptime(serialized['created_at'], OPENSTACK_DATETIME_FORMAT)
+
+        return instance
+
+
+@dataclasses.dataclass
+class InstanceCreationRequest(ResourceCreationRequest):
+    flavor: Flavor
+    image: PoolImageInfo
+    network: str
+    tags: Optional[Tags] = None
+    post_install_script: Optional[str] = None
+
+
+@dataclasses.dataclass
+class InstanceCreationOutcome(ResourceCreationOutcome[OpenStackInstance]):
+    flavor: Flavor
+    image: PoolImageInfo
+
+
 class OpenStackDriver(
     FlavorBasedPoolDriver[OpenStackErrorCauses, PoolImageInfo, Flavor, novaclient.v2.flavors.Flavor, Instance]
 ):
@@ -160,6 +225,19 @@ class OpenStackDriver(
 
     def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str, pool_config: dict[str, Any]) -> None:
         super().__init__(logger, poolname, pool_config)
+
+        self.instance_resource_manager: ResourceManager[
+            OpenStackInstance, InstanceCreationRequest, InstanceCreationOutcome
+        ] = ResourceManager(
+            logger=logger,
+            pool=self,
+            resource_type='instance',
+            list_resources=self._query_backend_instances_by_guest_request,
+            resource_name=self._render_instance_name,
+            create_resource_request=self._create_instance_request,
+            create_resource=self._create_instance,
+            reuse_resource=self._reuse_instance,
+        )
 
         self._os_cmd_base = [
             'openstack',
@@ -198,6 +276,184 @@ class OpenStackDriver(
             return _Error(r_flavors.unwrap_error())
 
         return _Ok(r_flavors.unwrap())
+
+    def _query_backend_instances(
+        self, logger: gluetool.log.ContextAdapter
+    ) -> _Result[list[OpenStackInstance], Failure]:
+        r_nova = self._get_nova()
+
+        if r_nova.is_error:
+            return _Error(r_nova.unwrap_error())
+
+        try:
+            raw_instances = r_nova.unwrap().servers.list()
+
+            return _Ok(
+                [
+                    OpenStackInstance(
+                        id=raw_instance.id,
+                        name=raw_instance.name,
+                        status=raw_instance.status,
+                        created_at=raw_instance.created,
+                    )
+                    for raw_instance in cast(list[novaclient.v2.servers.Server], raw_instances)
+                ]
+            )
+
+        except Exception as exc:
+            return _Error(Failure.from_exc('failed to fetch list of instances', exc))
+
+    def _query_backend_instances_by_guest_request(
+        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
+    ) -> _Result[list[OpenStackInstance], Failure]:
+        return (
+            _Result.do(
+                [instance for instance in instances if instance.name.startswith(expected_name)]
+                for instances in self._query_backend_instances(logger)
+                for expected_name in self._render_instance_name(guest_request)
+            )
+            .map(lambda instances: sorted(instances, key=lambda x: x.created_at))
+            .alt(
+                lambda failure: Failure.from_failure(
+                    'failed to list instances for a guest request',
+                    failure,
+                    guestname=guest_request.guestname,
+                )
+            )
+        )
+
+    def _create_instance_request(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+    ) -> _Result[InstanceCreationRequest, Failure]:
+        r_image_flavor_pairs = self._collect_image_flavor_pairs(logger, session, guest_request)
+
+        if r_image_flavor_pairs.is_error:
+            return _Error(r_image_flavor_pairs.unwrap_error())
+
+        can_acquire, pairs = r_image_flavor_pairs.unwrap()
+
+        if not can_acquire.can_acquire:
+            assert can_acquire.reason is not None
+
+            return _Error(Failure(can_acquire.reason.message))
+
+        r_network = self._env_to_network(guest_request.environment)
+
+        if r_network.is_error:
+            return _Error(r_network.unwrap_error())
+
+        instance_request = InstanceCreationRequest(
+            image=pairs[0][0],
+            flavor=pairs[0][1],
+            network=r_network.unwrap(),
+        )
+
+        r_post_install_script = self.generate_post_install_script(guest_request)
+        if r_post_install_script.is_error:
+            return _Error(
+                Failure.from_failure('Could not generate post-install script', r_post_install_script.unwrap_error())
+            )
+
+        instance_request.post_install_script = r_post_install_script.unwrap()
+
+        r_tags = self.get_guest_tags(logger, session, guest_request)
+
+        if r_tags.is_error:
+            return _Error(r_tags.unwrap_error())
+
+        instance_request.tags = r_tags.unwrap()
+
+        return _Ok(instance_request)
+
+    def _create_instance(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        instance_name: str,
+        instance_request: InstanceCreationRequest,
+    ) -> _Result[InstanceCreationOutcome, Failure]:
+        @rewrap_from_gluetool
+        def _create(user_data_filename: Optional[str] = None) -> Result[Any, Failure]:
+            property_options: list[str] = (
+                functools.reduce(
+                    operator.iadd,
+                    (['--property', f'{tag}={value}'] for tag, value in instance_request.tags.items()),
+                    [],
+                )
+                if instance_request.tags
+                else []
+            )
+
+            user_data_options: list[str] = [] if not user_data_filename else ['--user-data', user_data_filename]
+
+            return self._run_os(
+                [
+                    'server',
+                    'create',
+                    '--flavor',
+                    instance_request.flavor.id,
+                    '--image',
+                    instance_request.image.id,
+                    '--network',
+                    instance_request.network,
+                    '--key-name',
+                    self.pool_config['master-key-name'],
+                    '--security-group',
+                    self.pool_config.get('security-group', 'default'),
+                    *property_options,
+                    *user_data_options,
+                    instance_name,
+                ],
+                commandname='os.server-create',
+            )
+
+        if instance_request.post_install_script:
+            with create_tempfile(file_contents=instance_request.post_install_script) as user_data_filename:
+                r_output = _create(user_data_filename)
+
+        else:
+            r_output = _create()
+
+        if not is_successful(r_output):
+            return _Error(r_output.failure())
+
+        output = r_output.unwrap()
+        if not output['id']:
+            return _Error(Failure('Instance id not found', output=output))
+
+        # There is no chance that the guest will be ready in this step
+        return _Ok(
+            InstanceCreationOutcome(
+                resource=OpenStackInstance(
+                    id=output['id'],
+                    name=instance_name,
+                    status=output['status'].lower(),
+                    created_at=datetime.datetime.now(),
+                ),
+                flavor=instance_request.flavor,
+                image=instance_request.image,
+            )
+        )
+
+    def _reuse_instance(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        instance_request: InstanceCreationRequest,
+        instance: OpenStackInstance,
+    ) -> _Result[InstanceCreationOutcome, Failure]:
+        return _Ok(
+            InstanceCreationOutcome(
+                resource=instance,
+                flavor=instance_request.flavor,
+                image=instance_request.image,
+            )
+        )
 
     def login_session(self, logger: gluetool.log.ContextAdapter) -> Result[keystoneauth1.session.Session, Failure]:
         # NOTE(ivasilev) Either project-domain-name or project-domain-id can be used for auth, so let's pass whatever's
@@ -293,7 +549,7 @@ class OpenStackDriver(
 
         return Ok(cli_output.stdout)
 
-    def _env_to_network(self, environment: Environment) -> Result[Any, Failure]:
+    def _env_to_network(self, environment: Environment) -> Result[str, Failure]:
         metrics = PoolResourcesMetrics(self.poolname)
         metrics.sync()
 
@@ -364,100 +620,33 @@ class OpenStackDriver(
             )
 
     @override
+    @rewrap_to_gluetool
     def acquire_guest(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
-    ) -> Result[ProvisioningProgress, Failure]:
-        r_image_flavor_pairs = self._collect_image_flavor_pairs(logger, session, guest_request)
-
-        if r_image_flavor_pairs.is_error:
-            return Error(r_image_flavor_pairs.unwrap_error())
-
-        can_acquire, pairs = r_image_flavor_pairs.unwrap()
-
-        if not can_acquire.can_acquire:
-            assert can_acquire.reason is not None
-
-            return Error(Failure(can_acquire.reason.message))
-
-        image, flavor = pairs[0]
-
-        self.log_acquisition_attempt(logger, session, guest_request, flavor=flavor, image=image)
-
-        r_network = self._env_to_network(guest_request.environment)
-        if r_network.is_error:
-            return Error(r_network.unwrap_error())
-
-        network = r_network.unwrap()
-
-        def _create(user_data_filename: Optional[str] = None) -> Result[Any, Failure]:
-            """The actual call to the openstack cli guest create command is happening here.
-            If user_data_filename is an empty string then the guest vm is booted with no user-data.
-            """
-
-            r_tags = self.get_guest_tags(logger, session, guest_request)
-
-            if r_tags.is_error:
-                return Error(r_tags.unwrap_error())
-
-            tags = r_tags.unwrap()
-
-            property_options: list[str] = functools.reduce(
-                operator.iadd, (['--property', f'{tag}={value}'] for tag, value in tags.items()), []
+    ) -> _Result[ProvisioningProgress, Failure]:
+        return (
+            self.instance_resource_manager.acquire(logger, guest_request, session)
+            .bind(
+                lambda instance_outcome: _Ok(
+                    ProvisioningProgress(
+                        state=ProvisioningState.PENDING,
+                        pool_data=OpenStackPoolData(
+                            instance_id=instance_outcome.resource.id,
+                        ),
+                        ssh_info=instance_outcome.image.ssh,
+                    )
+                )
             )
-
-            user_data_options: list[str] = [] if not user_data_filename else ['--user-data', user_data_filename]
-
-            os_options = [
-                'server',
-                'create',
-                '--flavor',
-                flavor.id,
-                '--image',
-                image.id,
-                '--network',
-                network,
-                '--key-name',
-                self.pool_config['master-key-name'],
-                '--security-group',
-                self.pool_config.get('security-group', 'default'),
-                *property_options,
-                *user_data_options,
-                tags['ArtemisGuestLabel'],
-            ]
-
-            return self._run_os(os_options, commandname='os.server-create')
-
-        r_post_install_script = self.generate_post_install_script(guest_request)
-        if r_post_install_script.is_error:
-            return Error(
-                Failure.from_failure('Could not generate post-install script', r_post_install_script.unwrap_error())
-            )
-
-        post_install_script = r_post_install_script.unwrap()
-        if post_install_script:
-            with create_tempfile(file_contents=post_install_script) as user_data_filename:
-                r_output = _create(user_data_filename)
-        else:
-            r_output = _create()
-
-        if r_output.is_error:
-            return Error(r_output.unwrap_error())
-
-        output = r_output.unwrap()
-        if not output['id']:
-            return Error(Failure('Instance id not found', output=output))
-        instance_id = output['id']
-
-        status = output['status'].lower()
-
-        logger.info(f'acquired instance status {instance_id}:{status}')
-
-        # There is no chance that the guest will be ready in this step
-        return Ok(
-            ProvisioningProgress(
-                state=ProvisioningState.PENDING,
-                pool_data=OpenStackPoolData(instance_id=instance_id),
-                ssh_info=image.ssh,
+            .lash(
+                lambda failure: _Error(failure)
+                if failure.recoverable
+                else _Ok(
+                    ProvisioningProgress(
+                        state=ProvisioningState.CANCEL,
+                        pool_data=guest_request.pool_data.mine(self, OpenStackPoolData),
+                        pool_failures=[failure],
+                    )
+                )
             )
         )
 
