@@ -1485,6 +1485,18 @@ def rewrap_to_gluetool(fn: Callable[P, _Result[T, U]]) -> Callable[P, Result[T, 
     return _rewrap_to_gluetool
 
 
+def rewrap_from_gluetool(fn: Callable[P, Result[T, U]]) -> Callable[P, _Result[T, U]]:
+    def _rewrap_from_gluetool(*args: P.args, **kwargs: P.kwargs) -> _Result[T, U]:
+        r = fn(*args, **kwargs)
+
+        if r.is_ok:
+            return _Ok(r.unwrap())
+
+        return _Error(r.unwrap_error())
+
+    return _rewrap_from_gluetool
+
+
 #: Custom type for JSON schema. We don't expect the schema structure though, all we do is loading it
 #: from a YAML file, then passing it to validators. The actual type could very well be ``Any``, but
 #: given how JSON schema looks like, it's pretty much going to be a mapping with string keys. So using
