@@ -1785,7 +1785,7 @@ class DB:
 
         if url.startswith('postgresql://'):
             self.engine_committed = _engine_execution_options(
-                isolation_level='READ COMITTED', autobegin=False, autocommit=False
+                isolation_level='READ COMMITTED', autobegin=False, autocommit=False
             )
 
             self.engine_repeatable = _engine_execution_options(
