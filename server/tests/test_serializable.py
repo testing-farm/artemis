@@ -74,7 +74,7 @@ def test_json() -> None:
 
     serialized = foo.serialize_to_json()
 
-    assert serialized == '{"bar": 79, "baz": []}'  # noqa: FS003  # not an f-string
+    assert serialized == '{"bar": 79, "baz": []}'  # not an f-string
 
     bar = Container.unserialize_from_json(serialized)
 

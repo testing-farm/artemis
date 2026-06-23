@@ -30,7 +30,8 @@ from typing import (
 import gluetool.log
 import gluetool.utils
 from gluetool.result import Error, Ok, Result
-from tmt.hardware import OPERATOR_SIGN_TO_OPERATOR, OPERATOR_TO_HANDLER, UNITS, Operator, OperatorHandlerType, Spec
+from tmt.hardware import UNITS, Operator
+from tmt.hardware.constraints import OPERATOR_SIGN_TO_OPERATOR, OPERATOR_TO_HANDLER, OperatorHandlerType, Spec
 from typing_extensions import Literal, Self, TypeAlias
 
 from . import Failure, SerializableContainer
@@ -1741,7 +1742,7 @@ def _parse_network(spec: Spec, network_index: int) -> ConstraintBase:
             ),
         ]
 
-        if original_constraint.operator in (Operator.EQ,):
+        if original_constraint.operator is Operator.EQ:
             expansion_group.constraints += [
                 Constraint.from_specification(
                     'network[-1].type',
