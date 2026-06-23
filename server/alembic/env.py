@@ -3,10 +3,13 @@
 
 import logging
 import os
+from collections.abc import Iterable
 from logging.config import fileConfig
-from typing import Any
+from typing import Optional, Union
 
 from alembic import context
+from alembic.migration import MigrationContext
+from alembic.operations import MigrationScript
 
 from tft.artemis import db, get_db, get_logger
 
@@ -62,12 +65,16 @@ def run_migrations_online() -> None:
     connectable = config.attributes.get('connectable', None) or get_db(get_logger()).engine
 
     # This trick should result in not generating a revision if there are no changes to schema.
-    def process_revision_directives(context: str, revision: str, directives: list[Any]) -> None:
+    def process_revision_directives(
+        context: MigrationContext,
+        revision: Union[str, Iterable[Optional[str]], Iterable[str]],
+        directives: list[MigrationScript],
+    ) -> None:
         assert config.cmd_opts
 
         if config.cmd_opts.autogenerate:
             script = directives[0]
-            if script.upgrade_ops.is_empty():
+            if script.upgrade_ops and script.upgrade_ops.is_empty():
                 directives[:] = []
                 logging.getLogger('alembic').info('No changes to schema detected')
 

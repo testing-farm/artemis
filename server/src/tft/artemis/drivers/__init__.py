@@ -38,6 +38,7 @@ import gluetool.utils
 import sqlalchemy
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
+from pint import Unit
 from returns.pipeline import is_successful
 from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
@@ -276,7 +277,7 @@ ConfigCapabilitiesType = TypedDict(
 )
 
 
-IP_ADDRESS_PATTERN = re.compile(r'((?:[0-9]{1,3}\.){3}[0-9]{1,3})')  # noqa: FS003
+IP_ADDRESS_PATTERN = re.compile(r'((?:[0-9]{1,3}\.){3}[0-9]{1,3})')
 
 
 KNOB_INSTANCE_NAME_TEMPLATE: Knob[str] = Knob(
@@ -946,14 +947,14 @@ class PoolResourcesIDs(SerializableContainer):
 
 
 def _spec_to_unit(
-    value: Union[str, int], error_msg: str, error_details: dict[str, Any], default_units: SizeType = UNITS.bytes
+    value: Union[str, int], error_msg: str, error_details: dict[str, Any], default_units: Unit = UNITS.bytes
 ) -> Result[Optional[SizeType], Failure]:
     r_value = safe_call(UNITS, str(value))
     if r_value.is_error:
         return Error(Failure.from_failure(error_msg, r_value.unwrap_error(), details=error_details))
     raw_value = r_value.unwrap()
 
-    res = UNITS.Quantity(raw_value, default_units) if isinstance(raw_value, int) else raw_value
+    res = (raw_value * default_units) if (isinstance(raw_value, int) or raw_value.unitless) else raw_value
 
     return Ok(res)
 
@@ -1568,7 +1569,7 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
         self._pool_resources_metrics: Optional[PoolResourcesMetrics] = None
         self._pool_costs_metrics: Optional[PoolCostsMetrics] = None
 
-        self.image_info_cache_key = self.POOL_IMAGE_INFO_CACHE_KEY.format(self.poolname)  # noqa: FS002
+        self.image_info_cache_key = self.POOL_IMAGE_INFO_CACHE_KEY.format(self.poolname)
 
     _drivers_registry: ClassVar[dict[str, type['PoolDriver[Any, Any]']]] = {}
 
@@ -2648,7 +2649,7 @@ class FlavorBasedPoolDriver(
     def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str, pool_config: dict[str, Any]) -> None:
         super().__init__(logger, poolname, pool_config)
 
-        self.flavor_info_cache_key = self.POOL_FLAVOR_INFO_CACHE_KEY.format(self.poolname)  # noqa: FS002
+        self.flavor_info_cache_key = self.POOL_FLAVOR_INFO_CACHE_KEY.format(self.poolname)
 
     @abc.abstractmethod
     def _query_backend_flavors(self, logger: gluetool.log.ContextAdapter) -> _Result[list[BackendFlavorT], Failure]:

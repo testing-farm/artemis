@@ -25,6 +25,7 @@ from typing import (
     Callable,
     NoReturn,
     Optional,
+    TypeAlias,
     TypeVar,
     Union,
     cast,
@@ -33,6 +34,7 @@ from typing import (
 import dramatiq
 import dramatiq.brokers.rabbitmq
 import dramatiq.brokers.stub
+import dramatiq.message
 import dramatiq.middleware.age_limit
 import dramatiq.middleware.callbacks
 import dramatiq.middleware.current_message
@@ -138,6 +140,8 @@ S = TypeVar('S', bound='SerializableContainer')
 P = ParamSpec('P')
 
 FailureDetailsType = dict[str, Any]
+
+Message: TypeAlias = dramatiq.message.Message[None]
 
 #: Represents a data structure created from a JSON input. The main purpose of this type to allow tracking of such data
 #: instead of very open and easy to misunderstand ``Any``. A particular name is easier to follow in the code.
@@ -719,7 +723,9 @@ _DEFAULT_FAILURE_LOG_LABEL = 'failure'
 
 
 def _sentry_stringify(
-    v: Union[str, sentry_sdk.utils.AnnotatedValue, list[str], list[Union[sentry_sdk.utils.AnnotatedValue, str]], None],
+    v: Union[
+        str, sentry_sdk._types.AnnotatedValue, list[str], list[Union[sentry_sdk._types.AnnotatedValue, str]], None
+    ],
 ) -> Iterator[str]:
     """
     Convert weird string-ish objects into strings we can use as part of serialized frames in Sentry.
@@ -733,12 +739,12 @@ def _sentry_stringify(
     elif isinstance(v, str):
         yield v
 
-    elif isinstance(v, sentry_sdk.utils.AnnotatedValue):
+    elif isinstance(v, sentry_sdk._types.AnnotatedValue):
         yield str(v.value)
 
     elif isinstance(v, list):
         for s in v:
-            yield (s.value or '') if isinstance(s, sentry_sdk.utils.AnnotatedValue) else s
+            yield (s.value or '') if isinstance(s, sentry_sdk._types.AnnotatedValue) else s
 
     else:
         yield str(v)
@@ -835,7 +841,7 @@ class Failure:
     def from_exc(
         cls,
         message: str,
-        exc: Exception,
+        exc: BaseException,
         *,
         caused_by: Optional['Failure'] = None,
         sentry: Optional[bool] = True,
@@ -1194,8 +1200,7 @@ class Failure:
 
         if self.exc_info:
             details['traceback'] = '\n'.join(
-                line.rstrip()
-                for line in stackprinter.format(self.exc_info, line_wrap=False).splitlines()  # noqa: FS002
+                line.rstrip() for line in stackprinter.format(self.exc_info, line_wrap=False).splitlines()
             )
 
         if 'scrubbed_command' in details:
@@ -1233,7 +1238,7 @@ class Failure:
         return f'<Failure: message="{self.message}">'
 
     def log(self, log_fn: gluetool.log.LoggingFunctionType, label: str = _DEFAULT_FAILURE_LOG_LABEL) -> None:
-        exc_info = self.exc_info if self.exc_info else (None, None, None)
+        exc_info = self.exc_info or (None, None, None)
 
         log_fn(self._printable(label=label), exc_info=exc_info)
 
@@ -1343,7 +1348,7 @@ def get_broker_middleware(logger: gluetool.log.ContextAdapter) -> list[dramatiq.
         dramatiq.middleware.time_limit.TimeLimit(),
         dramatiq.middleware.shutdown.ShutdownNotifications(notify_shutdown=True),
         dramatiq.middleware.callbacks.Callbacks(),
-        dramatiq.middleware.GroupCallbacks(dramatiq.rate_limits.backends.stub.StubBackend()),
+        dramatiq.middleware.GroupCallbacks(dramatiq.rate_limits.backends.stub.StubBackend()),  # type: ignore[no-untyped-call]
         dramatiq.middleware.pipelines.Pipelines(),
         artemis_middleware.CurrentMessage(),
         artemis_middleware.Prometheus(),

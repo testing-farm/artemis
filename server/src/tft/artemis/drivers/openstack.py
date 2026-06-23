@@ -640,13 +640,15 @@ class OpenStackDriver(
                 )
             )
             .lash(
-                lambda failure: _Error(failure)
-                if failure.recoverable
-                else _Ok(
-                    ProvisioningProgress(
-                        state=ProvisioningState.CANCEL,
-                        pool_data=guest_request.pool_data.mine(self, OpenStackPoolData),
-                        pool_failures=[failure],
+                lambda failure: (
+                    _Error(failure)
+                    if failure.recoverable
+                    else _Ok(
+                        ProvisioningProgress(
+                            state=ProvisioningState.CANCEL,
+                            pool_data=guest_request.pool_data.mine(self, OpenStackPoolData),
+                            pool_failures=[failure],
+                        )
                     )
                 )
             )

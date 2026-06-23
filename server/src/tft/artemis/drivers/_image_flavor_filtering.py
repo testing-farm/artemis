@@ -212,8 +212,9 @@ def filter_flavors_image_compatible(
         FilterRuling.from_flavors(
             image,
             flavors,
-            matcher=lambda flavor: not flavor.compatible.distro
-            or bool(image_distros.intersection(flavor.compatible.distro)),
+            matcher=lambda flavor: (
+                not flavor.compatible.distro or bool(image_distros.intersection(flavor.compatible.distro))
+            ),
         )
     )
 

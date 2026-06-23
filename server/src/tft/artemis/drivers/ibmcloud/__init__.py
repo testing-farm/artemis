@@ -415,13 +415,15 @@ class IBMCloudDriver(
                 )
             )
             .lash(
-                lambda failure: _Error(failure)
-                if failure.recoverable
-                else _Ok(
-                    ProvisioningProgress(
-                        state=ProvisioningState.CANCEL,
-                        pool_data=IBMCloudPoolData(),
-                        pool_failures=[failure],
+                lambda failure: (
+                    _Error(failure)
+                    if failure.recoverable
+                    else _Ok(
+                        ProvisioningProgress(
+                            state=ProvisioningState.CANCEL,
+                            pool_data=IBMCloudPoolData(),
+                            pool_failures=[failure],
+                        )
                     )
                 )
             )

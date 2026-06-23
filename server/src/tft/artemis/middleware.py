@@ -30,7 +30,7 @@ DEFAULT_MAX_RETRIES = 20
 DEFAULT_MAX_TASKS_PER_WORKER_PROCESS = 100
 
 
-def _dump_message(message: dramatiq.message.Message) -> dict[str, Any]:
+def _dump_message(message: dramatiq.MessageProxy) -> dict[str, Any]:
     # message.asdict() is nice, but returns ordered dict. we don't care about
     # order, and OrderedDict would need extra care when serializing anywhere,
     # so convert it to plain dict.
@@ -39,7 +39,7 @@ def _dump_message(message: dramatiq.message.Message) -> dict[str, Any]:
 
 
 def _get_message_limit(
-    message: dramatiq.broker.MessageProxy,
+    message: dramatiq.MessageProxy,
     key: str,
     default: int,
     actor: Optional['Actor'] = None,
@@ -58,37 +58,34 @@ def _get_message_limit(
     return default
 
 
-def _message_max_retries(message: dramatiq.broker.MessageProxy, actor: Optional['Actor'] = None) -> int:
+def _message_max_retries(message: dramatiq.MessageProxy, actor: Optional['Actor'] = None) -> int:
     return _get_message_limit(message, 'max_retries', DEFAULT_MAX_RETRIES, actor=actor)
 
 
-def _message_min_backoff(message: dramatiq.broker.MessageProxy, actor: Optional['Actor'] = None) -> int:
+def _message_min_backoff(message: dramatiq.MessageProxy, actor: Optional['Actor'] = None) -> int:
     return _get_message_limit(message, 'min_backoff', dramatiq.middleware.retries.DEFAULT_MIN_BACKOFF, actor=actor)
 
 
-def _message_max_backoff(message: dramatiq.broker.MessageProxy, actor: Optional['Actor'] = None) -> int:
+def _message_max_backoff(message: dramatiq.MessageProxy, actor: Optional['Actor'] = None) -> int:
     return _get_message_limit(message, 'max_backoff', dramatiq.middleware.retries.DEFAULT_MAX_BACKOFF, actor=actor)
 
 
-def _message_backoff(message: dramatiq.broker.MessageProxy, retries: int, actor: Optional['Actor'] = None) -> int:
-    return cast(
-        int,
-        compute_backoff(
-            retries,
-            factor=_message_min_backoff(message, actor=actor),
-            max_backoff=_message_max_backoff(message, actor=actor),
-        )[1],
-    )
+def _message_backoff(message: dramatiq.MessageProxy, retries: int, actor: Optional['Actor'] = None) -> int:
+    return compute_backoff(
+        retries,
+        factor=_message_min_backoff(message, actor=actor),
+        max_backoff=_message_max_backoff(message, actor=actor),
+    )[1]
 
 
 def _message_tools(
-    broker: dramatiq.broker.Broker, message: dramatiq.message.Message
+    broker: dramatiq.broker.Broker, message: dramatiq.MessageProxy
 ) -> tuple[gluetool.log.ContextAdapter, 'TaskCall', dict[str, Any]]:
     from . import get_logger
     from .tasks import TaskCall
 
     logger = get_logger()
-    task_call = TaskCall.from_message(broker, message)
+    task_call = TaskCall.from_message_proxy(broker, message)
 
     failure_details: dict[str, Any] = {'task_call': task_call, 'broker_message': _dump_message(message)}
 
@@ -98,7 +95,7 @@ def _message_tools(
 def _retry_message(
     logger: gluetool.log.ContextAdapter,
     broker: dramatiq.broker.Broker,
-    message: dramatiq.message.Message,
+    message: dramatiq.MessageProxy,
     task_call: 'TaskCall',
     exc_info: Optional['ExceptionInfoType'] = None,
 ) -> bool:
@@ -121,7 +118,7 @@ def _retry_message(
 
     retry_at = datetime.datetime.utcnow() + datetime.timedelta(milliseconds=backoff)
 
-    broker.enqueue(message, delay=backoff)
+    broker.enqueue(message._message, delay=backoff)
 
     log_dict_yaml(
         logger.info,
@@ -136,7 +133,7 @@ def _retry_message(
 
 
 def _fail_message(
-    logger: gluetool.log.ContextAdapter, message: dramatiq.message.Message, error_message: str, **details: Any
+    logger: gluetool.log.ContextAdapter, message: dramatiq.MessageProxy, error_message: str, **details: Any
 ) -> None:
     """
     Mark the given message as failed.
@@ -151,9 +148,7 @@ def _fail_message(
     message.fail()
 
 
-def _handle_tails(
-    logger: gluetool.log.ContextAdapter, message: dramatiq.message.Message, task_call: 'TaskCall'
-) -> bool:
+def _handle_tails(logger: gluetool.log.ContextAdapter, message: dramatiq.MessageProxy, task_call: 'TaskCall') -> bool:
     """
     Handle the "tails": when we run out of retries on a task, we cannot just let it fail, but we must take
     of whatever resources it might have allocated.
@@ -230,7 +225,7 @@ def resolve_retry_message(
     return _retry_message(logger, broker, task_call.broker_message, task_call)
 
 
-class Retries(dramatiq.middleware.retries.Retries):  # type: ignore[misc]  # cannot subclass 'Retries'
+class Retries(dramatiq.middleware.retries.Retries):
     @property
     def actor_options(self) -> set[str]:
         return {
@@ -247,7 +242,7 @@ class Retries(dramatiq.middleware.retries.Retries):  # type: ignore[misc]  # can
     def after_process_message(
         self,
         broker: dramatiq.broker.Broker,
-        message: dramatiq.message.Message,
+        message: dramatiq.MessageProxy,
         *,
         # This is on purpose, our tasks never return anything useful.
         result: None = None,
@@ -301,7 +296,7 @@ def get_metric_note(note: str) -> Optional[str]:
     return options.get(MESSAGE_NOTE_OPTION_KEY, {}).get(note)
 
 
-class Prometheus(dramatiq.middleware.Middleware):  # type: ignore[misc]  # cannot subclass 'Middleware'
+class Prometheus(dramatiq.middleware.Middleware):
     def __init__(self) -> None:
         super().__init__()
 
@@ -312,25 +307,25 @@ class Prometheus(dramatiq.middleware.Middleware):  # type: ignore[misc]  # canno
     def actor_options(self) -> set[str]:
         return {MESSAGE_NOTE_OPTION_KEY}
 
-    def after_nack(self, broker: dramatiq.broker.Broker, message: dramatiq.message.Message) -> None:
+    def after_nack(self, broker: dramatiq.broker.Broker, message: dramatiq.MessageProxy) -> None:
         from .metrics import TaskMetrics
 
         TaskMetrics.inc_overall_rejected_messages(message.queue_name, message.actor_name)
 
-    def after_enqueue(self, broker: dramatiq.broker.Broker, message: dramatiq.message.Message, delay: int) -> None:
+    def after_enqueue(self, broker: dramatiq.broker.Broker, message: dramatiq.Message[None], delay: int) -> None:
         from .metrics import TaskMetrics
 
         if 'retries' in message.options:
             TaskMetrics.inc_overall_retried_messages(message.queue_name, message.actor_name)
 
-    def before_delay_message(self, broker: dramatiq.broker.Broker, message: dramatiq.message.Message) -> None:
+    def before_delay_message(self, broker: dramatiq.broker.Broker, message: dramatiq.MessageProxy) -> None:
         from .metrics import TaskMetrics
 
         self._delayed_messages.add(message.message_id)
 
         TaskMetrics.inc_current_delayed_messages(message.queue_name, message.actor_name)
 
-    def before_process_message(self, broker: dramatiq.broker.Broker, message: dramatiq.message.Message) -> None:
+    def before_process_message(self, broker: dramatiq.broker.Broker, message: dramatiq.MessageProxy) -> None:
         from .metrics import TaskMetrics
 
         labels = (message.queue_name, message.actor_name)
@@ -347,7 +342,7 @@ class Prometheus(dramatiq.middleware.Middleware):  # type: ignore[misc]  # canno
     def _update_after_message(
         self,
         broker: dramatiq.broker.Broker,
-        message: dramatiq.message.Message,
+        message: dramatiq.MessageProxy,
         *,
         exception: Optional[BaseException] = None,
         skipped: bool = False,
@@ -357,7 +352,7 @@ class Prometheus(dramatiq.middleware.Middleware):  # type: ignore[misc]  # canno
 
         labels = (message.queue_name, message.actor_name)
 
-        task_call = TaskCall.from_message(broker, message)
+        task_call = TaskCall.from_message_proxy(broker, message)
 
         # Extract the poolname. `None` is a good starting value, but it turns out that most of the tasks
         # relate to a particular pool in one way or another. Some tasks are given the poolname as a parameter,
@@ -396,7 +391,7 @@ class Prometheus(dramatiq.middleware.Middleware):  # type: ignore[misc]  # canno
     def after_process_message(
         self,
         broker: dramatiq.broker.Broker,
-        message: dramatiq.message.Message,
+        message: dramatiq.MessageProxy,
         *,
         # This is on purpose, our tasks never return anything useful.
         result: None = None,
@@ -404,11 +399,11 @@ class Prometheus(dramatiq.middleware.Middleware):  # type: ignore[misc]  # canno
     ) -> None:
         self._update_after_message(broker, message, exception=exception)
 
-    def after_skip_message(self, broker: dramatiq.broker.Broker, message: dramatiq.message.Message) -> None:
+    def after_skip_message(self, broker: dramatiq.broker.Broker, message: dramatiq.MessageProxy) -> None:
         self._update_after_message(broker, message, skipped=True)
 
 
-class WorkerMetrics(dramatiq.middleware.Middleware):  # type: ignore[misc]  # cannot subclass 'Middleware'
+class WorkerMetrics(dramatiq.middleware.Middleware):
     """
     Dramatiq broker middleware spawning a thread to keep refreshing worker metrics.
     """
@@ -421,7 +416,7 @@ class WorkerMetrics(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
 
         self._refresher: Optional[threading.Thread] = None
 
-    def after_worker_boot(self, signal: str, worker: dramatiq.worker.Worker) -> None:
+    def after_worker_boot(self, broker: dramatiq.broker.Broker, worker: dramatiq.worker.Worker) -> None:
         from . import get_logger
         from .metrics import WorkerMetrics as _WorkerMetrics
 
@@ -436,8 +431,8 @@ class WorkerMetrics(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
         )
 
 
-class WorkerTraffic(dramatiq.middleware.Middleware):  # type: ignore[misc]  # cannot subclass 'Middleware'
-    KEY_WORKER_TASK = 'tasks.workers.traffic.{worker}.{pid}.{tid}'  # noqa: FS003
+class WorkerTraffic(dramatiq.middleware.Middleware):
+    KEY_WORKER_TASK = 'tasks.workers.traffic.{worker}.{pid}.{tid}'
     KEY_WORKER_TASK_PATTERN = 'tasks.workers.traffic.*'
 
     def __init__(self, logger: gluetool.log.ContextAdapter, cache: redis.Redis, worker_name: str) -> None:
@@ -450,17 +445,15 @@ class WorkerTraffic(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
 
     @property
     def current_key(self) -> str:
-        return self.KEY_WORKER_TASK.format(  # noqa: FS002
-            worker=self.worker_name, pid=self.worker_pid, tid=threading.get_ident()
-        )
+        return self.KEY_WORKER_TASK.format(worker=self.worker_name, pid=self.worker_pid, tid=threading.get_ident())
 
-    def before_process_message(self, broker: dramatiq.broker.Broker, message: dramatiq.message.Message) -> None:
+    def before_process_message(self, broker: dramatiq.broker.Broker, message: dramatiq.MessageProxy) -> None:
         from .cache import set_cache_value
         from .knobs import KNOB_WORKER_TRAFFIC_METRICS_TTL
         from .metrics import WorkerTrafficTask
         from .tasks import TaskCall
 
-        task_call = TaskCall.from_message(broker, message)
+        task_call = TaskCall.from_message_proxy(broker, message)
 
         tid = threading.get_ident()
 
@@ -473,8 +466,8 @@ class WorkerTraffic(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
                 worker_pid=self.worker_pid,
                 worker_tid=tid,
                 ctime=datetime.datetime.utcnow(),
-                queue=cast(str, message.queue_name),
-                actor=cast(str, message.actor_name),
+                queue=message.queue_name,
+                actor=message.actor_name,
                 args=task_call.named_args,
             )
             .serialize_to_json()
@@ -485,7 +478,7 @@ class WorkerTraffic(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
     def after_process_message(
         self,
         broker: dramatiq.broker.Broker,
-        message: dramatiq.message.Message,
+        message: dramatiq.MessageProxy,
         *,
         # This is on purpose, our tasks never return anything useful.
         result: None = None,
@@ -522,7 +515,7 @@ class WorkerTraffic(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
     after_skip_message = after_process_message
 
 
-class CurrentMessage(dramatiq.middleware.Middleware):  # type: ignore[misc]  # cannot subclass 'Middleware'
+class CurrentMessage(dramatiq.middleware.Middleware):
     """
     Middleware that exposes the current message via a context variable.
 
@@ -530,7 +523,7 @@ class CurrentMessage(dramatiq.middleware.Middleware):  # type: ignore[misc]  # c
     but modifies our context variables instead of managing its own storage.
     """
 
-    def before_process_message(self, broker: dramatiq.broker.Broker, message: dramatiq.message.Message) -> None:
+    def before_process_message(self, broker: dramatiq.broker.Broker, message: dramatiq.MessageProxy) -> None:
         from .context import CURRENT_MESSAGE
 
         CURRENT_MESSAGE.set(message)
@@ -538,7 +531,7 @@ class CurrentMessage(dramatiq.middleware.Middleware):  # type: ignore[misc]  # c
     def after_process_message(
         self,
         broker: dramatiq.broker.Broker,
-        message: dramatiq.message.Message,
+        message: dramatiq.MessageProxy,
         *,
         # This is on purpose, our tasks never return anything useful.
         result: None = None,
@@ -551,7 +544,7 @@ class CurrentMessage(dramatiq.middleware.Middleware):  # type: ignore[misc]  # c
     after_skip_message = after_process_message
 
 
-class SingletonTask(dramatiq.middleware.Middleware):  # type: ignore[misc]  # cannot subclass 'Middleware'
+class SingletonTask(dramatiq.middleware.Middleware):
     def __init__(self, cache: redis.Redis) -> None:
         super().__init__()
 
@@ -572,7 +565,7 @@ class SingletonTask(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
 
         return f'{lockname}.{":".join(str(arg) for arg in task_call.args)}'
 
-    def before_process_message(self, broker: dramatiq.broker.Broker, message: dramatiq.message.Message) -> None:
+    def before_process_message(self, broker: dramatiq.broker.Broker, message: dramatiq.MessageProxy) -> None:
         from . import Failure
         from .knobs import KNOB_LOGGING_SINGLETON_LOCKS
 
@@ -625,7 +618,7 @@ class SingletonTask(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
     def after_process_message(
         self,
         broker: dramatiq.broker.Broker,
-        message: dramatiq.message.Message,
+        message: dramatiq.MessageProxy,
         *,
         # This is on purpose, our tasks never return anything useful.
         result: None = None,
@@ -663,7 +656,7 @@ class SingletonTask(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
         logger.info('released singleton lock')
 
 
-class WorkerMaxTasksPerProcess(dramatiq.middleware.Middleware):  # type: ignore[misc]  # cannot subclass 'Middleware'
+class WorkerMaxTasksPerProcess(dramatiq.middleware.Middleware):
     def __init__(self, max_tasks: int, logger: gluetool.log.ContextAdapter, worker_name: str) -> None:
         super().__init__()
 
@@ -677,7 +670,7 @@ class WorkerMaxTasksPerProcess(dramatiq.middleware.Middleware):  # type: ignore[
     def after_process_message(
         self,
         broker: dramatiq.broker.Broker,
-        message: dramatiq.message.Message,
+        message: dramatiq.MessageProxy,
         *,
         # This is on purpose, our tasks never return anything useful.
         result: None = None,
@@ -704,7 +697,7 @@ class WorkerMaxTasksPerProcess(dramatiq.middleware.Middleware):  # type: ignore[
     after_skip_message = after_process_message
 
 
-class AgeLimit(dramatiq.middleware.age_limit.AgeLimit):  # type: ignore[misc]  # cannot subclass 'Middleware'
+class AgeLimit(dramatiq.middleware.age_limit.AgeLimit):
     """
     Drop messages that spend too much time in queue.
 
@@ -712,12 +705,12 @@ class AgeLimit(dramatiq.middleware.age_limit.AgeLimit):  # type: ignore[misc]  #
     including Sentry integration.
     """
 
-    def before_process_message(self, broker: dramatiq.broker.Broker, message: dramatiq.message.Message) -> None:
+    def before_process_message(self, broker: dramatiq.broker.Broker, message: dramatiq.MessageProxy) -> None:
         logger, task_call, _ = _message_tools(broker, message)
 
         delta = current_millis() - message.message_timestamp
 
-        max_age = message.options.get('max_age') or task_call.actor.options.get('max_age', self.max_age)
+        max_age: Optional[int] = message.options.get('max_age') or task_call.actor.options.get('max_age', self.max_age)
 
         logger.debug(f'age {delta / 1000} seconds')
 

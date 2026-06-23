@@ -25,6 +25,7 @@ import gluetool.utils
 import py.path  # type: ignore[import-untyped]
 import pytest
 import redis
+import redis.maint_notifications
 import redislite
 import sqlalchemy.engine.interfaces
 import sqlalchemy.engine.url
@@ -308,7 +309,11 @@ def fixture_redis(
     redis_db_file = tmpdir.join('redis.db')
 
     def get_cache(logger: gluetool.log.ContextAdapter) -> redislite.Redis:
-        return redislite.Redis(dbfilename=str(redis_db_file))
+        return redislite.Redis(
+            str(redis_db_file),
+            # https://github.com/redis/redis-py/issues/4086
+            protocol=2,
+        )
 
     mock_contextvar = contextvars.ContextVar('CACHE', default=get_cache(logger))  # noqa: B039
 
@@ -368,7 +373,7 @@ def fixture_cache(logger: gluetool.log.ContextAdapter, redis: redis.Redis) -> re
 
 @pytest.fixture(name='current_message')
 def fixture_current_message() -> Generator[dramatiq.MessageProxy, None, None]:
-    message = dramatiq.Message(
+    message: dramatiq.Message[None] = dramatiq.Message(
         queue_name='dummy-queue-name',
         actor_name='dummy-actor-name',
         args=(MagicMock(name='mock_actor_arg1'), MagicMock(name='mock_actor_arg2')),

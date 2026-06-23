@@ -884,7 +884,7 @@ KNOB_TEMPLATE_BLOCK_DELIMITERS: Knob[str] = Knob(
     has_db=False,
     envvar='ARTEMIS_TEMPLATE_BLOCK_DELIMITERS',
     cast_from_str=str,
-    default='{%,%}',  # noqa: FS003
+    default='{%,%}',
 )
 
 KNOB_WORKER_MAX_TASKS_PER_PROCESS: Knob[int] = Knob(

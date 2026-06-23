@@ -96,8 +96,10 @@ def extract_knobs(options: argparse.Namespace) -> list[Knob]:
 
 
 def render_page(options: argparse.Namespace, knobs: Knob) -> str:
+    environment = jinja2.Environment()
+
     with open(options.template_file) as f:
-        template = jinja2.Template(f.read())
+        template = environment.from_string(f.read())
 
     return template.render(KNOBS=knobs)
 

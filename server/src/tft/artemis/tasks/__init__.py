@@ -33,6 +33,7 @@ from typing_extensions import Protocol, Self, TypedDict
 
 from .. import (
     Failure,
+    Message,
     RSSWatcher,
     Sentry,
     SerializableContainer,
@@ -155,7 +156,7 @@ def get_root_db(logger: Optional[gluetool.log.ContextAdapter] = None) -> DB:
 
 
 # Initialize the broker instance - this call takes core of correct connection between broker and queue manager.
-BROKER = get_broker(_ROOT_LOGGER, application_name=f'worker: {get_worker_name()}')
+BROKER: dramatiq.Broker = get_broker(_ROOT_LOGGER, application_name=f'worker: {get_worker_name()}')
 
 
 class TaskPriority(enum.Enum):
@@ -403,6 +404,9 @@ class DoerType(Protocol):
 
 # Task actor type.
 class ActorOptions(TypedDict):
+    # Age limit middleware
+    max_age: Optional[int]
+
     # Retries middleware
     max_retries: Optional[int]
     min_backoff: Optional[int]
@@ -440,7 +444,7 @@ class Actor(Protocol):
         **options: Any,
     ) -> None: ...
 
-    def message(self, *args: ActorArgumentType) -> dramatiq.Message: ...
+    def message(self, *args: ActorArgumentType) -> Message: ...
 
     def message_with_options(
         self,
@@ -449,7 +453,7 @@ class Actor(Protocol):
         delay: Optional[int] = None,
         pipe_ignore: bool = False,
         **options: Any,
-    ) -> dramatiq.Message: ...
+    ) -> Message: ...
 
 
 @dataclasses.dataclass(repr=False)
@@ -469,7 +473,7 @@ class TaskCall(SerializableContainer):
     delay: Optional[int] = None
 
     # For tracking messages through logs
-    broker_message: Optional[dramatiq.Message] = None
+    broker_message: Optional[dramatiq.MessageProxy] = None
     task_request_id: Optional[int] = None
     task_sequence_request_id: Optional[int] = None
 
@@ -555,7 +559,7 @@ class TaskCall(SerializableContainer):
         if self.broker_message is None:
             return None
 
-        return cast(int, dramatiq.common.current_millis() - self.broker_message.message_timestamp) / 1000.0
+        return (dramatiq.common.current_millis() - self.broker_message.message_timestamp) / 1000.0
 
     @classmethod
     def _construct(
@@ -563,7 +567,7 @@ class TaskCall(SerializableContainer):
         actor: Actor,
         *args: ActorArgumentType,
         delay: Optional[int] = None,
-        broker_message: Optional[dramatiq.Message] = None,
+        broker_message_proxy: Optional[dramatiq.MessageProxy] = None,
         task_request_id: Optional[int] = None,
         task_sequence_request_id: Optional[int] = None,
     ) -> 'TaskCall':
@@ -577,7 +581,7 @@ class TaskCall(SerializableContainer):
             args=args,
             arg_names=arg_names,
             delay=delay,
-            broker_message=broker_message,
+            broker_message=broker_message_proxy,
             task_request_id=task_request_id,
             task_sequence_request_id=task_sequence_request_id,
         )
@@ -586,7 +590,7 @@ class TaskCall(SerializableContainer):
     def from_message(
         cls,
         broker: dramatiq.broker.Broker,
-        broker_message: dramatiq.Message,
+        broker_message: dramatiq.Message[None],
         delay: Optional[int] = None,
         task_request_id: Optional[int] = None,
         task_sequence_request_id: Optional[int] = None,
@@ -595,7 +599,25 @@ class TaskCall(SerializableContainer):
             cast('Actor', broker.get_actor(broker_message.actor_name)),
             *broker_message.args,
             delay=delay,
-            broker_message=broker_message,
+            broker_message_proxy=dramatiq.MessageProxy(broker_message),
+            task_request_id=task_request_id,
+            task_sequence_request_id=task_sequence_request_id,
+        )
+
+    @classmethod
+    def from_message_proxy(
+        cls,
+        broker: dramatiq.broker.Broker,
+        broker_message_proxy: dramatiq.MessageProxy,
+        delay: Optional[int] = None,
+        task_request_id: Optional[int] = None,
+        task_sequence_request_id: Optional[int] = None,
+    ) -> 'TaskCall':
+        return cls._construct(
+            cast('Actor', broker.get_actor(broker_message_proxy.actor_name)),
+            *broker_message_proxy.args,
+            delay=delay,
+            broker_message_proxy=broker_message_proxy,
             task_request_id=task_request_id,
             task_sequence_request_id=task_sequence_request_id,
         )
@@ -669,7 +691,7 @@ class FailureHandlerType(Protocol):
 
 
 class MessageLogger(gluetool.log.ContextAdapter):
-    def __init__(self, logger: gluetool.log.ContextAdapter, message: dramatiq.Message) -> None:
+    def __init__(self, logger: gluetool.log.ContextAdapter, message: dramatiq.MessageProxy) -> None:
         super().__init__(logger, {'ctx_message_id': (5, message.message_id)})
 
     @property
@@ -679,11 +701,10 @@ class MessageLogger(gluetool.log.ContextAdapter):
 
 class TaskLogger(gluetool.log.ContextAdapter):
     def __init__(
-        self, logger: gluetool.log.ContextAdapter, task_name: str, message: Optional[dramatiq.Message] = None
+        self, logger: gluetool.log.ContextAdapter, task_name: str, message: Optional[dramatiq.MessageProxy] = None
     ) -> None:
         if not message:
-            message_proxy = CURRENT_MESSAGE.get(None)
-            message = message_proxy._message if message_proxy is not None else None
+            message = CURRENT_MESSAGE.get(None)
 
         if message:
             logger = MessageLogger(logger, message)
@@ -817,7 +838,7 @@ def resolve_actor(actorname: str) -> Result[Actor, Failure]:
     from . import worker_ping  # noqa: F401, isort:skip
 
     try:
-        actor = BROKER.get_actor(actorname)
+        actor = cast(Actor, BROKER.get_actor(actorname))
 
     except dramatiq.errors.ActorNotFound as exc:
         return Error(Failure.from_exc('failed to find task', exc))
@@ -899,7 +920,7 @@ class task:  # noqa: N801
             actor_name_uppersized, periodic=self.periodic, priority=self.priority, queue_name=self.queue_name
         )
 
-        dramatiq_actor = dramatiq.actor(
+        dramatiq_actor = dramatiq.actor(  # type: ignore[call-overload]
             fn,
             tail_handler=self.tail_handler,
             singleton=self.singleton,
@@ -1103,7 +1124,7 @@ def _task_core(
 
     logger.begin(actor_args=doer_args)
 
-    logger.info(f'[{os.getpid()}] {rss.format()}')  # noqa: FS002
+    logger.info(f'[{os.getpid()}] {rss.format()}')
 
     # TODO: implement a proper decorator, or merge this into @task decorator - but @task seems to be flawed,
     # which requires a fix, therefore merge this into @task once it gets fixed.
@@ -1211,7 +1232,7 @@ def _task_core(
             logger.warning('message processing encountered error and requests waiver')
 
         rss.snapshot()
-        logger.info(f'[{os.getpid()}] {rss.format()}')  # noqa: FS002
+        logger.info(f'[{os.getpid()}] {rss.format()}')
 
         logger.finished()
 
@@ -1221,7 +1242,7 @@ def _task_core(
         return
 
     rss.snapshot()
-    logger.info(f'[{os.getpid()}] {rss.format()}')  # noqa: FS002
+    logger.info(f'[{os.getpid()}] {rss.format()}')
 
     # To avoid chain a of exceptions in the log - which we already logged above - raise a generic,
     # insignificant exception to notify scheduler that this task failed and needs to be retried.
@@ -1239,7 +1260,15 @@ def task_core(
     session_isolation: bool = True,
     session_read_only: bool = False,
 ) -> None:
-    task_call = TaskCall.from_message(BROKER, CURRENT_MESSAGE.get())
+    message = CURRENT_MESSAGE.get()
+
+    if message is None:
+        exc = Exception('Current message is not set')
+        Failure.from_exc('Current message is not set', exc).handle(logger)
+
+        raise exc
+
+    task_call = TaskCall.from_message_proxy(BROKER, message)
 
     CURRENT_TASK.set(task_call)
 
@@ -1271,6 +1300,20 @@ def task_core(
                 session_isolation=session_isolation,
                 session_read_only=session_read_only,
             )
+
+
+def _close_broker_connection(logger: gluetool.log.ContextAdapter) -> None:
+    if not KNOB_CLOSE_AFTER_DISPATCH.value:
+        return
+
+    global BROKER
+
+    if not hasattr(BROKER, 'connection'):
+        return
+
+    logger.debug('closing broker connection as requested')
+
+    BROKER.connection.close()
 
 
 def _randomize_delay(delay: int) -> int:
@@ -1322,7 +1365,7 @@ def dispatch_task(
     # The underlying Dramatiq code treats delay as miliseconds, hence the multiplication.
     actual_delay = _randomize_delay(delay) * 1000 if delay is not None else None
 
-    task_call = TaskCall.from_message(BROKER, message, delay=delay, task_request_id=task_request_id)
+    task_call = TaskCall.from_call(task, *args, delay=delay, task_request_id=task_request_id)
 
     with Sentry.start_span(
         TracingOp.QUEUE_SUBMIT,
@@ -1337,10 +1380,7 @@ def dispatch_task(
 
     log_dict_yaml(logger.info, 'scheduled task', serialize_task_invocation(task_call))
 
-    if KNOB_CLOSE_AFTER_DISPATCH.value:
-        logger.debug('closing broker connection as requested')
-
-        BROKER.connection.close()
+    _close_broker_connection(logger)
 
     return Ok(None)
 
@@ -1368,19 +1408,19 @@ def dispatch_group(
     try:
         messages = [task.message(*args) for task in tasks]
 
-        task_calls: list[TaskCall] = [TaskCall.from_message(BROKER, message, delay=delay) for message in messages]
+        task_calls: list[TaskCall] = [TaskCall.from_call(task, *args, delay=delay) for task in tasks]
 
         on_complete_task_call: Optional[TaskCall] = None
 
-        group = dramatiq.group(messages)
+        group = dramatiq.group(messages)  # type: ignore[no-untyped-call]
 
         if on_complete:
             on_complete_message = on_complete.message(*args)
-            on_complete_task_call = TaskCall.from_message(BROKER, on_complete_message)
+            on_complete_task_call = TaskCall.from_call(on_complete, *args)
 
-            group.add_completion_callback(on_complete_message)
+            group.add_completion_callback(on_complete_message)  # type: ignore[no-untyped-call]
 
-        group.run(delay=actual_delay)
+        group.run(delay=actual_delay)  # type: ignore[no-untyped-call]
 
         log_dict_yaml(
             logger.info,
@@ -1388,10 +1428,7 @@ def dispatch_group(
             serialize_task_group_invocation(task_calls, on_complete=on_complete_task_call),
         )
 
-        if KNOB_CLOSE_AFTER_DISPATCH.value:
-            logger.debug('closing broker connection as requested')
-
-            BROKER.connection.close()
+        _close_broker_connection(logger)
 
     except Exception as exc:
         return Error(
@@ -1467,10 +1504,7 @@ def dispatch_sequence(
         serialize_task_sequence_invocation(task_calls, on_complete=on_complete_task_call),
     )
 
-    if KNOB_CLOSE_AFTER_DISPATCH.value:
-        logger.debug('closing broker connection as requested')
-
-        BROKER.connection.close()
+    _close_broker_connection(logger)
 
     return Ok(None)
 

@@ -18,53 +18,48 @@ packages = [
 include = ["artemis/schema"]
 
 [tool.poetry.dependencies]
-python = "~3.9.0"
-# New mypy vs. new Alembic: https://github.com/python/mypy/issues/11038 - Alembic 1.7.4 adds a workaround
-alembic = "1.8.1"
+python = "~3.12.0"
+alembic = "*"
 awscli = { version = ">=1.36.13", optional = true }
 azure-cli = { version = "*", optional = true }
 beaker-client = { version = "*", optional = true }
 # BeautifulSoup could be updated but it's pinned by gluetool to an older version...
 # beautifulsoup4 = "^4.9.3"
 click = "*"
-# TODO: 1.13.0 and newer add typing support, way bigger patch
-dramatiq = {git = "https://github.com/dansimko/dramatiq.git", rev = "1.13.0-close-write-pipe", extras = ["rabbitmq"]}
-gluetool = "^2.5"
+dramatiq = { version = "*", extras = ["rabbitmq"] }
+gluetool = "*"
 gunicorn = "*"
 jinja2-ansible-filters = "*"
 jq = "*"
-Pint = "0.18"
-# Avoid newer versions until either https://github.com/python/mypy/issues/10757 is fixed, or package
-# delivers proper type annotations.
-prometheus-client = "^0.12.0"
+Pint = "*"
+prometheus-client = "*"
 pyinstrument = "*"
 psycopg2 = "*"
 # Do not use openstackclient >=7, there is some conflict between
 # it and openstacksdk when calling `get_limits()`
 python-openstackclient = { version = "^6.0.0", optional = true }
-# See https://github.com/python-poetry/poetry/issues/4402
-# sqlalchemy = ">=1.4,<1.4.23"
 sqlalchemy = { version = "*", extras = [ "mypy", "postgresql", "postgresql-psycopg" ] }
 sqlalchemy-utils = { version = "*", extras = ["encrypted"] }
 stackprinter = "*"
 # Bumping just one minor version of starlette seems to mess with mypy
-starlette = "0.41.2"
+starlette = "*"
 typing-extensions = "*"
-# pendulum 3.x has an ugly bug when timezone is not specified, https://github.com/sdispater/pendulum/issues/791
-pendulum = "^2.0"
+pendulum = "*"
 periodiq = "*"
-redis = "*"
+redis = "^8.0.0"
 returns = "*"
 jsonschema = "*"
 sentry-sdk = "^2.18"
-setuptools = "*"
+# setuptools 82.0.0+ do not ship pkg_resources
+setuptools = "81.0.0"
 python-glanceclient = "*"
 python-novaclient = "*"
-fastapi = "*"
+# https://github.com/vllm-project/vllm/issues/45596
+fastapi = "<0.137"
 uvicorn = "*"
 google-cloud-compute = "*"
-pykickstart = "^3.58"
-tmt = {git = "https://github.com/teemtee/tmt.git", rev = "main"}
+pykickstart = "*"
+tmt = "*"
 
 [tool.poetry.extras]
 full = [ "awscli", "azure-cli", "beaker-client", "python-openstackclient", "google-cloud-compute" ]
@@ -75,8 +70,7 @@ full = [ "awscli", "azure-cli", "beaker-client", "python-openstackclient", "goog
 # Install `toml` extra to allow parsing pyproject.toml - no need for special config file for coverage.
 coverage = { version = "*", extras = ["toml"] }
 darglint = "*"
-# flake8 5 introduced a bug https://github.com/tholo/pytest-flake8/issues/87
-flake8 = "<5.0.0"
+flake8 = "*"
 flake8-docstrings = "*"
 flake8-use-fstring = "*"
 httpx = "*"
@@ -87,7 +81,7 @@ httpx = "*"
 mypy = "*"
 pytest = "*"
 pre-commit = "*"
-pytest-flake8 = "*"
+# pytest-flake8 = "*"
 pytest-icdiff = "*"
 pytest-mock = "*"
 redislite = "*"

@@ -1,14 +1,33 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
-import imp
+import importlib.machinery
+import importlib.util
 import os
+from types import ModuleType
 from typing import Any, Callable
 
 import gluetool.utils
 from gluetool.result import Error, Ok, Result
 
 from . import Failure, Sentry, TracingOp
+
+
+def load_source(modname: str, filename: str) -> Result[ModuleType, Failure]:
+    loader = importlib.machinery.SourceFileLoader(modname, filename)
+    spec = importlib.util.spec_from_file_location(modname, filename, loader=loader)
+
+    if spec is None:
+        return Error(Failure('failed to load module source', modname=modname, filename=filename))
+
+    module = importlib.util.module_from_spec(spec)
+
+    # The module is always executed and not cached in sys.modules.
+    # Uncomment the following line to cache the module.
+    # sys.modules[module.__name__] = module  # noqa: ERA001
+    loader.exec_module(module)
+
+    return Ok(module)
 
 
 class ScriptEngine:
@@ -22,10 +41,15 @@ class ScriptEngine:
         filepath = os.path.expanduser(filepath)
 
         try:
-            code = imp.load_source(filepath.replace('/', '_'), filepath)
+            r_code = load_source(filepath.replace('/', '_'), filepath)
 
         except Exception as exc:
             return Error(Failure.from_exc('failed to load script', exc, script_filepath=filepath))
+
+        if r_code.is_error:
+            return Error(r_code.unwrap_error())
+
+        code = r_code.unwrap()
 
         for member_name in dir(code):
             if member_name.startswith('_'):

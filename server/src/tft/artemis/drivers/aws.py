@@ -310,7 +310,7 @@ KNOB_CONSOLE_INTERACTIVE_URL: Knob[str] = Knob(
     has_db=False,
     envvar='ARTEMIS_AWS_LOGS_CONSOLE_INTERACTIVE_URL',
     cast_from_str=str,
-    default='https://console.aws.amazon.com/ec2/v2/connect/ec2-user/{instance_id}?connection-type=isc&serial-port=0',  # noqa: FS003,E501
+    default='https://console.aws.amazon.com/ec2/v2/connect/ec2-user/{instance_id}?connection-type=isc&serial-port=0',  # noqa: E501
 )
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
@@ -2770,7 +2770,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
             # Guest is fine, nothing to report (yet?)
             return Ok(WatchdogState.CONTINUE)
 
-        if state == 'cancelled' and status in ('instance-terminated-by-user',):
+        if state == 'cancelled' and status == 'instance-terminated-by-user':
             # This should be the expected final state of normal provisioning.
             return Ok(WatchdogState.COMPLETE)
 
@@ -3119,7 +3119,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
 
         # In AWS case only logged in users can access the console (1 session a time). The url has fixed format
         # depending on instance_id only, let's just generate it for every instance.
-        output = KNOB_CONSOLE_INTERACTIVE_URL.value.format(instance_id=pool_data.instance_id)  # noqa: FS002
+        output = KNOB_CONSOLE_INTERACTIVE_URL.value.format(instance_id=pool_data.instance_id)
 
         return Ok(GuestLogUpdateProgress(state=GuestLogState.COMPLETE, url=output))
 

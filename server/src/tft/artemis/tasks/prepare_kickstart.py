@@ -222,7 +222,7 @@ class Workspace(_Workspace):
             r_pkg_list = run_remote(
                 self.logger,
                 self.gr,
-                ['/usr/bin/rpm', '-qa', '--queryformat', '%{NAME}.%{ARCH}\n'],  # noqa: FS003
+                ['/usr/bin/rpm', '-qa', '--queryformat', '%{NAME}.%{ARCH}\n'],
                 key=self.master_key,
                 ssh_options=self.pool.ssh_options,
                 ssh_timeout=ssh_timeout,

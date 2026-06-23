@@ -33,12 +33,12 @@ def test_sequence(
     broker: dramatiq.broker.Broker,
     redis: redis.Redis,
     worker: dramatiq.Worker,
-    actor: Actor,
+    # actor: Actor,
     caplog: _pytest.logging.LogCaptureFixture,
     monkeypatch: _pytest.monkeypatch.MonkeyPatch,
 ) -> None:
     results: list[str] = []
-    mock_uuids = ['uuid1', 'uuid2', 'uuid3', 'uuid4', 'uuid5', 'uuid6']
+    mock_uuids = ['uuid1', 'uuid2', 'uuid3', 'uuid4', 'uuid5', 'uuid6', 'uuid7']
 
     def mock_uuid4() -> str:
         uuid = mock_uuids.pop(0)
@@ -56,11 +56,11 @@ def test_sequence(
     r = dispatch_sequence(
         logger,
         [
-            (1, actor, ('foo1', 'bar1')),
-            (2, actor, ('foo2', 'bar2')),
-            (3, actor, ('foo3', 'bar3')),
+            (1, dummy_actor, ('foo1', 'bar1')),
+            (2, dummy_actor, ('foo2', 'bar2')),
+            (3, dummy_actor, ('foo3', 'bar3')),
         ],
-        on_complete=(actor, ('foo4', 'bar4')),
+        on_complete=(dummy_actor, ('foo4', 'bar4')),
     )
 
     assert r.is_ok
@@ -129,7 +129,7 @@ on-complete:
         sequence-id:"""),
     )
 
-    broker.join(actor.queue_name)
+    broker.join(dummy_actor.queue_name)
     worker.join()
 
     assert results == ['foo1', 'bar1', 'foo2', 'bar2', 'foo3', 'bar3', 'foo4', 'bar4']

@@ -589,7 +589,7 @@ def release_lock(logger: gluetool.log.ContextAdapter, cache: redis.Redis, lockna
 
         pipeline.multi()
         pipeline.delete(lockname)
-        pipeline.execute()  # type: ignore[no-untyped-call]
+        pipeline.execute()
 
     except redis.exceptions.WatchError as exc:
         Failure.from_exc('lock token changed during transaction', exc, lockname=lockname, token=token).handle(logger)
