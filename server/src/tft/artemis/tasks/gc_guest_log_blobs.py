@@ -125,7 +125,7 @@ class Workspace(_Workspace):
     priority=TaskPriority.LOW,
     queue_name=TaskQueue.PERIODIC,
 )
-def worker_ping() -> None:
+def gc_guest_log_blobs() -> None:
     """
     Remove old guest log blobs.
     """
