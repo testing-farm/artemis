@@ -35,6 +35,7 @@ import sqlalchemy.orm.session
 import sqlalchemy.sql.schema
 from gluetool.result import Ok, Result
 from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, Info, generate_latest
+from prometheus_client.registry import Collector, _EmptyCollector
 
 from . import __VERSION__, DATETIME_FMT, Failure, Sentry, SerializableContainer, TracingOp, db as artemis_db, safe_call
 from .cache import (
@@ -206,14 +207,25 @@ class WorkerTrafficTask(SerializableContainer):
         return cls(**serialized)
 
 
-def reset_counters(metric: Union[Counter, Gauge]) -> None:
+def reset_counter(metric: Counter) -> None:
     """
     Reset each existing labeled metric to zero. After that, we can use ``inc()`` again.
 
     :param metric: metric whose labeled sub-metrics we need to reset.
     """
 
-    for labeled_metric in metric._metrics.values():
+    for labeled_metric in cast(dict[str, Counter], metric._metrics).values():
+        labeled_metric._value.set(0)
+
+
+def reset_gauge(metric: Gauge) -> None:
+    """
+    Reset each existing labeled metric to zero. After that, we can use ``inc()`` again.
+
+    :param metric: metric whose labeled sub-metrics we need to reset.
+    """
+
+    for labeled_metric in cast(dict[str, Gauge], metric._metrics).values():
         labeled_metric._value.set(0)
 
 
@@ -225,7 +237,7 @@ def reset_histogram(metric: Histogram) -> None:
     """
 
     if hasattr(metric, '_metrics'):
-        for labeled_metric in metric._metrics.values():
+        for labeled_metric in cast(dict[str, Histogram], metric._metrics).values():
             labeled_metric._sum.set(0)
 
             for i, _ in enumerate(metric._upper_bounds):
@@ -521,8 +533,8 @@ class PoolResources(PoolMetricsBase):
        to stick with Pint wherever we use a value with units.
     """
 
-    _KEY = 'metrics.pool.{poolname}.resources.{dimension}'  # noqa: FS003
-    _KEY_UPDATED_TIMESTAMP = 'metrics.pool.{poolname}.resources.{dimension}.updated_timestamp'  # noqa: FS003
+    _KEY = 'metrics.pool.{poolname}.resources.{dimension}'
+    _KEY_UPDATED_TIMESTAMP = 'metrics.pool.{poolname}.resources.{dimension}.updated_timestamp'
 
     _TRIVIAL_FIELDS = ('instances', 'cores', 'memory', 'diskspace')
     _COMPOUND_FIELDS = ('networks',)
@@ -574,8 +586,8 @@ class PoolResources(PoolMetricsBase):
 
         super().__init__(poolname)
 
-        self._key = PoolResources._KEY.format(poolname=poolname, dimension=dimension.value)  # noqa: FS002
-        self._key_updated_timestamp = PoolResources._KEY_UPDATED_TIMESTAMP.format(  # noqa: FS002
+        self._key = PoolResources._KEY.format(poolname=poolname, dimension=dimension.value)
+        self._key_updated_timestamp = PoolResources._KEY_UPDATED_TIMESTAMP.format(
             poolname=poolname, dimension=dimension.value
         )
 
@@ -871,16 +883,16 @@ class PoolMetrics(PoolMetricsBase):
     Metrics of a particular pool.
     """
 
-    _KEY_ERRORS = 'metrics.pool.{poolname}.errors'  # noqa: FS003
-    _KEY_ABORTS = 'metrics.pool.{poolname}.aborts'  # noqa: FS003
-    _KEY_CLI_CALLS = 'metrics.pool.{poolname}.cli-calls'  # noqa: FS003
-    _KEY_CLI_EXIT_CODES = 'metrics.pool.{poolname}.cli-calls.exit-codes'  # noqa: FS003
-    _KEY_CLI_CALLS_DURATIONS = 'metrics.pool.{poolname}.cli-calls.durations'  # noqa: FS003
+    _KEY_ERRORS = 'metrics.pool.{poolname}.errors'
+    _KEY_ABORTS = 'metrics.pool.{poolname}.aborts'
+    _KEY_CLI_CALLS = 'metrics.pool.{poolname}.cli-calls'
+    _KEY_CLI_EXIT_CODES = 'metrics.pool.{poolname}.cli-calls.exit-codes'
+    _KEY_CLI_CALLS_DURATIONS = 'metrics.pool.{poolname}.cli-calls.durations'
 
     # Image & flavor refresh process does not have their own metrics, hence using this container to track the "last
     # update" timestamp and other.
-    _KEY_INFO_COUNT = 'metrics.pool.{poolname}.{info}.count'  # noqa: FS003
-    _KEY_INFO_UPDATED_TIMESTAMP = 'metrics.pool.{poolname}.{info}.updated_timestamp'  # noqa: FS003
+    _KEY_INFO_COUNT = 'metrics.pool.{poolname}.{info}.count'
+    _KEY_INFO_UPDATED_TIMESTAMP = 'metrics.pool.{poolname}.{info}.updated_timestamp'
 
     enabled: bool
     routing_enabled: bool
@@ -915,25 +927,19 @@ class PoolMetrics(PoolMetricsBase):
 
         super().__init__(poolname)
 
-        self.key_errors = self._KEY_ERRORS.format(poolname=poolname)  # noqa: FS002
-        self.key_aborts = self._KEY_ABORTS.format(poolname=poolname)  # noqa: FS002
+        self.key_errors = self._KEY_ERRORS.format(poolname=poolname)
+        self.key_aborts = self._KEY_ABORTS.format(poolname=poolname)
 
-        self.key_image_info_count = self._KEY_INFO_COUNT.format(  # noqa: FS002
-            poolname=poolname, info='image'
-        )
-        self.key_image_info_refresh_timestamp = self._KEY_INFO_UPDATED_TIMESTAMP.format(  # noqa: FS002
-            poolname=poolname, info='image'
-        )
-        self.key_flavor_info_count = self._KEY_INFO_COUNT.format(  # noqa: FS002
-            poolname=poolname, info='flavor'
-        )
-        self.key_flavor_info_refresh_timestamp = self._KEY_INFO_UPDATED_TIMESTAMP.format(  # noqa: FS002
+        self.key_image_info_count = self._KEY_INFO_COUNT.format(poolname=poolname, info='image')
+        self.key_image_info_refresh_timestamp = self._KEY_INFO_UPDATED_TIMESTAMP.format(poolname=poolname, info='image')
+        self.key_flavor_info_count = self._KEY_INFO_COUNT.format(poolname=poolname, info='flavor')
+        self.key_flavor_info_refresh_timestamp = self._KEY_INFO_UPDATED_TIMESTAMP.format(
             poolname=poolname, info='flavor'
         )
 
-        self.key_cli_calls = self._KEY_CLI_CALLS.format(poolname=poolname)  # noqa: FS002
-        self.key_cli_calls_exit_codes = self._KEY_CLI_EXIT_CODES.format(poolname=poolname)  # noqa: FS002
-        self.key_cli_calls_durations = self._KEY_CLI_CALLS_DURATIONS.format(poolname=poolname)  # noqa: FS002
+        self.key_cli_calls = self._KEY_CLI_CALLS.format(poolname=poolname)
+        self.key_cli_calls_exit_codes = self._KEY_CLI_EXIT_CODES.format(poolname=poolname)
+        self.key_cli_calls_durations = self._KEY_CLI_CALLS_DURATIONS.format(poolname=poolname)
 
         self.enabled = False
         self.routing_enabled = True
@@ -963,7 +969,7 @@ class PoolMetrics(PoolMetricsBase):
     def _refresh_info_count(pool: str, info: str, count: float, cache: redis.Redis) -> Result[None, Failure]:
         safe_call(
             cast(Callable[[str, float], None], cache.set),
-            PoolMetrics._KEY_INFO_COUNT.format(poolname=pool, info=info),  # noqa: FS002
+            PoolMetrics._KEY_INFO_COUNT.format(poolname=pool, info=info),
             count,
         )
 
@@ -974,7 +980,7 @@ class PoolMetrics(PoolMetricsBase):
     def _refresh_info_updated_timestamp(pool: str, info: str, cache: redis.Redis) -> Result[None, Failure]:
         safe_call(
             cast(Callable[[str, float], None], cache.set),
-            PoolMetrics._KEY_INFO_UPDATED_TIMESTAMP.format(poolname=pool, info=info),  # noqa: FS002
+            PoolMetrics._KEY_INFO_UPDATED_TIMESTAMP.format(poolname=pool, info=info),
             datetime.datetime.timestamp(datetime.datetime.utcnow()),
         )
 
@@ -1025,7 +1031,7 @@ class PoolMetrics(PoolMetricsBase):
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric_field(logger, cache, PoolMetrics._KEY_ERRORS.format(poolname=pool), error.value)  # noqa: FS002
+        inc_metric_field(logger, cache, PoolMetrics._KEY_ERRORS.format(poolname=pool), error.value)
         return Ok(None)
 
     @staticmethod
@@ -1055,7 +1061,7 @@ class PoolMetrics(PoolMetricsBase):
         inc_metric_field(
             logger,
             cache,
-            PoolMetrics._KEY_ABORTS.format(poolname=pool),  # noqa: FS002
+            PoolMetrics._KEY_ABORTS.format(poolname=pool),
             f'{instance_id or ""}:{compose}:{arch}:{cause.value}',
         )
 
@@ -1089,7 +1095,7 @@ class PoolMetrics(PoolMetricsBase):
         inc_metric_field(
             logger,
             cache,
-            PoolMetrics._KEY_CLI_CALLS.format(poolname=poolname),  # noqa: FS002
+            PoolMetrics._KEY_CLI_CALLS.format(poolname=poolname),
             commandname,
         )
 
@@ -1097,7 +1103,7 @@ class PoolMetrics(PoolMetricsBase):
         inc_metric_field(
             logger,
             cache,
-            PoolMetrics._KEY_CLI_EXIT_CODES.format(poolname=poolname),  # noqa: FS002
+            PoolMetrics._KEY_CLI_EXIT_CODES.format(poolname=poolname),
             f'{commandname}:{exit_code}:{cause.value if cause else ""}',
         )
 
@@ -1107,7 +1113,7 @@ class PoolMetrics(PoolMetricsBase):
         inc_metric_field(
             logger,
             cache,
-            PoolMetrics._KEY_CLI_CALLS_DURATIONS.format(poolname=poolname),  # noqa: FS002
+            PoolMetrics._KEY_CLI_CALLS_DURATIONS.format(poolname=poolname),
             f'{bucket}:{commandname}:{exit_code}:{cause.value if cause else ""}',
         )
 
@@ -1178,7 +1184,7 @@ class PoolMetrics(PoolMetricsBase):
             for field, count in get_metric_fields(
                 logger,
                 cache,
-                self._KEY_ABORTS.format(poolname=self.poolname),  # noqa: FS002
+                self._KEY_ABORTS.format(poolname=self.poolname),
             ).items()
         }
 
@@ -1201,7 +1207,7 @@ class PoolMetrics(PoolMetricsBase):
             get_metric_fields(
                 logger,
                 cache,
-                self._KEY_CLI_CALLS.format(poolname=self.poolname),  # noqa: FS002
+                self._KEY_CLI_CALLS.format(poolname=self.poolname),
             ).items()
         )
 
@@ -1217,7 +1223,7 @@ class PoolMetrics(PoolMetricsBase):
             for field, count in get_metric_fields(
                 logger,
                 cache,
-                self._KEY_CLI_CALLS_DURATIONS.format(poolname=self.poolname),  # noqa: FS002
+                self._KEY_CLI_CALLS_DURATIONS.format(poolname=self.poolname),
             ).items()
         }
 
@@ -1368,7 +1374,7 @@ class PoolsMetrics(MetricsBase):
 
         def _create_pool_resource_metric(name: str, unit: Optional[str] = None) -> Gauge:
             return Gauge(
-                f'pool_resources_{name}{f"_{unit}" if unit else ""}',  # noqa: FS002
+                f'pool_resources_{name}{f"_{unit}" if unit else ""}',
                 f'Limits and usage of pool {name}',
                 ['pool', 'dimension'],
                 registry=registry,
@@ -1485,11 +1491,11 @@ class PoolsMetrics(MetricsBase):
 
         super().do_update_prometheus()
 
-        reset_counters(self.POOL_ERRORS)
-        reset_counters(self.POOL_ABORTS)
-        reset_counters(self.POOL_COSTS)
-        reset_counters(self.CLI_CALLS)
-        reset_counters(self.CLI_CALLS_EXIT_CODES)
+        reset_counter(self.POOL_ERRORS)
+        reset_counter(self.POOL_ABORTS)
+        reset_counter(self.POOL_COSTS)
+        reset_counter(self.CLI_CALLS)
+        reset_counter(self.CLI_CALLS_EXIT_CODES)
         reset_histogram(self.CLI_CALLS_DURATIONS)
 
         for poolname, pool_metrics in self.pools.items():
@@ -1877,8 +1883,8 @@ class ProvisioningMetrics(MetricsBase):
 
         super().do_update_prometheus()
 
-        reset_counters(self.OVERALL_EMPTY_ROUTING_COUNT)
-        reset_counters(self.GUEST_STATE_TRANSITIONS)
+        reset_counter(self.OVERALL_EMPTY_ROUTING_COUNT)
+        reset_counter(self.GUEST_STATE_TRANSITIONS)
 
         self.CURRENT_GUEST_REQUEST_COUNT_TOTAL.set(self.current)
         self.OVERALL_PROVISIONING_COUNT._value.set(self.requested)
@@ -1895,7 +1901,7 @@ class ProvisioningMetrics(MetricsBase):
         for (from_pool, to_pool), count in self.failover_success.items():
             self.OVERALL_SUCCESSFULL_FAILOVER_COUNT.labels(from_pool=from_pool, to_pool=to_pool)._value.set(count)
 
-        reset_counters(self.GUEST_AGES)
+        reset_gauge(self.GUEST_AGES)
 
         for state, poolname, age in self.guest_ages:
             # Pick the smallest larger bucket threshold (e.g. age == 250 => 300, age == 3599 => 3600, ...)
@@ -2079,11 +2085,11 @@ class ShelfMetrics(MetricsBase):
     Metrics of a particular shelf.
     """
 
-    _KEY_HITS = 'metrics.shelf.{shelfname}.hits'  # noqa: FS003
-    _KEY_MISSES = 'metrics.shelf.{shelfname}.misses'  # noqa: FS003
-    _KEY_REMOVALS = 'metrics.shelf.{shelfname}.removals'  # noqa: FS003
-    _KEY_FORCED_REMOVALS = 'metrics.shelf.{shelfname}.forced-removals'  # noqa: FS003
-    _KEY_DEAD = 'metrics.shelf.{shelfname}.dead'  # noqa: FS003
+    _KEY_HITS = 'metrics.shelf.{shelfname}.hits'
+    _KEY_MISSES = 'metrics.shelf.{shelfname}.misses'
+    _KEY_REMOVALS = 'metrics.shelf.{shelfname}.removals'
+    _KEY_FORCED_REMOVALS = 'metrics.shelf.{shelfname}.forced-removals'
+    _KEY_DEAD = 'metrics.shelf.{shelfname}.dead'
 
     shelfname: str
 
@@ -2102,11 +2108,11 @@ class ShelfMetrics(MetricsBase):
         :param shelfname: name of the shelf for which metrics are being tracked.
         """
 
-        self.key_hits = self._KEY_HITS.format(shelfname=shelfname)  # noqa: FS002
-        self.key_misses = self._KEY_MISSES.format(shelfname=shelfname)  # noqa: FS002
-        self.key_removals = self._KEY_REMOVALS.format(shelfname=shelfname)  # noqa: FS002
-        self.key_forced_removals = self._KEY_FORCED_REMOVALS.format(shelfname=shelfname)  # noqa: FS002
-        self.key_dead = self._KEY_DEAD.format(shelfname=shelfname)  # noqa: FS002
+        self.key_hits = self._KEY_HITS.format(shelfname=shelfname)
+        self.key_misses = self._KEY_MISSES.format(shelfname=shelfname)
+        self.key_removals = self._KEY_REMOVALS.format(shelfname=shelfname)
+        self.key_forced_removals = self._KEY_FORCED_REMOVALS.format(shelfname=shelfname)
+        self.key_dead = self._KEY_DEAD.format(shelfname=shelfname)
 
         self.shelfname = shelfname
 
@@ -2132,7 +2138,7 @@ class ShelfMetrics(MetricsBase):
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric(logger, cache, cls._KEY_HITS.format(shelfname=shelfname))  # noqa: FS002
+        inc_metric(logger, cache, cls._KEY_HITS.format(shelfname=shelfname))
         return Ok(None)
 
     @classmethod
@@ -2149,7 +2155,7 @@ class ShelfMetrics(MetricsBase):
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric(logger, cache, cls._KEY_MISSES.format(shelfname=shelfname))  # noqa: FS002
+        inc_metric(logger, cache, cls._KEY_MISSES.format(shelfname=shelfname))
         return Ok(None)
 
     @classmethod
@@ -2166,7 +2172,7 @@ class ShelfMetrics(MetricsBase):
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric(logger, cache, cls._KEY_REMOVALS.format(shelfname=shelfname))  # noqa: FS002
+        inc_metric(logger, cache, cls._KEY_REMOVALS.format(shelfname=shelfname))
         return Ok(None)
 
     @classmethod
@@ -2183,7 +2189,7 @@ class ShelfMetrics(MetricsBase):
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric(logger, cache, cls._KEY_FORCED_REMOVALS.format(shelfname=shelfname))  # noqa: FS002
+        inc_metric(logger, cache, cls._KEY_FORCED_REMOVALS.format(shelfname=shelfname))
         return Ok(None)
 
     @classmethod
@@ -2198,7 +2204,7 @@ class ShelfMetrics(MetricsBase):
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric(logger, cache, cls._KEY_DEAD.format(shelfname=shelfname))  # noqa: FS002
+        inc_metric(logger, cache, cls._KEY_DEAD.format(shelfname=shelfname))
         return Ok(None)
 
     @with_context
@@ -2337,8 +2343,8 @@ class ShelvesMetrics(MetricsBase):
 
         super().do_update_prometheus()
 
-        reset_counters(self.CURRENT_GUEST_REQUEST_COUNT)
-        reset_counters(self.SIZE)
+        reset_gauge(self.CURRENT_GUEST_REQUEST_COUNT)
+        reset_gauge(self.SIZE)
 
         for shelfname, shelf_metrics in self.shelves.items():
             self.CURRENT_GUEST_REQUEST_COUNT.labels(shelfname=shelfname).set(shelf_metrics.current_guest_count)
@@ -2753,14 +2759,20 @@ class TaskMetrics(MetricsBase):
         super().do_update_prometheus()
 
         def _update_counter(prom_metric: Counter, source: dict[tuple[str, str], int]) -> None:
-            reset_counters(prom_metric)
+            reset_counter(prom_metric)
+
+            for (queue_name, actor_name), count in source.items():
+                prom_metric.labels(queue_name=queue_name, actor_name=actor_name)._value.set(count)
+
+        def _update_gauge(prom_metric: Gauge, source: dict[tuple[str, str], int]) -> None:
+            reset_gauge(prom_metric)
 
             for (queue_name, actor_name), count in source.items():
                 prom_metric.labels(queue_name=queue_name, actor_name=actor_name)._value.set(count)
 
         _update_counter(self.OVERALL_MESSAGE_COUNT, self.overall_message_count)
 
-        reset_counters(self.OVERALL_ERRORED_MESSAGE_COUNT)
+        reset_counter(self.OVERALL_ERRORED_MESSAGE_COUNT)
 
         for (queue_name, actor_name, pool, cause), count in self.overall_errored_message_count.items():
             self.OVERALL_ERRORED_MESSAGE_COUNT.labels(
@@ -2772,10 +2784,10 @@ class TaskMetrics(MetricsBase):
 
         _update_counter(self.OVERALL_REJECTED_MESSAGE_COUNT, self.overall_rejected_message_count)
         _update_counter(self.OVERALL_RETRIED_MESSAGE_COUNT, self.overall_retried_message_count)
-        _update_counter(self.CURRENT_MESSAGE_COUNT, self.current_message_count)
-        _update_counter(self.CURRENT_DELAYED_MESSAGE_COUNT, self.current_delayed_message_count)
+        _update_gauge(self.CURRENT_MESSAGE_COUNT, self.current_message_count)
+        _update_gauge(self.CURRENT_DELAYED_MESSAGE_COUNT, self.current_delayed_message_count)
 
-        reset_counters(self.CURRENT_TASK_REQUEST_COUNT)
+        reset_gauge(self.CURRENT_TASK_REQUEST_COUNT)
 
         for actor_name, count in self.current_task_request_count.items():
             self.CURRENT_TASK_REQUEST_COUNT.labels(actor_name=actor_name)._value.set(count)
@@ -2970,12 +2982,12 @@ class APIMetrics(MetricsBase):
             self.REQUEST_DURATIONS.labels(method=method, path=path)._buckets[bucket_index].set(count)
             self.REQUEST_DURATIONS.labels(method=method, path=path)._sum.inc(float(bucket_threshold) * count)
 
-        reset_counters(self.REQUEST_COUNT)
+        reset_counter(self.REQUEST_COUNT)
 
         for (method, status, path), count in self.request_count.items():
             self.REQUEST_COUNT.labels(method=method, path=path, status=status)._value.set(count)
 
-        reset_counters(self.REQUESTS_INPROGRESS_COUNT)
+        reset_gauge(self.REQUESTS_INPROGRESS_COUNT)
 
         for (method, path), count in self.request_inprogress_count.items():
             self.REQUESTS_INPROGRESS_COUNT.labels(method=method, path=path)._value.set(count)
@@ -2996,10 +3008,10 @@ class WorkerMetrics(MetricsBase):
 
     _KEY_WORKER_PING = 'metrics.workers.ping'
 
-    _KEY_WORKER_PROCESS_COUNT = 'metrics.workers.{worker}.processes'  # noqa: FS003
-    _KEY_WORKER_THREAD_COUNT = 'metrics.workers.{worker}.threads'  # noqa: FS003
-    _KEY_WORKER_PROCESS_RESTART_COUNT = 'metrics.workers.{worker}.processes.restarts'  # noqa: FS003
-    _KEY_UPDATED_TIMESTAMP = 'metrics.workers.{worker}.updated_timestamp'  # noqa: FS003
+    _KEY_WORKER_PROCESS_COUNT = 'metrics.workers.{worker}.processes'
+    _KEY_WORKER_THREAD_COUNT = 'metrics.workers.{worker}.threads'
+    _KEY_WORKER_PROCESS_RESTART_COUNT = 'metrics.workers.{worker}.processes.restarts'
+    _KEY_UPDATED_TIMESTAMP = 'metrics.workers.{worker}.updated_timestamp'
 
     @staticmethod
     @with_context
@@ -3037,7 +3049,7 @@ class WorkerMetrics(MetricsBase):
         set_metric(
             logger,
             cache,
-            WorkerMetrics._KEY_WORKER_PROCESS_COUNT.format(worker=worker),  # noqa: FS002
+            WorkerMetrics._KEY_WORKER_PROCESS_COUNT.format(worker=worker),
             processes,
             ttl=KNOB_WORKER_PROCESS_METRICS_TTL.value,
         )
@@ -3045,7 +3057,7 @@ class WorkerMetrics(MetricsBase):
         set_metric(
             logger,
             cache,
-            WorkerMetrics._KEY_WORKER_THREAD_COUNT.format(worker=worker),  # noqa: FS002
+            WorkerMetrics._KEY_WORKER_THREAD_COUNT.format(worker=worker),
             threads,
             ttl=KNOB_WORKER_PROCESS_METRICS_TTL.value,
         )
@@ -3053,7 +3065,7 @@ class WorkerMetrics(MetricsBase):
         set_metric(
             logger,
             cache,
-            WorkerMetrics._KEY_UPDATED_TIMESTAMP.format(worker=worker),  # noqa: FS002
+            WorkerMetrics._KEY_UPDATED_TIMESTAMP.format(worker=worker),
             int(datetime.datetime.timestamp(datetime.datetime.utcnow())),
             ttl=KNOB_WORKER_PROCESS_METRICS_TTL.value,
         )
@@ -3077,7 +3089,7 @@ class WorkerMetrics(MetricsBase):
         inc_metric(
             logger,
             cache,
-            WorkerMetrics._KEY_WORKER_PROCESS_RESTART_COUNT.format(worker=worker),  # noqa: FS002
+            WorkerMetrics._KEY_WORKER_PROCESS_RESTART_COUNT.format(worker=worker),
         )
 
         return Ok(None)
@@ -3155,12 +3167,12 @@ class WorkerMetrics(MetricsBase):
 
         self.WORKER_PING.set(self.worker_ping or float('Nan'))
 
-        reset_counters(self.WORKER_PROCESS_COUNT)
-        reset_counters(self.WORKER_THREAD_COUNT)
-        reset_counters(self.WORKER_PROCESS_RESTART_COUNT)
-        reset_counters(self.WORKER_UPDATED_TIMESTAMP)
+        reset_gauge(self.WORKER_PROCESS_COUNT)
+        reset_gauge(self.WORKER_THREAD_COUNT)
+        reset_counter(self.WORKER_PROCESS_RESTART_COUNT)
+        reset_gauge(self.WORKER_UPDATED_TIMESTAMP)
 
-        # TODO: move these into `reset_counters` - these should be more reliable, and we wouldn't have to
+        # TODO: move these into `reset_counter` - these should be more reliable, and we wouldn't have to
         # do the work on our own.
         self.WORKER_PROCESS_COUNT.clear()
         self.WORKER_THREAD_COUNT.clear()
@@ -3168,17 +3180,19 @@ class WorkerMetrics(MetricsBase):
         self.WORKER_UPDATED_TIMESTAMP.clear()
 
         for worker, processes in self.worker_process_count.items():
-            self.WORKER_PROCESS_COUNT.labels(worker=worker).set(processes)
+            self.WORKER_PROCESS_COUNT.labels(worker=worker).set(processes if processes is not None else float('NaN'))
 
         for worker, threads in self.worker_thread_count.items():
-            self.WORKER_THREAD_COUNT.labels(worker=worker).set(threads)
+            self.WORKER_THREAD_COUNT.labels(worker=worker).set(threads if threads is not None else float('NaN'))
 
         for worker, restarts in self.worker_process_restart_count.items():
-            self.WORKER_PROCESS_RESTART_COUNT.labels(worker=worker)._value.set(restarts)
+            self.WORKER_PROCESS_RESTART_COUNT.labels(worker=worker)._value.set(
+                restarts if restarts is not None else float('NaN')
+            )
 
         for worker, timestamp in self.worker_updated_timestamp.items():
             self.WORKER_UPDATED_TIMESTAMP.labels(worker=worker).set(
-                timestamp if timestamp is None else float(timestamp)
+                timestamp if timestamp is not None else float('NaN')
             )
 
     @staticmethod
@@ -3425,8 +3439,8 @@ class DispatcherMetrics(MetricsBase):
         super().do_update_prometheus()
 
         # Reset all duration buckets and sums first
-        reset_counters(self.DISPATCHED_TASK_SUCCESS_COUNT)
-        reset_counters(self.DISPATCHED_TASK_SEQUENCE_SUCCESS_COUNT)
+        reset_counter(self.DISPATCHED_TASK_SUCCESS_COUNT)
+        reset_counter(self.DISPATCHED_TASK_SEQUENCE_SUCCESS_COUNT)
 
         self.DISPATCHED_TASK_INVOCATIONS_COUNT._value.set(self.dispatched_task_invocations_count)
 
@@ -3460,7 +3474,7 @@ class Metrics(MetricsBase):
     dispatcher: DispatcherMetrics = dataclasses.field(default_factory=DispatcherMetrics)
 
     # Registry this tree of metrics containers is tied to.
-    _registry: Optional[CollectorRegistry] = None
+    _registry: Collector = dataclasses.field(default_factory=_EmptyCollector)
 
     def do_register_with_prometheus(self, registry: CollectorRegistry) -> None:
         """
@@ -3525,7 +3539,7 @@ class Metrics(MetricsBase):
                 self.update_prometheus()
 
             with Sentry.start_span(TracingOp.FUNCTION, description='metrics.generate'):
-                return cast(bytes, generate_latest(registry=self._registry))
+                return generate_latest(registry=self._registry)
 
         return safe_call(_render)
 

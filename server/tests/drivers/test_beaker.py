@@ -650,15 +650,13 @@ def test_environment_to_beaker_filter(
     should_fail = expected.startswith('failure')
     if not should_fail:
         assert r_beaker_filter.is_ok
-        beaker_filter = r_beaker_filter.unwrap()
-    else:
-        beaker_filter = r_beaker_filter.unwrap_error()
 
-    if isinstance(beaker_filter, tft.artemis.Failure):
-        assert str(beaker_filter) == expected
+        assert r_beaker_filter.unwrap().prettify().strip() == textwrap.dedent(expected).strip()
 
     else:
-        assert beaker_filter.prettify().strip() == textwrap.dedent(expected).strip()
+        assert r_beaker_filter.is_error
+
+        assert str(r_beaker_filter.unwrap_error()) == expected
 
 
 @pytest.mark.parametrize(
@@ -724,7 +722,7 @@ def test_hostnames_to_beaker_filter(avoid_hostnames: list[str], expected: str) -
 )
 def test_merge_beaker_filters(filters: list[str], expected: str) -> None:
     r_final_filter = tft.artemis.drivers.beaker.merge_beaker_filters(
-        [bs4.BeautifulSoup(a_filter, 'xml').contents[0] for a_filter in filters]
+        [bs4.BeautifulSoup(a_filter, 'xml').contents[0] for a_filter in filters]  # type: ignore[misc]
     )
 
     assert r_final_filter.is_ok
