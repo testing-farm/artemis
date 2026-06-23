@@ -211,14 +211,14 @@ class RSSWatcherMiddleware(BaseHTTPMiddleware):
 
         rss = RSSWatcher()
 
-        logger.info(f'{request_label} {rss.format()}')  # noqa: FS002
+        logger.info(f'{request_label} {rss.format()}')
 
         try:
             return await call_next(request)
 
         finally:
             rss.snapshot()
-            logger.info(f'{request_label} {rss.format()}')  # noqa: FS002
+            logger.info(f'{request_label} {rss.format()}')
 
 
 class ProfileMiddleware(BaseHTTPMiddleware):
@@ -235,7 +235,7 @@ class ProfileMiddleware(BaseHTTPMiddleware):
         profiler = Profiler(verbose=KNOB_API_VERBOSE_PROFILING.value)
         profiler.start()
 
-        logger.info(f'{request_label} profiling started')  # noqa: FS002
+        logger.info(f'{request_label} profiling started')
 
         try:
             return await call_next(request)
@@ -243,7 +243,7 @@ class ProfileMiddleware(BaseHTTPMiddleware):
         finally:
             profiler.stop()
 
-            logger.info(f'{request_label} profiling ended')  # noqa: FS002
+            logger.info(f'{request_label} profiling ended')
 
             profiler.log(logger, f'{request_label} profiling report', limit=KNOB_API_PROFILING_LIMIT.value)
 
@@ -292,7 +292,7 @@ class RequestCancelledMiddleware(BaseHTTPMiddleware):
                 ).handle(logger)
 
 
-MIDDLEWARE = {
+MIDDLEWARE: dict[str, type[FastAPIBaseHTTPMiddleware]] = {
     'request-cancelled': RequestCancelledMiddleware,
     'authorization': AuthorizationMiddleware,
     'prometheus': PrometheusMiddleware,
