@@ -78,17 +78,17 @@ def test_api_about(api_client: fastapi.testclient.TestClient) -> None:
 
 def test_api_redirects(api_client: fastapi.testclient.TestClient) -> None:
     # /current should be redirected to the current milestone version
-    response = api_client.request('GET', '/current/about', allow_redirects=False)
+    response = api_client.request('GET', '/current/about', follow_redirects=False)
     assert response.status_code == 308
     assert response.headers['location'] == f'/{CURRENT_MILESTONE_VERSION}/about'
 
     # same applies to legacy top-level endpoints, return redirects to the current version
-    response = api_client.request('GET', '/about', allow_redirects=False)
+    response = api_client.request('GET', '/about', follow_redirects=False)
     assert response.status_code == 308
     assert response.headers['location'] == f'/{CURRENT_MILESTONE_VERSION}/about'
 
     # supported versions should include no redirects
-    response = api_client.request('GET', '/v0.0.72/about', allow_redirects=False)
+    response = api_client.request('GET', '/v0.0.72/about', follow_redirects=False)
     assert response.status_code == 200
 
 
@@ -587,7 +587,7 @@ def fixture_mock_middleware(
     monkeypatch.setitem(auth_context.request.scope, 'path', '/guests')
 
     app = fastapi.FastAPI()
-    app.add_middleware(AuthorizationMiddleware)
+    app.add_middleware(AuthorizationMiddleware)  # type: ignore[arg-type]
 
     return fastapi.testclient.TestClient(app)
 

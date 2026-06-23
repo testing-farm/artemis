@@ -131,4 +131,4 @@ class Profiler:
         :param limit: how many entries should be reported in the summary.
         """
 
-        gluetool.log.log_blob(logger.info, label, self.format(sort_stats=sort_stats, limit=limit))  # noqa: FS002
+        gluetool.log.log_blob(logger.info, label, self.format(sort_stats=sort_stats, limit=limit))

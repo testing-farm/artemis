@@ -55,7 +55,7 @@ class GuestRequest:
             '--arch',
             arch,
             '--user-data',
-            '{"owner": "artemis-tests"}',  # noqa: FS003
+            '{"owner": "artemis-tests"}',
         ]
 
         if pool is not None:
