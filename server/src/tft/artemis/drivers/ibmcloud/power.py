@@ -484,7 +484,7 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
         logger.info(f'current instance status {pool_data.instance_id}:{status}')
 
         # Let's try to tag the instance
-        r_assigned_tags = self.get_instance_tags(logger, instance_name)
+        r_assigned_tags = self.get_resource_tags(logger, instance_name)
 
         if r_assigned_tags.is_error:
             return Error(r_assigned_tags.unwrap_error())
@@ -496,7 +496,7 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
             if r_tags.is_error:
                 return Error(r_tags.unwrap_error())
             # Here comes the actual tagging attempt
-            r_tag_instance = self.tag_instance(logger=logger, instance_name=instance_name, tags=r_tags.unwrap())
+            r_tag_instance = self.tag_resource(logger=logger, resource_name=instance_name, tags=r_tags.unwrap())
 
             if r_tag_instance.is_error:
                 return Error(Failure.from_failure('Tagging instance failed', r_tag_instance.unwrap_error()))
