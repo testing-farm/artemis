@@ -430,12 +430,13 @@ class IBMCloudDriver(
 
     @abc.abstractmethod
     def _query_backend_instance(
-        self, logger: gluetool.log.ContextAdapter, instance_id: str
+        self, logger: gluetool.log.ContextAdapter, instance_id: str, *, minimize: bool = True
     ) -> _Result[BackendInstanceT, Failure]:
         """
         Fetch instance info from the backed infrastructure.
 
         :returns: instance description.
+        :param minimize is used to control fetching of attributes that require additional api calls (like tags).
         """
 
         raise NotImplementedError
