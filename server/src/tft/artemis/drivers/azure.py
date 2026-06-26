@@ -348,6 +348,8 @@ class AzureDriver(
 
     _image_map_hook_name = 'AZURE_ENVIRONMENT_TO_IMAGE'
 
+    _flavor_filter_hook_name = 'AZURE_FLAVOR_FILTERS'
+
     def __init__(
         self,
         logger: gluetool.log.ContextAdapter,

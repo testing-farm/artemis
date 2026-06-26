@@ -21,6 +21,7 @@ import time
 from collections.abc import Generator, Iterable, Iterator, Mapping
 from re import Pattern
 from typing import (
+    TYPE_CHECKING,
     Any,
     Callable,
     ClassVar,
@@ -49,7 +50,6 @@ from .. import (
     SerializableContainer,
     TracingOp,
     log_dict_yaml,
-    logging_filter,
     process_output_to_str,
     render_template,
     rewrap_to_gluetool,
@@ -83,6 +83,9 @@ from ..environment import (
 from ..knobs import KNOB_POOL_ENABLED, Knob
 from ..metrics import PoolCostsMetrics, PoolMetrics, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from ..script import hook_engine
+
+if TYPE_CHECKING:
+    from ._image_flavor_filtering import FilterReturnType, FilterRuling
 
 T = TypeVar('T')
 FlavorT = TypeVar('FlavorT', bound=Flavor)
@@ -2637,6 +2640,9 @@ class FlavorBasedPoolDriver(
     #: Template for a cache key holding flavor image info.
     POOL_FLAVOR_INFO_CACHE_KEY = 'pool.{}.flavor-info'
 
+    #: Name of the hook filtering suitable flavors.
+    _flavor_filter_hook_name: str
+
     def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str, pool_config: dict[str, Any]) -> None:
         super().__init__(logger, poolname, pool_config)
 
@@ -2652,168 +2658,13 @@ class FlavorBasedPoolDriver(
 
         raise NotImplementedError
 
-    def _filter_flavors_image_arch(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        image: PoolImageInfo,
-        suitable_flavors: list[FlavorT],
-    ) -> Result[list[FlavorT], Failure]:
-        if image.arch is None:
-            return Ok(suitable_flavors)
-
-        return Ok(
-            list(
-                logging_filter(
-                    logger,
-                    suitable_flavors,
-                    'image and flavor arch matches',
-                    lambda logger, flavor: flavor.arch == image.arch,
-                )
-            )
-        )
-
-    def _filter_flavors_image_compatible(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        image: PoolImageInfo,
-        suitable_flavors: list[FlavorT],
-    ) -> Result[list[FlavorT], Failure]:
-        """
-        Drop flavors whose ``compatible.distro`` does not overlap with the image's ``compatible.distro``.
-        If either side has an empty list, no filtering is applied.
-        """
-
-        image_distros = set(image.compatible.distro)
-
-        if not image_distros:
-            return Ok(suitable_flavors)
-
-        return Ok(
-            list(
-                logging_filter(
-                    logger,
-                    suitable_flavors,
-                    'image and flavor distro compatibility',
-                    lambda logger, flavor: (
-                        not flavor.compatible.distro or bool(image_distros.intersection(flavor.compatible.distro))
-                    ),
-                )
-            )
-        )
-
-    def _filter_flavors_prefer_default_flavor(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        image: PoolImageInfo,
-        suitable_flavors: list[FlavorT],
-    ) -> Result[list[FlavorT], Failure]:
-        if not suitable_flavors:
-            return Ok(suitable_flavors)
-
-        if not any(flavor.name == self.pool_config['default-flavor'] for flavor in suitable_flavors):
-            return Ok(suitable_flavors)
-
-        logger.info('default flavor among suitable ones, using it')
-
-        return Ok(
-            list(
-                logging_filter(
-                    logger,
-                    suitable_flavors,
-                    'prefer default flavor',
-                    lambda logger, flavor: flavor.name == self.pool_config['default-flavor'],
-                )
-            )
-        )
-
-    def _filter_flavors_default_fallback(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        image: PoolImageInfo,
-        suitable_flavors: list[FlavorT],
-    ) -> Result[list[FlavorT], Failure]:
-        if suitable_flavors:
-            return Ok(suitable_flavors)
-
-        if not self.pool_config.get('use-default-flavor-when-no-suitable', True):
-            return Ok(suitable_flavors)
-
-        guest_request.log_warning_event(
-            logger, session, 'no suitable flavors, falling back to default', poolname=self.poolname
-        )
-
-        r_default_flavor = self._map_environment_to_flavor_info_by_cache_by_name_or_none(
-            logger, self.pool_config['default-flavor']
-        )
-
-        if r_default_flavor.is_error:
-            return Error(r_default_flavor.unwrap_error())
-
-        return Ok([cast(FlavorT, r_default_flavor.unwrap())])
-
-    def _filter_suitable_flavors(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        image: PoolImageInfo,
-        suitable_flavors: list[FlavorT],
-        *flavor_filters: FlavorFilter[FlavorT],
-    ) -> Result[list[FlavorT], Failure]:
-        for flavor_filter in flavor_filters:
-            r_suitable_flavors = flavor_filter(logger, session, guest_request, image, suitable_flavors)
-
-            if r_suitable_flavors.is_error:
-                return Error(r_suitable_flavors.unwrap_error())
-
-            suitable_flavors = r_suitable_flavors.unwrap()
-
-        if not suitable_flavors:
-            guest_request.log_warning_event(logger, session, 'no suitable flavors', poolname=self.poolname)
-
-        return Ok(suitable_flavors)
-
-    def _do_guest_request_to_flavor_or_none(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        image: PoolImageInfo,
-        *flavor_filters: FlavorFilter[FlavorT],
-    ) -> Result[Optional[FlavorT], Failure]:
-        r_suitable_flavors = self._map_environment_to_flavor_info_by_cache_by_constraints(
-            logger, guest_request.environment
-        )
-
-        if r_suitable_flavors.is_error:
-            return Error(r_suitable_flavors.unwrap_error())
-
-        r_filtered_suitable_flavors = self._filter_suitable_flavors(
-            logger, session, guest_request, image, r_suitable_flavors.unwrap(), *flavor_filters
-        )
-
-        if r_filtered_suitable_flavors.is_error:
-            return Error(r_filtered_suitable_flavors.unwrap_error())
-
-        filtered_suitable_flavors = r_filtered_suitable_flavors.unwrap()
-
-        return Ok(filtered_suitable_flavors[0] if filtered_suitable_flavors else None)
-
     def _guest_request_to_flavor_or_none(
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         image: PoolImageInfoT,
-    ) -> Result[Optional[FlavorT], Failure]:
+    ) -> Result[tuple[Optional[FlavorT], 'FilterRuling[FlavorT]'], Failure]:
         """
         Map a guest request and image to the most fitting flavor.
 
@@ -2825,15 +2676,48 @@ class FlavorBasedPoolDriver(
             suitable flavor was found.
         """
 
-        return self._do_guest_request_to_flavor_or_none(
-            logger,
-            session,
-            guest_request,
-            image,
-            self._filter_flavors_image_arch,
-            self._filter_flavors_prefer_default_flavor,
-            self._filter_flavors_default_fallback,
+        r_suitable_flavors = self._map_environment_to_flavor_info_by_cache_by_constraints(
+            logger, guest_request.environment
         )
+
+        if r_suitable_flavors.is_error:
+            return Error(r_suitable_flavors.unwrap_error())
+
+        r_engine = hook_engine(self._flavor_filter_hook_name)
+
+        if r_engine.is_error:
+            return Error(r_engine.unwrap_error().update(environment=guest_request.environment))
+
+        engine = r_engine.unwrap()
+
+        with Sentry.start_span(
+            TracingOp.FUNCTION, description='run_hook', tags={'hookname': self._flavor_filter_hook_name}
+        ):
+            try:
+                r_ruling: FilterReturnType[FlavorT] = engine.run_hook(
+                    self._flavor_filter_hook_name,
+                    logger=logger,
+                    session=session,
+                    pool=self,
+                    guest_request=guest_request,
+                    image=image,
+                    flavors=r_suitable_flavors.unwrap(),
+                )
+
+            except Exception as exc:
+                return Error(Failure.from_exc('unhandled hook error', exc))
+
+        if r_ruling.is_error:
+            return Error(r_ruling.unwrap_error().update(environment=guest_request.environment))
+
+        ruling = r_ruling.unwrap()
+
+        filtered_suitable_flavors = ruling.matched_flavors
+
+        if not filtered_suitable_flavors:
+            guest_request.log_warning_event(logger, session, 'no suitable flavors', poolname=self.poolname)
+
+        return Ok((filtered_suitable_flavors[0] if filtered_suitable_flavors else None, ruling))
 
     def _guest_request_to_flavor(
         self,
@@ -2841,7 +2725,7 @@ class FlavorBasedPoolDriver(
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         image: PoolImageInfoT,
-    ) -> Result[FlavorT, Failure]:
+    ) -> Result[tuple[FlavorT, 'FilterRuling[FlavorT]'], Failure]:
         """
         Map a guest request and image to the most fitting flavor.
 
@@ -2853,17 +2737,23 @@ class FlavorBasedPoolDriver(
             image, or an error with a :py:class:`Failure` describing the problem.
         """
 
-        r_flavor = self._guest_request_to_flavor_or_none(logger, session, guest_request, image)
+        r = self._guest_request_to_flavor_or_none(logger, session, guest_request, image)
 
-        if r_flavor.is_error:
-            return Error(r_flavor.unwrap_error())
+        if r.is_error:
+            return Error(r.unwrap_error())
 
-        flavor = r_flavor.unwrap()
+        flavor, filter_ruling = r.unwrap()
 
         if flavor is None:
-            return Error(Failure('no suitable flavor', environment=guest_request.environment))
+            return Error(
+                Failure(
+                    'no suitable flavor',
+                    environment=guest_request.environment,
+                    flavor_filter_rulings=filter_ruling.serialized_history,
+                )
+            )
 
-        return Ok(flavor)
+        return Ok((flavor, filter_ruling))
 
     def _collect_image_flavor_pairs(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
@@ -2919,7 +2809,9 @@ class FlavorBasedPoolDriver(
             if r_flavor.is_error:
                 return Error(r_flavor.unwrap_error())
 
-            flavor = r_flavor.unwrap()
+            flavor, filter_ruling = r_flavor.unwrap()
+
+            log_dict_yaml(logger.info, 'image/flavor pair filter ruling', filter_ruling.serialized_history)
 
             if flavor is None:
                 continue

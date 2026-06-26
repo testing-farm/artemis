@@ -11,7 +11,7 @@ import operator
 import os
 import re
 import string
-from collections.abc import Iterator, MutableSequence
+from collections.abc import Iterator, MutableSequence, Sequence
 from typing import (
     Any,
     Callable,
@@ -79,6 +79,11 @@ from . import (
     create_sanitize_tags,
     guest_log_updater,
     run_cli_tool,
+)
+from ._image_flavor_filtering import (
+    FilterReturnType,
+    FilterRuling,
+    image_flavor_filter,
 )
 
 #
@@ -1488,6 +1493,150 @@ _AWS_BOOT_MODE_MATRIX = [
 ]
 
 
+@image_flavor_filter
+def filter_flavors_console_url_support(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    pool: 'AWSDriver',
+    guest_request: GuestRequest,
+    image: PoolImageInfo,
+    flavors: Sequence[AWSFlavor],
+) -> FilterReturnType[AWSFlavor]:
+    """
+    Console/URL logs require ENA support
+    """
+
+    if not guest_request.requests_guest_log('console:interactive', GuestLogContentType.URL):
+        return Ok(FilterRuling.from_flavors(image, flavors))
+
+    return Ok(
+        FilterRuling.from_flavors(
+            image,
+            flavors,
+            matcher=lambda flavor: flavor.ena_support in ('required', 'supported'),
+        )
+    )
+
+
+@image_flavor_filter
+def filter_flavors_image_ena_support(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    pool: 'AWSDriver',
+    guest_request: GuestRequest,
+    image: AWSPoolImageInfo,
+    flavors: Sequence[AWSFlavor],
+) -> FilterReturnType[AWSFlavor]:
+    """
+    Make sure that, if image does not support ENA, we drop all flavors that require the support
+    """
+
+    if image.ena_support is True:
+        return Ok(FilterRuling.from_flavors(image, flavors))
+
+    return Ok(
+        FilterRuling.from_flavors(
+            image,
+            flavors,
+            matcher=lambda flavor: flavor.ena_support != 'required',
+        )
+    )
+
+
+@image_flavor_filter
+def filter_flavors_image_boot_method(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    pool: 'AWSDriver',
+    guest_request: GuestRequest,
+    image: AWSPoolImageInfo,
+    flavors: Sequence[AWSFlavor],
+) -> FilterReturnType[AWSFlavor]:
+    """
+    Make sure that, if image supports a particular boot method only, we drop all flavors that do not support it
+    """
+
+    # When image does not specify its boot methods, allow all flavors. This should be increasingly rare condition,
+    # but the property is a list and it may be empty.
+    if not image.boot.method:
+        return Ok(FilterRuling.from_flavors(image, flavors))
+
+    # This is the basic filter: allow only flavors that support any of the image boot methods. When we are not
+    # needed to be picky, we will just make sure image and flavors can work together, nothing more.
+    def _basic_filter() -> FilterReturnType[AWSFlavor]:
+        return Ok(
+            FilterRuling.from_flavors(
+                image,
+                flavors,
+                matcher=lambda flavor: any(method in flavor.boot.method for method in image.boot.method),
+            )
+        )
+
+    # When the guest request has no HW requirement at all, use the basic filter.
+    if not guest_request.environment.has_hw_constraints:
+        return _basic_filter()
+
+    r_constraints = guest_request.environment.get_hw_constraints()
+
+    if r_constraints.is_error:
+        return Error(r_constraints.unwrap_error())
+
+    constraints = r_constraints.unwrap()
+
+    # When the guest request has no HW requirement at all, use the basic filter.
+    if constraints is None:
+        return _basic_filter()
+
+    # When the guest has HW requirements, but no boot.method ones, use the basic filter.
+    r_has_boot_constraint = constraints.uses_constraint(logger, 'boot.method')
+
+    if r_has_boot_constraint.is_error:
+        return Error(r_has_boot_constraint.unwrap_error())
+
+    if not r_has_boot_constraint.unwrap():
+        return _basic_filter()
+
+    def _boot_method_requested(flavor: AWSFlavor) -> bool:
+        # Focus on the default, selected span of constraints.
+        r_span = _get_constraint_span(logger, guest_request, flavor)
+
+        if r_span.is_error:
+            r_span.unwrap_error().handle(logger)
+
+            return False
+
+        span = r_span.unwrap()
+
+        # Collect boot.method constraints - it's pointless to consider other constraints.
+        boot_method_constraints = [
+            constraint
+            for constraint in span
+            if constraint.expand_name().property == 'boot' and constraint.expand_name().child_property == 'method'
+        ]
+
+        # This may still happen: we did check whether HW requirements contain any boot.method requirement, and they
+        # did, otherwise we wouldn't be here. Finding no such constraint in the span means these constraints are not
+        # compatible with the flavor, and therefore the flavor is not suitable at all.
+        if not boot_method_constraints:
+            return False
+
+        # Construct the "needle", and peek into our master table whether it's there. Note that the needle contains
+        # the "allowed" flag as the last item. Master table contains all combinations, even disallowed ones.
+        needle = (
+            ', '.join(sorted(image.boot.method)),
+            ', '.join(sorted(flavor.boot.method)),
+            f'{boot_method_constraints[0].operator.value} {boot_method_constraints[0].value}',
+            # The combination must be marked as allowed.
+            True,
+        )
+
+        logger.debug(f'boot method needle: {needle}')
+
+        return needle in _AWS_BOOT_MODE_MATRIX
+
+    return Ok(FilterRuling.from_flavors(image, flavors, matcher=_boot_method_requested))
+
+
 class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavor, BackendFlavor, Instance]):
     drivername = 'aws'
 
@@ -1500,6 +1649,8 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
     datetime_format = AWS_DATETIME_FORMAT
 
     _image_map_hook_name = 'AWS_ENVIRONMENT_TO_IMAGE'
+
+    _flavor_filter_hook_name = 'AWS_FLAVOR_FILTERS'
 
     def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str, pool_config: dict[str, Any]) -> None:
         super().__init__(logger, poolname, pool_config)
@@ -1742,183 +1893,6 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
             self.inc_costs(logger, ResourceType.SECURITY_GROUP, resource_ids.ctime)
 
         return Ok(ReleasePoolResourcesState.RELEASED)
-
-    def _filter_flavors_console_url_support(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        image: PoolImageInfo,
-        suitable_flavors: list[AWSFlavor],
-    ) -> Result[list[AWSFlavor], Failure]:
-        """
-        Console/URL logs require ENA support
-        """
-
-        if not guest_request.requests_guest_log('console:interactive', GuestLogContentType.URL):
-            return Ok(suitable_flavors)
-
-        return Ok(
-            list(
-                logging_filter(
-                    logger,
-                    suitable_flavors,
-                    'console requires flavor ENA support',
-                    lambda logger, flavor: flavor.ena_support in ('required', 'supported'),
-                )
-            )
-        )
-
-    def _filter_flavors_image_ena_support(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        image: PoolImageInfo,
-        suitable_flavors: list[AWSFlavor],
-    ) -> Result[list[AWSFlavor], Failure]:
-        """
-        Make sure that, if image does not support ENA, we drop all flavors that require the support
-        """
-
-        if cast(AWSPoolImageInfo, image).ena_support is True:
-            return Ok(suitable_flavors)
-
-        return Ok(
-            list(
-                logging_filter(
-                    logger,
-                    suitable_flavors,
-                    'image and flavor ENA compatibility',
-                    lambda logger, flavor: flavor.ena_support != 'required',
-                )
-            )
-        )
-
-    def _filter_flavors_image_boot_method(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        image: PoolImageInfo,
-        suitable_flavors: list[AWSFlavor],
-    ) -> Result[list[AWSFlavor], Failure]:
-        """
-        Make sure that, if image supports a particular boot method only, we drop all flavors that do not support it
-        """
-
-        # When image does not specify its boot methods, allow all flavors. This should be increasingly rare condition,
-        # but the property is a list and it may be empty.
-        if not image.boot.method:
-            return Ok(suitable_flavors)
-
-        # This is the basic filter: allow only flavors that support any of the image boot methods. When we are not
-        # needed to be picky, we will just make sure image and flavors can work together, nothing more.
-        def _basic_filter() -> Result[list[AWSFlavor], Failure]:
-            return Ok(
-                list(
-                    logging_filter(
-                        logger,
-                        suitable_flavors,
-                        'image boot method is supported',
-                        lambda logger, flavor: any(method in flavor.boot.method for method in image.boot.method),
-                    )
-                )
-            )
-
-        # When the guest request has no HW requirement at all, use the basic filter.
-        if not guest_request.environment.has_hw_constraints:
-            return _basic_filter()
-
-        r_constraints = guest_request.environment.get_hw_constraints()
-
-        if r_constraints.is_error:
-            return Error(r_constraints.unwrap_error())
-
-        constraints = r_constraints.unwrap()
-
-        # When the guest request has no HW requirement at all, use the basic filter.
-        if constraints is None:
-            return _basic_filter()
-
-        # When the guest has HW requirements, but no boot.method ones, use the basic filter.
-        r_has_boot_constraint = constraints.uses_constraint(logger, 'boot.method')
-
-        if r_has_boot_constraint.is_error:
-            return Error(r_has_boot_constraint.unwrap_error())
-
-        if not r_has_boot_constraint.unwrap():
-            return _basic_filter()
-
-        def _boot_method_requested(logger: ContextAdapter, flavor: AWSFlavor) -> bool:
-            # Focus on the default, selected span of constraints.
-            r_span = _get_constraint_span(logger, guest_request, flavor)
-
-            if r_span.is_error:
-                r_span.unwrap_error().handle(logger)
-
-                return False
-
-            span = r_span.unwrap()
-
-            # Collect boot.method constraints - it's pointless to consider other constraints.
-            boot_method_constraints = [
-                constraint
-                for constraint in span
-                if constraint.expand_name().property == 'boot' and constraint.expand_name().child_property == 'method'
-            ]
-
-            # This may still happen: we did check whether HW requirements contain any boot.method requirement, and they
-            # did, otherwise we wouldn't be here. Finding no such constraint in the span means these constraints are not
-            # compatible with the flavor, and therefore the flavor is not suitable at all.
-            if not boot_method_constraints:
-                return False
-
-            # Construct the "needle", and peek into our master table whether it's there. Note that the needle contains
-            # the "allowed" flag as the last item. Master table contains all combinations, even disallowed ones.
-            needle = (
-                ', '.join(sorted(image.boot.method)),
-                ', '.join(sorted(flavor.boot.method)),
-                f'{boot_method_constraints[0].operator.value} {boot_method_constraints[0].value}',
-                # The combination must be marked as allowed.
-                True,
-            )
-
-            logger.debug(f'boot method needle: {needle}')
-
-            return needle in _AWS_BOOT_MODE_MATRIX
-
-        return Ok(
-            list(
-                logging_filter(
-                    logger,
-                    suitable_flavors,
-                    'image and flavor boot methods combine into the requested guest boot method',
-                    _boot_method_requested,
-                )
-            )
-        )
-
-    def _guest_request_to_flavor_or_none(
-        self,
-        logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
-        guest_request: GuestRequest,
-        image: AWSPoolImageInfo,
-    ) -> Result[Optional[AWSFlavor], Failure]:
-        return self._do_guest_request_to_flavor_or_none(
-            logger,
-            session,
-            guest_request,
-            image,
-            self._filter_flavors_image_arch,
-            self._filter_flavors_console_url_support,
-            self._filter_flavors_image_ena_support,
-            self._filter_flavors_image_compatible,
-            self._filter_flavors_image_boot_method,
-            self._filter_flavors_prefer_default_flavor,
-            self._filter_flavors_default_fallback,
-        )
 
     def _describe_instance(self, guest_request: GuestRequest) -> Result[InstanceOwnerType, Failure]:
         aws_options = [
