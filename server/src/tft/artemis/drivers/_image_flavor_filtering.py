@@ -31,9 +31,14 @@ class SerializedPairRuling(TypedDict):
     note: Optional[str]
 
 
-class SerializedFilterRuling(TypedDict):
-    filtername: Optional[str]
-    rulings: list[SerializedPairRuling]
+SerializedFilterRuling = TypedDict(
+    'SerializedFilterRuling',
+    {
+        'filtername': Optional[str],
+        'allowed-flavors': list[SerializedPairRuling],
+        'disallowed-flavors': list[SerializedPairRuling],
+    },
+)
 
 
 @dataclasses.dataclass(repr=False)
@@ -67,6 +72,10 @@ class FilterRuling(SerializableContainer, Generic[FlavorT]):
         return [pair_ruling for pair_ruling in self.rulings if pair_ruling.match]
 
     @property
+    def unmatched_rulings(self) -> list[PairRuling[FlavorT]]:
+        return [pair_ruling for pair_ruling in self.rulings if not pair_ruling.match]
+
+    @property
     def matched_flavors(self) -> list[FlavorT]:
         return [pair_ruling.flavor for pair_ruling in self.rulings if pair_ruling.match]
 
@@ -85,7 +94,11 @@ class FilterRuling(SerializableContainer, Generic[FlavorT]):
         return cls(rulings=[PairRuling(image=image, flavor=flavor, match=matcher(flavor)) for flavor in flavors])
 
     def serialize(self) -> SerializedFilterRuling:  # type: ignore[override]
-        return {'filtername': self.filtername, 'rulings': [pair_ruling.serialize() for pair_ruling in self.rulings]}
+        return {
+            'filtername': self.filtername,
+            'allowed-flavors': [pair_ruling.serialize() for pair_ruling in self.matched_rulings],
+            'disallowed-flavors': [pair_ruling.serialize() for pair_ruling in self.unmatched_rulings],
+        }
 
     @classmethod
     def unserialize(cls, serialized: SerializedFilterRuling) -> Self:  # type: ignore[override]

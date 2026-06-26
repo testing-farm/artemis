@@ -33,6 +33,8 @@ class PoolPolicyRuling:
 
     note: Optional[str] = None
 
+    details: list[Any] = dataclasses.field(default_factory=list[Any])
+
     def __repr__(self) -> str:
         return f'<PoolPolicyRuling: pool={self.pool.poolname} allowed={self.allowed} note={self.note}>'
 
@@ -93,6 +95,7 @@ PolicyType = Callable[
 class SerializedPoolRulingHistoryItemType(TypedDict):
     poolname: str
     note: Optional[str]
+    details: list[Any]
 
 
 SerializedRulingHistoryItemType = TypedDict(
@@ -126,12 +129,20 @@ class RulingHistoryItem(SerializableContainer):
             for pool_ruling in self.ruling.pools:
                 if pool_ruling.allowed is True:
                     serialized['allowed-pools'].append(
-                        {'poolname': pool_ruling.pool.poolname, 'note': pool_ruling.note}
+                        {
+                            'poolname': pool_ruling.pool.poolname,
+                            'note': pool_ruling.note,
+                            'details': pool_ruling.details,
+                        }
                     )
 
                 else:
                     serialized['disallowed-pools'].append(
-                        {'poolname': pool_ruling.pool.poolname, 'note': pool_ruling.note}
+                        {
+                            'poolname': pool_ruling.pool.poolname,
+                            'note': pool_ruling.note,
+                            'details': pool_ruling.details,
+                        }
                     )
 
             serialized['cancel'] = self.ruling.cancel
@@ -902,6 +913,7 @@ def policy_can_acquire(
                     note=f'{answer.reason.message} ({"recoverable" if answer.reason.recoverable else "irrecoverable"})'
                     if answer.reason
                     else None,
+                    details=answer.details,
                 )
                 for pool, answer in answers
             ],
