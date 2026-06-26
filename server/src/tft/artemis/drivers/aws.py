@@ -2396,7 +2396,10 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
             command.extend(self.pool_config['additional-options'])
 
         if tags:
-            command += ['--tag-specifications', *_tags_to_tag_specifications(tags, 'instance', 'volume')]
+            command += [
+                '--tag-specifications',
+                *_tags_to_tag_specifications(tags, 'instance', 'volume', 'network-interface'),
+            ]
 
         # Note: this is actually not used for anything but logging alone. We re-use the spot template, the fields are
         # pretty much the same.
@@ -2687,7 +2690,9 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
         except Exception as exc:
             return Error(Failure.from_exc('failed to parse AWS output', exc))
 
-        taggable_resource_ids = [pool_data.instance_id, *volume_ids]
+        eni_ids = [eni['NetworkInterfaceId'] for eni in instance.get('NetworkInterfaces', [])]
+
+        taggable_resource_ids = [pool_data.instance_id, *volume_ids, *eni_ids]
 
         r_tag = self._tag_resources(taggable_resource_ids, tags)
 
