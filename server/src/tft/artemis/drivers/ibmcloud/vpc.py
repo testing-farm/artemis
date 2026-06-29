@@ -617,10 +617,6 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, 
         if not instance_details['tags']:
             # query_backend_instance would have fetched tags if there were any. So atm no tags have been assigned yet,
             # time to do that.
-            r_tags = self.get_guest_tags(logger, session, guest_request)
-
-            if r_tags.is_error:
-                return Error(r_tags.unwrap_error())
 
             # Try to tag the instance
             r_tag_instance = self.tag_resource(logger=logger, resource_name=instance_name, tags=tags)

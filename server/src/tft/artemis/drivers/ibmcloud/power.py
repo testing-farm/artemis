@@ -512,7 +512,7 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
         if r_tag_volume.is_error:
             return Error(
                 Failure.from_failure(
-                    'Tagging instance boot volume failed', r_volume_details.unwrap_error(), instance_id=instance_id
+                    'Tagging instance boot volume failed', r_tag_volume.unwrap_error(), instance_id=instance_id
                 )
             )
 

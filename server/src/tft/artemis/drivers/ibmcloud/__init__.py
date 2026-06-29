@@ -299,7 +299,6 @@ class IBMCloudDriver(
                 return Error(
                     Failure.from_failure(f'Tagging resource {resource_name} failed', r_tag_resource.unwrap_error())
                 )
-            return Ok(None)
 
         return Ok(None)
 
@@ -309,7 +308,7 @@ class IBMCloudDriver(
         """
         Retrieve information about the resource (instance, security group, workspace etc) from the resource endpoint.
         Can come in handy when dealing with post-creation tagging.
-        Resource filter is valid search filter like crn:CRN ir name: NAME.
+        Resource filter is valid search filter like crn:CRN or name: NAME.
         """
         with IBMCloudSession(logger, self) as ibm_session:
             r_resource_details = ibm_session.run(
