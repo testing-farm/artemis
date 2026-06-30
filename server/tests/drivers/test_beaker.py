@@ -1100,3 +1100,52 @@ def test_bkr_wow_options(
     assert not r_wow_options.is_error
 
     assert r_wow_options.unwrap() == expected
+
+
+def test_bkr_wow_options_bootc_merges_user_kickstart_metadata(
+    logger: ContextAdapter,
+    mockpatch: MockPatcher,
+    session: sqlalchemy.orm.session.Session,
+    dummy_image_info: MagicMock,
+    pool: tft.artemis.drivers.beaker.BeakerDriver,
+) -> None:
+    # TFT-4779: for a bootc compose the driver-generated `ostree_container_url` must be merged into
+    # the same `--ks-meta` as the user's kickstart metadata - otherwise Beaker keeps only the last
+    # `--ks-meta` and the bootc URL is dropped. `GuestRequest.environment` returns a fresh object on
+    # every access, so the merge must use a single captured environment; this mock reproduces that.
+    env = """
+    ---
+    hw:
+      arch: x86_64
+      constraints: {}
+    os:
+      compose: dummy-compose
+    kickstart:
+      metadata: autopart_type=plain ignoredisk=--only-use=nvme0n1
+    """
+
+    class GuestRequestMock(MagicMock):
+        @property
+        def environment(self) -> tft.artemis.environment.Environment:
+            return parse_env(env)
+
+    guest_request = GuestRequestMock(guestname='dummy_guest')
+    guest_request.serialize = lambda: {'guestname': 'dummy_guest', 'environment': parse_env(env).serialize()}
+
+    dummy_image_info.bootc_image = 'registry.example.com/rhel-bootc:dummy'
+    mockpatch(tft.artemis.drivers.beaker.BeakerDriver, 'get_guest_tags').return_value = Ok({})
+
+    r_wow_options = tft.artemis.drivers.beaker.BeakerDriver._create_wow_options(
+        pool, logger, session, guest_request, dummy_image_info
+    )
+
+    assert not r_wow_options.is_error
+
+    options = r_wow_options.unwrap()
+    ks_meta_values = [options[index + 1] for index, option in enumerate(options) if option == '--ks-meta']
+
+    assert any(
+        'ostree_container_url=registry.example.com/rhel-bootc:dummy' in value
+        and 'autopart_type=plain ignoredisk=--only-use=nvme0n1' in value
+        for value in ks_meta_values
+    ), ks_meta_values
