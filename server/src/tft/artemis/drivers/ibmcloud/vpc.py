@@ -550,7 +550,7 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, 
 
     @override
     def _query_backend_instance(
-        self, logger: gluetool.log.ContextAdapter, instance_id: str, *, minimize: bool = True
+        self, logger: gluetool.log.ContextAdapter, instance_id: str, *, include_tags: bool = False
     ) -> _Result[BackendInstance, Failure]:
         res: BackendInstance = {}
 
@@ -566,7 +566,7 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, 
 
             res = cast(dict[str, Any], r_instance_info.unwrap())
 
-            if not minimize:
+            if include_tags:
                 # Now send another request to resource api to retrieve tags information
                 # Make sure a proper resource filter is used, name != id != crn
                 r_resource_tags = self.get_resource_tags(logger, f'resource_id:{instance_id}')
@@ -596,7 +596,7 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, 
         if not instance_id:
             return Error(Failure('Need an instance ID to fetch any information about a guest'))
 
-        r_output = self._query_backend_instance(logger, instance_id, minimize=False)
+        r_output = self._query_backend_instance(logger, instance_id, include_tags=True)
 
         if not is_successful(r_output):
             return Error(Failure.from_failure('no such instance', r_output.failure()))

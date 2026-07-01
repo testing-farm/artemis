@@ -467,7 +467,7 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
         if not instance_id:
             return Error(Failure('Need an instance id to fetch any information about a guest'))
 
-        r_instance = self._query_backend_instance(logger, instance_id, minimize=False)
+        r_instance = self._query_backend_instance(logger, instance_id, include_tags=True)
 
         if not is_successful(r_instance):
             return Error(Failure.from_failure('no such instance', r_instance.failure()))
@@ -550,10 +550,10 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
     # fits in other drivers. Be careful when using it.
     @override
     def _query_backend_instance(
-        self, logger: gluetool.log.ContextAdapter, instance_id: str, *, minimize: bool = True
+        self, logger: gluetool.log.ContextAdapter, instance_id: str, *, include_tags: bool = False
     ) -> _Result[BackendInstance, Failure]:
         with IBMCloudPowerSession(logger, self) as session:
-            return self._query_backend_instance_sessionless(logger, instance_id, session, minimize=minimize)
+            return self._query_backend_instance_sessionless(logger, instance_id, session, include_tags=include_tags)
 
     # Issues the actual `pi instance get` call but does not create an ibmcloud cli session.
     # To be used with an already secured cli session directory.
@@ -563,7 +563,7 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
         instance_id: str,
         session: CLISessionPermanentDir,
         *,
-        minimize: bool = True,
+        include_tags: bool = False,
     ) -> _Result[BackendInstance, Failure]:
         res: BackendInstance = {}
 
@@ -576,7 +576,7 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
 
         res = cast(dict[str, Any], r_instance_info.unwrap())
 
-        if not minimize:
+        if include_tags:
             # Now send another request to resource api to retrieve tags information
             r_resource_tags = self.get_resource_tags(logger, f'resource_id:{instance_id}')
 
