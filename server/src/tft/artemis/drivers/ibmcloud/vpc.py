@@ -632,7 +632,8 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, 
         # to the resource endpoint
         volume_name = instance_details.get('boot_volume_attachment', {}).get('volume', {}).get('name')
         if not volume_name:
-            return Error(Failure('Could not retrieve boot volume name', instance_name=instance_name))
+            # Maybe it is just early provisioning stages and volume is not there yet? Let's give it another try.
+            return Ok(ProvisioningProgress(state=ProvisioningState.PENDING, pool_data=pool_data))
 
         # Try to tag boot volume.
         r_tag_volume = self.tag_resource(logger=logger, resource_name=volume_name, tags=tags)

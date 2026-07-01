@@ -278,7 +278,7 @@ class IBMCloudDriver(
         tags: Tags,
     ) -> Result[None, Failure]:
         resource_tags = ','.join(_serialize_tags(tags))
-        logger.debug(f'Adding the following tags to instance {resource_name}: {resource_tags}')
+        logger.debug(f'Adding the following tags to the resource {resource_name}: {resource_tags}')
 
         with IBMCloudSession(logger, self) as ibm_session:
             r_tag_resource = ibm_session.run(

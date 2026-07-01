@@ -497,7 +497,12 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
                 return Error(Failure.from_failure('Tagging instance failed', r_tag_instance.unwrap_error()))
 
         # Tag the boot volume
-        volume_id = instance_details['volumeIDs'][0]
+        volume_ids = instance_details.get('volumeIDs', [])
+        if not volume_ids:
+            # Maybe it is just early provisioning stages and volume is not there yet? Let's give it another try.
+            return Ok(ProvisioningProgress(state=ProvisioningState.PENDING, pool_data=pool_data))
+
+        volume_id = volume_ids[0]
         # Another call that may fail...
         with IBMCloudPowerSession(logger, self) as cli_session:
             r_volume_details = cli_session.run(
