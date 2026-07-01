@@ -1557,12 +1557,19 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
 
         ks_meta = r_ks_meta.unwrap()
 
-        if guest_request.environment.has_ks_specification or ks_meta:
-            guest_request.environment.kickstart.metadata = ' '.join(
-                meta for meta in [ks_meta, guest_request.environment.kickstart.metadata] if meta
+        # `GuestRequest.environment` returns a freshly deserialized object on every access, so the
+        # merged metadata must be applied to a single captured environment and that same object must
+        # be handed to `_create_bkr_kickstart_options`. Re-reading `guest_request.environment` here
+        # would discard the merge and pass only the user-supplied metadata to `bkr`, dropping the
+        # driver-generated `ostree_container_url` for bootc composes (TFT-4779).
+        environment = guest_request.environment
+
+        if environment.has_ks_specification or ks_meta:
+            environment.kickstart.metadata = ' '.join(
+                meta for meta in [ks_meta, environment.kickstart.metadata] if meta
             )
 
-            kickstart_options = self._create_bkr_kickstart_options(guest_request.environment.kickstart)
+            kickstart_options = self._create_bkr_kickstart_options(environment.kickstart)
 
         else:
             kickstart_options = []
