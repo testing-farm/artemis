@@ -818,9 +818,11 @@ class CanAcquire:
     #: it is a temporary limitation or not.
     reason: Optional[Failure] = None
 
+    details: list[Any] = dataclasses.field(default_factory=list[Any])
+
     @classmethod
-    def cannot(cls, message: str, *, recoverable: bool = False) -> 'CanAcquire':
-        return CanAcquire(can_acquire=False, reason=Failure(message, recoverable=recoverable))
+    def cannot(cls, message: str, *, recoverable: bool = False, details: Optional[list[Any]] = None) -> 'CanAcquire':
+        return CanAcquire(can_acquire=False, reason=Failure(message, recoverable=recoverable), details=details or [])
 
 
 class ProvisioningState(enum.Enum):
@@ -2801,7 +2803,17 @@ class FlavorBasedPoolDriver(
             if not images:
                 return Ok((CanAcquire.cannot('compose does not support kickstart'), []))
 
-        pairs: list[tuple[PoolImageInfoT, FlavorT]] = []
+        pair_filter_rulings: list[tuple[PoolImageInfoT, FilterRuling[FlavorT], Optional[FlavorT]]] = []
+
+        def _serialize_filter_rulings() -> list[Any]:
+            return [
+                {
+                    'flavor-filter-rulings': [
+                        {'imagename': image.name, 'rulings': filter_ruling.serialized_history}
+                        for image, filter_ruling, _ in pair_filter_rulings
+                    ]
+                }
+            ]
 
         for image in images:
             r_flavor = self._guest_request_to_flavor_or_none(logger, session, guest_request, image)
@@ -2811,23 +2823,33 @@ class FlavorBasedPoolDriver(
 
             flavor, filter_ruling = r_flavor.unwrap()
 
+            pair_filter_rulings.append((image, filter_ruling, flavor))
+
             log_dict_yaml(logger.info, 'image/flavor pair filter ruling', filter_ruling.serialized_history)
 
-            if flavor is None:
-                continue
+        valid_pairs = [
+            (image, filter_ruling, flavor) for image, filter_ruling, flavor in pair_filter_rulings if flavor is not None
+        ]
 
-            pairs.append((image, flavor))
-
-        if not pairs:
-            return Ok((CanAcquire.cannot('no suitable image/flavor combination found'), []))
+        if not valid_pairs:
+            return Ok(
+                (
+                    CanAcquire.cannot(
+                        'no suitable image/flavor combination found', details=_serialize_filter_rulings()
+                    ),
+                    [],
+                )
+            )
 
         log_dict_yaml(
             logger.info,
             'available image/flavor combinations',
-            [{'flavor': flavor.serialize(), 'image': image.serialize()} for image, flavor in pairs],
+            [{'flavor': flavor.serialize(), 'image': image.serialize()} for image, _, flavor in valid_pairs],
         )
 
-        return Ok((CanAcquire(), pairs))
+        return Ok(
+            (CanAcquire(details=_serialize_filter_rulings()), [(image, flavor) for image, _, flavor in valid_pairs])
+        )
 
     def can_acquire(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
@@ -2859,11 +2881,7 @@ class FlavorBasedPoolDriver(
 
         answer, _ = r_image_flavor_pairs.unwrap()
 
-        if answer.can_acquire is False:
-            return Ok(answer)
-
-        # Nothing ruled out the provisioning yet, return a positive answer.
-        return Ok(CanAcquire())
+        return Ok(answer)
 
     # TODO: I dislike the naming scheme here very much...
     def _map_environment_to_flavor_info_by_cache_by_name_or_none(
