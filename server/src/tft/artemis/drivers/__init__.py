@@ -821,8 +821,8 @@ class CanAcquire:
     details: list[Any] = dataclasses.field(default_factory=list[Any])
 
     @classmethod
-    def cannot(cls, message: str, *, recoverable: bool = False, history: Optional[list[Any]] = None) -> 'CanAcquire':
-        return CanAcquire(can_acquire=False, reason=Failure(message, recoverable=recoverable), details=history or [])
+    def cannot(cls, message: str, *, recoverable: bool = False, details: Optional[list[Any]] = None) -> 'CanAcquire':
+        return CanAcquire(can_acquire=False, reason=Failure(message, recoverable=recoverable), details=details or [])
 
 
 class ProvisioningState(enum.Enum):
@@ -2827,9 +2827,6 @@ class FlavorBasedPoolDriver(
 
             log_dict_yaml(logger.info, 'image/flavor pair filter ruling', filter_ruling.serialized_history)
 
-            if flavor is None:
-                continue
-
         valid_pairs = [
             (image, filter_ruling, flavor) for image, filter_ruling, flavor in pair_filter_rulings if flavor is not None
         ]
@@ -2838,7 +2835,7 @@ class FlavorBasedPoolDriver(
             return Ok(
                 (
                     CanAcquire.cannot(
-                        'no suitable image/flavor combination found', history=_serialize_filter_rulings()
+                        'no suitable image/flavor combination found', details=_serialize_filter_rulings()
                     ),
                     [],
                 )
