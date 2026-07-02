@@ -4,6 +4,7 @@
 import dataclasses
 import datetime
 import re
+import string
 import threading
 from functools import cached_property
 from typing import Any, Optional, cast
@@ -44,7 +45,9 @@ from . import (
     ProvisioningState,
     ReleasePoolResourcesState,
     SerializedPoolResourcesIDs,
+    Tags,
     create_error_cause_extractor,
+    create_sanitize_tags,
 )
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
@@ -54,7 +57,7 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
     per_entity=True,
     envvar='ARTEMIS_GCP_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH',
     cast_from_str=str,
-    default='configuration/artemis-image-map-gcp.yaml',
+    default='artemis-image-map-gcp.yaml',
 )
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
@@ -75,6 +78,48 @@ GCP_DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S.%f%z'
 GCPErrorCauses = CommonErrorCauses
 
 error_cause_extractor = create_error_cause_extractor(GCPErrorCauses)
+
+# GCP label constraints
+# https://cloud.google.com/compute/docs/labeling-resources#requirements
+LABEL_KEY_MAX_LENGTH = 63
+LABEL_VALUE_MAX_LENGTH = 63
+LABEL_ALLOWED_CHARACTERS = string.ascii_lowercase + string.digits + '_-'
+
+_sanitize_tags = create_sanitize_tags(
+    allowed_charset=LABEL_ALLOWED_CHARACTERS,
+    max_key_length=LABEL_KEY_MAX_LENGTH,
+    max_value_length=LABEL_VALUE_MAX_LENGTH,
+)
+
+
+def _serialize_tags(tags: Tags) -> dict[str, str]:
+    """
+    Serialize tags to make them acceptable as GCP labels.
+
+    GCP labels are key-value pairs. Keys must start with a lowercase letter,
+    contain only lowercase letters, digits, underscores, and dashes, and be
+    at most 63 characters. Values follow the same character rules.
+
+    See https://cloud.google.com/compute/docs/labeling-resources#requirements
+    """
+
+    # Lowercase before sanitizing so uppercase letters don't get replaced with underscores
+    lowered_tags: Tags = {k.lower(): v.lower() if v else v for k, v in tags.items()}
+
+    labels: dict[str, str] = {}
+
+    for name, value in _sanitize_tags(lowered_tags):
+        value = value or ''
+
+        # GCP keys must start with a lowercase letter
+        if name and not name[0].isalpha():
+            name = f'l-{name}'
+            name = name[:LABEL_KEY_MAX_LENGTH]
+
+        if name:
+            labels[name] = value
+
+    return labels
 
 
 BackendFlavor: TypeAlias = str
@@ -150,7 +195,7 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
 
         try:
             images_client = compute_v1.ImagesClient.from_service_account_info(self._service_account_info)
-            image_description = images_client.get_from_family(project=image_project, family=image_name)
+            image_description = images_client.get(project=image_project, image=image_name)
         except google.api_core.exceptions.NotFound as exc:
             return Error(Failure.from_exc('The given imagename was not found.', exc, imagename=image_name))
 
@@ -328,6 +373,7 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
         size: Optional[SizeType] = None,
         zone: Optional[str] = None,
         disk_type: str = 'pd-standard',
+        labels: Optional[dict[str, str]] = None,
     ) -> compute_v1.AttachedDisk:
         disk_type = f'zones/{zone}/diskTypes/{disk_type}'
 
@@ -341,6 +387,10 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
         initialize_params.source_image = image_link
         initialize_params.disk_size_gb = int(size.to('GiB').magnitude)
         initialize_params.disk_type = disk_type
+
+        if labels:
+            initialize_params.labels = labels
+
         boot_disk.initialize_params = initialize_params
         boot_disk.auto_delete = True
         boot_disk.boot = True
@@ -365,6 +415,7 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
         network_link: Optional[str] = None,
         *,
         delete_protection: bool = False,
+        tags: Optional[Tags] = None,
     ) -> Result[compute_v1.Instance, Failure]:
         network_link = network_link or self.pool_config['network-resource-url']
         machine_type = machine_type or self.pool_config['default-flavor']
@@ -384,6 +435,9 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
         instance.network_interfaces = [network_interface]
         instance.name = instance_name
         instance.disks = disks
+
+        if tags:
+            instance.labels = _serialize_tags(tags)
 
         instance.machine_type = self._ensure_machine_type_is_canonical(zone=zone, machine_type=machine_type)
 
@@ -410,8 +464,13 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
             return Error(Failure.from_exc('Failed to create a GCP instance', exc))
         except google.api_core.exceptions.Conflict as exc:
             return Error(Failure.from_exc('Failed to create a GCP instance', exc))
+        except google.api_core.exceptions.PreconditionFailed as exc:
+            return Error(Failure.from_exc('Instance creation failed due to policy', exc))
 
         try:
+            # NOTE(ivasilev) Needs revision, this may easily fail because of the lag between creation -> instance
+            # actually listed, then the whole request is retried include resource recreation which can leave untracked
+            # leftovers.. Will probably go away once ResourceManager approach is implemented for gcp.
             created_instance = client.get(project=project_id, zone=zone, instance=instance_name)
         except google.api_core.exceptions.NotFound as exc:
             return Error(Failure.from_exc('Failed to query information about the freshly created instance', exc))
@@ -446,7 +505,8 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
                     PoolImageInfo(
                         name=image.name,
                         id=image.self_link,
-                        arch=image.architecture,
+                        # NOTE(ivasilev) gcp outputs all arches as uppercase, like AMD64 or X86_64
+                        arch=image.architecture.lower(),
                         boot=FlavorBoot(),
                         ssh=ssh_info,
                         supports_kickstart=False,
@@ -497,6 +557,8 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
         if r_base_tags.is_error:
             return Error(r_base_tags.unwrap_error())
 
+        tags = r_base_tags.unwrap()
+
         # As guest IDs (names) can start with a number, add 'artemis-' prefix to make sure the instance nam
         # will start with a letter
         instance_name = f'artemis-{guest_request.guestname}'
@@ -504,7 +566,10 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
         project_id = self.pool_config['project']
         zone = self.pool_config['zone']
 
-        boot_disk = self._create_boot_disk_for_image_link(image.id, zone=zone)  # Image.id contains self_link
+        labels = _serialize_tags(tags)
+
+        # Image.id contains self_link
+        boot_disk = self._create_boot_disk_for_image_link(image.id, zone=zone, labels=labels)
 
         from ..tasks import _get_ssh_key  # Late import as top-level import leads to circular imports
 
@@ -521,7 +586,14 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
             return Error(Failure('failed to get SSH key', keyname=guest_request.ssh_keyname))
 
         r_instance = self._create_instance(
-            self._instances_client, image, ssh_key.public, project_id, zone, instance_name, disks=[boot_disk]
+            self._instances_client,
+            image,
+            ssh_key.public,
+            project_id,
+            zone,
+            instance_name,
+            disks=[boot_disk],
+            tags=tags,
         )
         if r_instance.is_error:
             failure = r_instance.unwrap_error()
