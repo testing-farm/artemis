@@ -271,62 +271,69 @@ class IBMCloudDriver(
                 )
             )
 
-    def tag_instance(
+    def tag_resource(
         self,
         logger: gluetool.log.ContextAdapter,
-        instance_name: str,
+        resource_name: str,
         tags: Tags,
     ) -> Result[None, Failure]:
-        instance_tags = ','.join(_serialize_tags(tags))
-        logger.debug(f'Adding the following tags to instance {instance_name}: {instance_tags}')
+        resource_tags = ','.join(_serialize_tags(tags))
+        logger.debug(f'Adding the following tags to the resource {resource_name}: {resource_tags}')
 
         with IBMCloudSession(logger, self) as ibm_session:
-            r_tag_instance = ibm_session.run(
+            r_tag_resource = ibm_session.run(
                 logger,
                 [
                     'resource',
                     'tag-attach',
                     '--tag-names',
-                    instance_tags,
+                    resource_tags,
                     '--resource-name',
-                    instance_name,
+                    resource_name,
                 ],
                 json_format=False,
                 commandname='ibmcloud.tag-attach',
             )
 
-        if r_tag_instance.is_error:
-            return Error(
-                Failure.from_failure(f'Tagging instance {instance_name} failed', r_tag_instance.unwrap_error())
-            )
+            if r_tag_resource.is_error:
+                return Error(
+                    Failure.from_failure(f'Tagging resource {resource_name} failed', r_tag_resource.unwrap_error())
+                )
+
         return Ok(None)
 
-    def get_instance_tags(self, logger: gluetool.log.ContextAdapter, instance_name: str) -> Result[list[str], Failure]:
+    def get_resource_tags(
+        self, logger: gluetool.log.ContextAdapter, resource_filter: str
+    ) -> Result[list[str], Failure]:
+        """
+        Retrieve information about the resource (instance, security group, workspace etc) from the resource endpoint.
+        Can come in handy when dealing with post-creation tagging.
+        Resource filter is valid search filter like crn:CRN or name: NAME.
+        """
         with IBMCloudSession(logger, self) as ibm_session:
-            r_instance_tags = ibm_session.run(
+            r_resource_details = ibm_session.run(
                 logger,
-                ['resource', 'search', f'name:{instance_name}', '--json'],
+                ['resource', 'search', resource_filter, '--json'],
                 json_format=True,
                 commandname='ibmcloud.resource-get',
             )
 
-        if r_instance_tags.is_error:
+        if r_resource_details.is_error:
             return Error(
                 Failure.from_failure(
-                    'Locating ibmcloud resource associated instance failed',
-                    r_instance_tags.unwrap_error(),
-                    instance_id=instance_name,
+                    'Locating ibmcloud resource associated to instance failed',
+                    r_resource_details.unwrap_error(),
+                    resource_filter=resource_filter,
                 )
             )
-
-        tags = cast(dict[str, list[IBMResourceInfoType]], r_instance_tags.unwrap())
+        tags = cast(dict[str, list[IBMResourceInfoType]], r_resource_details.unwrap())
         # Cornercase - no instance tags assigned
         if tags.get('items') == []:
             return Ok([])
 
         if not tags.get('items'):
             # No 'items' key discovered in the data that was sent
-            return Error(Failure(f'Unexpected output of ibmcloud resource show command for {instance_name}: {tags}'))
+            return Error(Failure(f'Unexpected output of ibmcloud resource show command for {resource_filter}: {tags}'))
 
         return Ok(tags['items'][0].get('tags', []))
 
@@ -422,12 +429,13 @@ class IBMCloudDriver(
 
     @abc.abstractmethod
     def _query_backend_instance(
-        self, logger: gluetool.log.ContextAdapter, instance_id: str
+        self, logger: gluetool.log.ContextAdapter, instance_id: str, *, include_tags: bool = False
     ) -> _Result[BackendInstanceT, Failure]:
         """
         Fetch instance info from the backed infrastructure.
 
         :returns: instance description.
+        :param include_tags: fetch attributes that require additional api calls (like tags).
         """
 
         raise NotImplementedError

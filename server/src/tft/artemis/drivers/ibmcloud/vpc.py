@@ -550,7 +550,7 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, 
 
     @override
     def _query_backend_instance(
-        self, logger: gluetool.log.ContextAdapter, instance_id: str
+        self, logger: gluetool.log.ContextAdapter, instance_id: str, *, include_tags: bool = False
     ) -> _Result[BackendInstance, Failure]:
         res: BackendInstance = {}
 
@@ -566,15 +566,19 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, 
 
             res = cast(dict[str, Any], r_instance_info.unwrap())
 
-            # Now send another request to resource api to retrieve tags information
-            r_resource_tags = self.get_instance_tags(logger, instance_id)
+            if include_tags:
+                # Now send another request to resource api to retrieve tags information
+                # Make sure a proper resource filter is used, name != id != crn
+                r_resource_tags = self.get_resource_tags(logger, f'resource_id:{instance_id}')
 
-            if r_resource_tags.is_error:
-                return _Error(
-                    Failure.from_failure('failed to fetch resource tags information', r_resource_tags.unwrap_error())
-                )
+                if r_resource_tags.is_error:
+                    return _Error(
+                        Failure.from_failure(
+                            'failed to fetch resource tags information', r_resource_tags.unwrap_error()
+                        )
+                    )
 
-            res['tags'] = r_resource_tags.unwrap()
+                res['tags'] = r_resource_tags.unwrap()
 
         return _Ok(res)
 
@@ -592,40 +596,52 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, 
         if not instance_id:
             return Error(Failure('Need an instance ID to fetch any information about a guest'))
 
-        r_output = self._query_backend_instance(logger, instance_id)
+        r_output = self._query_backend_instance(logger, instance_id, include_tags=True)
 
         if not is_successful(r_output):
             return Error(Failure.from_failure('no such instance', r_output.failure()))
 
-        output = r_output.unwrap()
+        instance_details = r_output.unwrap()
 
-        if not output:
+        if not instance_details:
             return Error(Failure('Server show commmand output is empty'))
 
         pool_data = guest_request.pool_data.mine(self, IBMCloudPoolData)
-        instance_name = output['name']
+        instance_name = instance_details['name']
 
-        # NOTE(ivasilev) Unlike other clouds, ibmcloud doesn't have tags among instance details. To check for tags
-        # we need to use a separate command to list resources with the expected name, and then check tags assigned
-        # to those resources.
-        r_assigned_tags = self.get_instance_tags(logger, instance_name)
+        r_tags = self.get_guest_tags(logger, session, guest_request)
+        if r_tags.is_error:
+            return Error(r_tags.unwrap_error())
+        tags = r_tags.unwrap()
 
-        if r_assigned_tags.is_error:
-            return Error(r_assigned_tags.unwrap_error())
+        if not instance_details['tags']:
+            # query_backend_instance would have fetched tags if there were any. So atm no tags have been assigned yet,
+            # time to do that.
 
-        if not r_assigned_tags.unwrap():
-            # No tags have been assigned yet, time to do that.
-            r_tags = self.get_guest_tags(logger, session, guest_request)
-
-            if r_tags.is_error:
-                return Error(r_tags.unwrap_error())
-            # Here comes the actual tagging attempt
-            r_tag_instance = self.tag_instance(logger=logger, instance_name=instance_name, tags=r_tags.unwrap())
+            # Try to tag the instance
+            r_tag_instance = self.tag_resource(logger=logger, resource_name=instance_name, tags=tags)
 
             if r_tag_instance.is_error:
-                return Error(Failure.from_failure('Tagging instance failed', r_tag_instance.unwrap_error()))
+                return Error(
+                    Failure.from_failure(
+                        'Tagging instance failed', r_tag_instance.unwrap_error(), instance_name=instance_name
+                    )
+                )
 
-        status = output['status'].lower()
+        # Let's assign some tags to boot volume. No sense in checking if it already has some - it is still another call
+        # to the resource endpoint
+        volume_name = instance_details.get('boot_volume_attachment', {}).get('volume', {}).get('name')
+        if not volume_name:
+            # Maybe it is just early provisioning stages and volume is not there yet? Let's give it another try.
+            return Ok(ProvisioningProgress(state=ProvisioningState.PENDING, pool_data=pool_data))
+
+        # Try to tag boot volume.
+        r_tag_volume = self.tag_resource(logger=logger, resource_name=volume_name, tags=tags)
+
+        if r_tag_volume.is_error:
+            return Error(Failure.from_failure('Tagging instance boot volume failed', r_tag_volume.unwrap_error()))
+
+        status = instance_details['status'].lower()
         logger.info(f'current instance status {pool_data.instance_id}:{status}')
 
         if status == 'starting':
@@ -633,7 +649,7 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, 
 
         if status == 'running':
             # Currently there is no support for public ips, so just taking primary ip
-            ip_address = output['primary_network_interface']['primary_ip'].get('address')
+            ip_address = instance_details['primary_network_interface']['primary_ip'].get('address')
 
             return Ok(ProvisioningProgress(state=ProvisioningState.COMPLETE, pool_data=pool_data, address=ip_address))
 

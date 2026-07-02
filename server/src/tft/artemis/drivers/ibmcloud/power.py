@@ -467,39 +467,59 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
         if not instance_id:
             return Error(Failure('Need an instance id to fetch any information about a guest'))
 
-        r_instance = self._query_backend_instance(logger, instance_id)
+        r_instance = self._query_backend_instance(logger, instance_id, include_tags=True)
 
         if not is_successful(r_instance):
             return Error(Failure.from_failure('no such instance', r_instance.failure()))
 
-        output = r_instance.unwrap()
+        instance_details = r_instance.unwrap()
 
-        if not output:
+        if not instance_details:
             return Error(Failure('Server show commmand output is empty'))
 
         pool_data = guest_request.pool_data.mine(self, IBMCloudPoolData)
 
-        status = output['status'].lower()
-        instance_name = output['serverName']
+        status = instance_details['status'].lower()
+        instance_name = instance_details['serverName']
         logger.info(f'current instance status {pool_data.instance_id}:{status}')
 
+        r_tags = self.get_guest_tags(logger, session, guest_request)
+        if r_tags.is_error:
+            return Error(r_tags.unwrap_error())
+        tags = r_tags.unwrap()
+
         # Let's try to tag the instance
-        r_assigned_tags = self.get_instance_tags(logger, instance_name)
-
-        if r_assigned_tags.is_error:
-            return Error(r_assigned_tags.unwrap_error())
-
-        if not r_assigned_tags.unwrap():
-            # No tags have been assigned yet, time to do that.
-            r_tags = self.get_guest_tags(logger, session, guest_request)
-
-            if r_tags.is_error:
-                return Error(r_tags.unwrap_error())
+        if not instance_details['tags']:
             # Here comes the actual tagging attempt
-            r_tag_instance = self.tag_instance(logger=logger, instance_name=instance_name, tags=r_tags.unwrap())
+            r_tag_instance = self.tag_resource(logger=logger, resource_name=instance_name, tags=tags)
 
             if r_tag_instance.is_error:
                 return Error(Failure.from_failure('Tagging instance failed', r_tag_instance.unwrap_error()))
+
+        # Tag the boot volume
+        volume_ids = instance_details.get('volumeIDs', [])
+        if not volume_ids:
+            # Maybe it is just early provisioning stages and volume is not there yet? Let's give it another try.
+            return Ok(ProvisioningProgress(state=ProvisioningState.PENDING, pool_data=pool_data))
+
+        volume_id = volume_ids[0]
+        # Another call that may fail...
+        with IBMCloudPowerSession(logger, self) as cli_session:
+            r_volume_details = cli_session.run(
+                logger, ['pi', 'volume', 'get', volume_id, '--json'], commandname='ibmcloud.pi.volume-show'
+            )
+            if r_volume_details.is_error:
+                return Error(
+                    Failure.from_failure('failed to fetch volume information', r_volume_details.unwrap_error())
+                )
+        volume_details = cast(dict[str, Any], r_volume_details.unwrap())
+        r_tag_volume = self.tag_resource(logger=logger, resource_name=volume_details['name'], tags=tags)
+        if r_tag_volume.is_error:
+            return Error(
+                Failure.from_failure(
+                    'Tagging instance boot volume failed', r_tag_volume.unwrap_error(), instance_id=instance_id
+                )
+            )
 
         if status == 'build':
             return Ok(ProvisioningProgress(state=ProvisioningState.PENDING, pool_data=pool_data))
@@ -509,7 +529,7 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
             ip_address = next(
                 (
                     addr['ipAddress']
-                    for addr in output['addresses']
+                    for addr in instance_details['addresses']
                     if addr['networkID'] == self.pool_config['subnet-id']
                 ),
                 None,
@@ -535,16 +555,23 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
     # fits in other drivers. Be careful when using it.
     @override
     def _query_backend_instance(
-        self, logger: gluetool.log.ContextAdapter, instance_id: str
+        self, logger: gluetool.log.ContextAdapter, instance_id: str, *, include_tags: bool = False
     ) -> _Result[BackendInstance, Failure]:
         with IBMCloudPowerSession(logger, self) as session:
-            return self._query_backend_instance_sessionless(logger, instance_id, session)
+            return self._query_backend_instance_sessionless(logger, instance_id, session, include_tags=include_tags)
 
     # Issues the actual `pi instance get` call but does not create an ibmcloud cli session.
     # To be used with an already secured cli session directory.
     def _query_backend_instance_sessionless(
-        self, logger: gluetool.log.ContextAdapter, instance_id: str, session: CLISessionPermanentDir
+        self,
+        logger: gluetool.log.ContextAdapter,
+        instance_id: str,
+        session: CLISessionPermanentDir,
+        *,
+        include_tags: bool = False,
     ) -> _Result[BackendInstance, Failure]:
+        res: BackendInstance = {}
+
         r_instance_info = session.run(
             logger, ['pi', 'instance', 'get', instance_id, '--json'], commandname='ibmcloud.pi.vm-show'
         )
@@ -552,7 +579,20 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
         if r_instance_info.is_error:
             return _Error(Failure.from_failure('failed to fetch instance information', r_instance_info.unwrap_error()))
 
-        return _Ok(cast(BackendInstance, r_instance_info.unwrap()))
+        res = cast(dict[str, Any], r_instance_info.unwrap())
+
+        if include_tags:
+            # Now send another request to resource api to retrieve tags information
+            r_resource_tags = self.get_resource_tags(logger, f'resource_id:{instance_id}')
+
+            if r_resource_tags.is_error:
+                return _Error(
+                    Failure.from_failure('failed to fetch resource tags information', r_resource_tags.unwrap_error())
+                )
+
+            res['tags'] = r_resource_tags.unwrap()
+
+        return _Ok(res)
 
     @override
     def list_instances(self, logger: gluetool.log.ContextAdapter) -> Result[list[IBMCloudPowerInstance], Failure]:
