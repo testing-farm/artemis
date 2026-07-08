@@ -129,19 +129,19 @@ BackendFlavor: TypeAlias = str
 
 @dataclasses.dataclass
 class GCPPoolData(PoolData):
-    name: Optional[str] = None
-    id: Optional[int] = None
+    instance_name: Optional[str] = None
+    instance_id: Optional[int] = None
 
 
 @dataclasses.dataclass
 class GCPPoolResourcesIDs(PoolResourcesIDs):
-    name: Optional[str] = None
+    instance_name: Optional[str] = None
 
 
 @dataclasses.dataclass
 class GCPInstance(Instance):
-    status: str = ''
-    created_at: Optional[datetime.datetime] = None
+    status: str
+    created_at: datetime.datetime
 
     def __post_init__(self) -> None:
         self.status = self.status.lower()
@@ -163,7 +163,7 @@ class GCPInstance(Instance):
 
     @override
     def to_pool_resource_ids(self) -> GCPPoolResourcesIDs:
-        return GCPPoolResourcesIDs(name=self.name)
+        return GCPPoolResourcesIDs(instance_name=self.name)
 
     def serialize(self) -> dict[str, Any]:
         serialized = super().serialize()
@@ -392,10 +392,14 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
     ) -> Result[ProvisioningProgress, Failure]:
         pool_data = guest_request.pool_data.mine(self, GCPPoolData)
 
-        request = compute_v1.GetInstanceRequest()
-        request.instance = pool_data.name
-        request.project = self.pool_config['project']
-        request.zone = self.pool_config['zone']
+        if not pool_data.instance_id:
+            return Error(Failure('Need instance ID to fetch guest info'))
+
+        request = compute_v1.GetInstanceRequest(
+            instance=str(pool_data.instance_id),
+            project=self.pool_config['project'],
+            zone=self.pool_config['zone'],
+        )
 
         try:
             instance_info = self._instances_client.get(request=request)
@@ -449,7 +453,7 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
         return self.dispatch_resource_cleanup(
             logger,
             session,
-            GCPPoolResourcesIDs(name=pool_data.name),
+            GCPPoolResourcesIDs(instance_name=pool_data.instance_name),
             guest_request=guest_request,
         )
 
@@ -459,7 +463,7 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
     ) -> Result[ReleasePoolResourcesState, Failure]:
         resource_ids = GCPPoolResourcesIDs.unserialize_from_json(raw_resource_ids)
         request = compute_v1.DeleteInstanceRequest(
-            instance=resource_ids.name,
+            instance=resource_ids.instance_name,
             project=self.pool_config['project'],
             zone=self.pool_config['zone'],
         )
@@ -487,20 +491,20 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
         if not zone:
             zone = self.pool_config['zone']
 
-        boot_disk = compute_v1.AttachedDisk()
-        initialize_params = compute_v1.AttachedDiskInitializeParams()
-        initialize_params.source_image = image_link
-        initialize_params.disk_size_gb = int(size.to('GiB').magnitude)
-        initialize_params.disk_type = disk_type
+        initialize_params = compute_v1.AttachedDiskInitializeParams(
+            source_image=image_link,
+            disk_size_gb=int(size.to('GiB').magnitude),
+            disk_type=disk_type,
+        )
 
         if labels:
             initialize_params.labels = labels
 
-        boot_disk.initialize_params = initialize_params
-        boot_disk.auto_delete = True
-        boot_disk.boot = True
-
-        return boot_disk
+        return compute_v1.AttachedDisk(
+            initialize_params=initialize_params,
+            auto_delete=True,
+            boot=True,
+        )
 
     def _ensure_machine_type_is_canonical(self, machine_type: str, zone: str) -> str:
         if re.match(r'^zones/[a-z\d\-]+/machineTypes/[a-z\d\-]+$', machine_type):
@@ -566,36 +570,40 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
 
         boot_disk = self._create_boot_disk_for_image_link(instance_request.image.id, zone=zone, labels=labels)
 
-        network_interface = compute_v1.NetworkInterface()
-        network_interface.network = network_link
+        access = compute_v1.AccessConfig(
+            type_=compute_v1.AccessConfig.Type.ONE_TO_ONE_NAT.name,  # type: ignore[attr-defined]
+            name='External NAT',
+            network_tier=compute_v1.AccessConfig.NetworkTier.PREMIUM.name,  # type: ignore[attr-defined]
+        )
 
-        access = compute_v1.AccessConfig()
-        access.type_ = compute_v1.AccessConfig.Type.ONE_TO_ONE_NAT.name  # type: ignore[attr-defined]
-        access.name = 'External NAT'
-        access.network_tier = access.NetworkTier.PREMIUM.name  # type: ignore[attr-defined]
-        network_interface.access_configs = [access]
+        network_interface = compute_v1.NetworkInterface(
+            network=network_link,
+            access_configs=[access],
+        )
 
-        instance = compute_v1.Instance()
-        instance.network_interfaces = [network_interface]
-        instance.name = instance_name
-        instance.disks = [boot_disk]
+        ssh_metadata = compute_v1.Items(
+            key='ssh-keys',
+            value=f'{instance_request.image.ssh.username}:{ssh_key.public}',
+        )
+
+        instance = compute_v1.Instance(
+            network_interfaces=[network_interface],
+            name=instance_name,
+            disks=[boot_disk],
+            machine_type=self._ensure_machine_type_is_canonical(zone=zone, machine_type=machine_type),
+            scheduling=compute_v1.Scheduling(),
+        )
 
         if instance_request.tags:
             instance.labels = labels
 
-        instance.machine_type = self._ensure_machine_type_is_canonical(zone=zone, machine_type=machine_type)
-
-        ssh_metadata = compute_v1.Items()
-        ssh_metadata.key = 'ssh-keys'
-        ssh_metadata.value = f'{instance_request.image.ssh.username}:{ssh_key.public}'
         instance.metadata.items.append(ssh_metadata)
 
-        instance.scheduling = compute_v1.Scheduling()
-
-        request = compute_v1.InsertInstanceRequest()
-        request.zone = zone
-        request.project = project_id
-        request.instance_resource = instance
+        request = compute_v1.InsertInstanceRequest(
+            zone=zone,
+            project=project_id,
+            instance_resource=instance,
+        )
 
         client = self._instances_client
 
@@ -603,8 +611,9 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
             operation = client.insert(request=request)
         except google.api_core.exceptions.BadRequest as exc:
             return _Error(Failure.from_exc('Failed to create a GCP instance', exc))
+        # NOTE(ivasilev) this should not happen anymore with ResourceManager approach
         except google.api_core.exceptions.Conflict as exc:
-            return _Error(Failure.from_exc('Failed to create a GCP instance', exc))
+            return _Error(Failure.from_exc('Failed to create a GCP instance because of a conflict', exc))
         except google.api_core.exceptions.PreconditionFailed as exc:
             return _Error(Failure.from_exc('Instance creation failed due to policy', exc))
 
@@ -613,6 +622,7 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
                 resource=GCPInstance(
                     id=str(operation.target_id),
                     name=instance_name,
+                    status='',
                     created_at=datetime.datetime.now(tz=datetime.timezone.utc),
                 ),
                 image=instance_request.image,
@@ -704,8 +714,8 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
                     ProvisioningProgress(
                         state=ProvisioningState.PENDING,
                         pool_data=GCPPoolData(
-                            id=int(instance_outcome.resource.id),
-                            name=instance_outcome.resource.name,
+                            instance_id=int(instance_outcome.resource.id),
+                            instance_name=instance_outcome.resource.name,
                         ),
                         ssh_info=instance_outcome.image.ssh,
                     )
@@ -741,7 +751,7 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
             return Ok(None)
 
         request = compute_v1.ResetInstanceRequest(
-            instance=pool_data.name, project=self.pool_config['project'], zone=self.pool_config['zone']
+            instance=pool_data.instance_name, project=self.pool_config['project'], zone=self.pool_config['zone']
         )
 
         try:
