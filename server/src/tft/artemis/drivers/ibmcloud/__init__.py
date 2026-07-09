@@ -64,6 +64,7 @@ BackendInstanceT = TypeVar('BackendInstanceT')
 class IBMCloudPoolData(PoolData):
     instance_id: Optional[str] = None
     instance_name: Optional[str] = None
+    flavor_name: Optional[str] = None
 
 
 @dataclasses.dataclass
@@ -271,36 +272,45 @@ class IBMCloudDriver(
                 )
             )
 
-    def tag_resource(
+    def tag_resource_sessionless(
         self,
         logger: gluetool.log.ContextAdapter,
+        session: CLISessionPermanentDir,
         resource_name: str,
         tags: Tags,
     ) -> Result[None, Failure]:
         resource_tags = ','.join(_serialize_tags(tags))
         logger.debug(f'Adding the following tags to the resource {resource_name}: {resource_tags}')
 
-        with IBMCloudSession(logger, self) as ibm_session:
-            r_tag_resource = ibm_session.run(
-                logger,
-                [
-                    'resource',
-                    'tag-attach',
-                    '--tag-names',
-                    resource_tags,
-                    '--resource-name',
-                    resource_name,
-                ],
-                json_format=False,
-                commandname='ibmcloud.tag-attach',
+        r_tag_resource = session.run(
+            logger,
+            [
+                'resource',
+                'tag-attach',
+                '--tag-names',
+                resource_tags,
+                '--resource-name',
+                resource_name,
+            ],
+            json_format=False,
+            commandname='ibmcloud.tag-attach',
+        )
+
+        if r_tag_resource.is_error:
+            return Error(
+                Failure.from_failure(f'Tagging resource {resource_name} failed', r_tag_resource.unwrap_error())
             )
 
-            if r_tag_resource.is_error:
-                return Error(
-                    Failure.from_failure(f'Tagging resource {resource_name} failed', r_tag_resource.unwrap_error())
-                )
-
         return Ok(None)
+
+    def tag_resource(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        resource_name: str,
+        tags: Tags,
+    ) -> Result[None, Failure]:
+        with IBMCloudSession(logger, self) as ibm_session:
+            return self.tag_resource_sessionless(logger, ibm_session, resource_name, tags)
 
     def get_resource_tags(
         self, logger: gluetool.log.ContextAdapter, resource_filter: str
@@ -408,7 +418,9 @@ class IBMCloudDriver(
                     ProvisioningProgress(
                         state=ProvisioningState.PENDING,
                         pool_data=IBMCloudPoolData(
-                            instance_id=instance_outcome.resource.id, instance_name=instance_outcome.resource.name
+                            instance_id=instance_outcome.resource.id,
+                            instance_name=instance_outcome.resource.name,
+                            flavor_name=instance_outcome.flavor.name,
                         ),
                         ssh_info=instance_outcome.image.ssh,
                     )

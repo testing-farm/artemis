@@ -483,7 +483,12 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
         instance_name = instance_details['serverName']
         logger.info(f'current instance status {pool_data.instance_id}:{status}')
 
-        r_tags = self.get_guest_tags(logger, session, guest_request)
+        r_tags = self.get_guest_tags(
+            logger,
+            session,
+            guest_request,
+            extra_tags={'flavor': pool_data.flavor_name} if pool_data.flavor_name else {},
+        )
         if r_tags.is_error:
             return Error(r_tags.unwrap_error())
         tags = r_tags.unwrap()
@@ -512,14 +517,16 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
                 return Error(
                     Failure.from_failure('failed to fetch volume information', r_volume_details.unwrap_error())
                 )
-        volume_details = cast(dict[str, Any], r_volume_details.unwrap())
-        r_tag_volume = self.tag_resource(logger=logger, resource_name=volume_details['name'], tags=tags)
-        if r_tag_volume.is_error:
-            return Error(
-                Failure.from_failure(
-                    'Tagging instance boot volume failed', r_tag_volume.unwrap_error(), instance_id=instance_id
-                )
+            volume_details = cast(dict[str, Any], r_volume_details.unwrap())
+            r_tag_volume = self.tag_resource_sessionless(
+                logger=logger, session=cli_session, resource_name=volume_details['name'], tags=tags
             )
+            if r_tag_volume.is_error:
+                return Error(
+                    Failure.from_failure(
+                        'Tagging instance boot volume failed', r_tag_volume.unwrap_error(), instance_id=instance_id
+                    )
+                )
 
         if status == 'build':
             return Ok(ProvisioningProgress(state=ProvisioningState.PENDING, pool_data=pool_data))

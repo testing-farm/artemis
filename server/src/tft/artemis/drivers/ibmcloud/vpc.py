@@ -609,7 +609,12 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, 
         pool_data = guest_request.pool_data.mine(self, IBMCloudPoolData)
         instance_name = instance_details['name']
 
-        r_tags = self.get_guest_tags(logger, session, guest_request)
+        r_tags = self.get_guest_tags(
+            logger,
+            session,
+            guest_request,
+            extra_tags={'flavor': pool_data.flavor_name} if pool_data.flavor_name else {},
+        )
         if r_tags.is_error:
             return Error(r_tags.unwrap_error())
         tags = r_tags.unwrap()

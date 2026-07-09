@@ -2160,7 +2160,11 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
         return Ok(r_rendered_tags.unwrap())
 
     def get_guest_tags(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        extra_tags: Optional[dict[str, str]] = None,
     ) -> Result[Tags, Failure]:
         """
         Get all tags applicable for a given guest request.
@@ -2174,6 +2178,7 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
         * ``ArtemisGuestLabel``: nice, human-readable label assigned to the guest, usable e.g. for naming instances.
           This label **does** change over time.
         """
+        extra_tags = extra_tags or {}
 
         system_tags = GuestTag.fetch_system_tags(session)
 
@@ -2188,6 +2193,7 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
         tags: Tags = {
             **{r.tag: r.value for r in system_tags.unwrap()},
             **{r.tag: r.value for r in pool_tags.unwrap()},
+            **extra_tags,
         }
 
         if guest_request.user_data:
