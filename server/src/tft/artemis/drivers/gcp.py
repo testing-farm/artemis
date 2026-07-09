@@ -520,7 +520,8 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, 
 
         flavor = pairs[0][1]
 
-        r_base_tags = self.get_guest_tags(logger, session, guest_request)
+        r_base_tags = self.get_guest_tags(logger, session, guest_request, 
+                                          extra_tags={'flavor': self.pool_config['default-flavor']})
         if r_base_tags.is_error:
             return _Error(r_base_tags.unwrap_error())
 
