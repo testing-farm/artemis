@@ -31,6 +31,27 @@ password: corresponding-password
 Both `username` and `password` are required when any of these two is used - driver expects either no explicit credentials, or both username and password to be given.
 ====
 
+=== Beaker hub
+
+By default, the driver talks to the Beaker hub configured in the environment, e.g. via `/etc/beaker/client.conf`. To point a pool to a different Beaker server, specify its hub URL.
+
+.Specification
+[source,yaml]
+....
+hub: <string>
+....
+
+.Example
+[source,yaml]
+....
+hub: https://another-beaker.example.com
+....
+
+[TIP]
+====
+Combined with `username` and `password`, this allows different pools to use different Beaker servers, each with its own credentials.
+====
+
 === Beaker groups
 
 To avoid provisioning machines owned by particular Beaker groups, driver can be configured to avoid them.

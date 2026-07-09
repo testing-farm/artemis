@@ -191,6 +191,9 @@ pools:
     guest_tags: {{ beaker.guest_tags }}
     {% endif %}
     parameters:
+      {% if beaker.hub is defined and beaker.hub != "" -%}
+      hub: "{{ beaker.hub }}"
+      {% endif -%}
       {% if beaker.credentials.username is defined and beaker.credentials.username != "" -%}
       username: "{{ beaker.credentials.username }}"
       {% endif -%}

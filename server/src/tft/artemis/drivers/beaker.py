@@ -1336,6 +1336,9 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
             options[0],
         ]
 
+        if self.pool_config.get('hub'):
+            bkr_command += ['--hub', self.pool_config['hub']]
+
         if self.pool_config.get('username') and self.pool_config.get('password'):
             bkr_command += ['--username', self.pool_config['username'], '--password', self.pool_config['password']]
 
