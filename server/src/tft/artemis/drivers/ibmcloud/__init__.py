@@ -8,7 +8,7 @@ import functools
 import os
 import shutil
 import string
-from typing import Any, Generic, Optional, TypedDict, TypeVar, cast
+from typing import Any, Callable, Generic, Optional, TypedDict, TypeVar, cast
 
 import gluetool.log
 import sqlalchemy.orm.session
@@ -32,6 +32,7 @@ from tft.artemis.drivers import (
     ResourceCreationOutcome,
     ResourceCreationRequest,
     ResourceManager,
+    T,
     Tags,
     create_sanitize_tags,
 )
@@ -39,6 +40,7 @@ from tft.artemis.drivers import (
 from ... import Failure, rewrap_to_gluetool
 from ...db import GuestRequest
 from ...environment import Flavor
+from ...metrics import PoolResourcesUsage
 
 # Limits imposed on tags in IBM cloud.
 # https://cloud.ibm.com/docs/account?topic=account-tag&interface=ui#limits
@@ -312,9 +314,9 @@ class IBMCloudDriver(
         with IBMCloudSession(logger, self) as ibm_session:
             return self.tag_resource_sessionless(logger, ibm_session, resource_name, tags)
 
-    def get_resource_tags(
+    def get_resources_by_tags(
         self, logger: gluetool.log.ContextAdapter, resource_filter: str
-    ) -> Result[list[str], Failure]:
+    ) -> Result[list[IBMResourceInfoType], Failure]:
         """
         Retrieve information about the resource (instance, security group, workspace etc) from the resource endpoint.
         Can come in handy when dealing with post-creation tagging.
@@ -336,16 +338,93 @@ class IBMCloudDriver(
                     resource_filter=resource_filter,
                 )
             )
-        tags = cast(dict[str, list[IBMResourceInfoType]], r_resource_details.unwrap())
-        # Cornercase - no instance tags assigned
-        if tags.get('items') == []:
+        resources = cast(dict[str, list[IBMResourceInfoType]], r_resource_details.unwrap())
+        # Cornercase - no resources discovered
+        if resources.get('items') == []:
             return Ok([])
 
-        if not tags.get('items'):
+        if not resources.get('items'):
             # No 'items' key discovered in the data that was sent
-            return Error(Failure(f'Unexpected output of ibmcloud resource show command for {resource_filter}: {tags}'))
+            return Error(
+                Failure(f'Unexpected output of ibmcloud resource show command for {resource_filter}: {resources}')
+            )
 
-        return Ok(tags['items'][0].get('tags', []))
+        return Ok(resources['items'])
+
+    def get_resource_tags(
+        self, logger: gluetool.log.ContextAdapter, resource_filter: str
+    ) -> Result[list[str], Failure]:
+        r_resources = self.get_resources_by_tags(logger, resource_filter)
+        if r_resources.is_error:
+            return Error(r_resources.unwrap_error())
+
+        resources = r_resources.unwrap()
+        if not resources:
+            return Ok([])
+
+        return Ok(resources[0].get('tags', []))
+
+    def get_instances_with_flavor_tags_names(
+        self, logger: gluetool.log.ContextAdapter, flavor_filter: str = 'tags:flavor*'
+    ) -> dict[str, str]:
+        """
+        As IBMCloud does not allow cheap (as in number of api calls) fetching of instances with tags,
+        let's make a single call for all ibmcloud resources that match required instances with flavor:* tag
+        defined, then form an instance_name: flavor mapping that will come handy in flavor usage metrics collection.
+        """
+        flavor_filter = 'tags:flavor* AND type:pvm-instance'
+        r_instances_with_flavors = self.get_resources_by_tags(logger, flavor_filter)
+
+        if r_instances_with_flavors.is_error:
+            return {}
+
+        return {
+            instance['name']: next(
+                (tag.split(':')[-1] for tag in instance.get('tags', []) if tag.startswith('flavor')), 'unknown flavor'
+            )
+            for instance in r_instances_with_flavors.unwrap()
+        }
+
+    def do_collect_pool_resources_metrics_flavor_usage(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        usage: PoolResourcesUsage,
+        fetch: Callable[[gluetool.log.ContextAdapter], Result[list[T], Failure]],
+        flavor_filter: str,
+        update: Callable[[gluetool.log.ContextAdapter, PoolResourcesUsage, T, Optional[Flavor]], Result[None, Failure]],
+    ) -> Result[None, Failure]:
+        """
+        A helper implementation for constructing pool flavor usage metrics.
+
+        :param logger: logger to use for logging.
+        :param usage: pool resource usage container.
+        :param fetch: a callable that returns a list of raw instance information, one entry per
+            instance. The actual type of each raw instance entry is not important for this helper,
+            it must match input types expected by ``flavor_name_getter`` and ``update``.
+        :param flavor_filter: a resource filter to fetch all instances of the given driver type
+            with specified flavor tags
+        :param update: a callable that accepts pool resource usage, a raw instance and optionally
+            a flavor, and shall update pool resource usage by adding data about the instance.
+        """
+
+        r_flavors = self.get_pool_flavor_infos()
+        if r_flavors.is_error:
+            return Error(r_flavors.unwrap_error())
+        flavors = {flavor.name: flavor for flavor in r_flavors.unwrap()}
+
+        r_instances_with_flavors = self.get_resources_by_tags(logger, flavor_filter)
+        if r_instances_with_flavors.is_error:
+            return Error(r_instances_with_flavors.unwrap_error())
+
+        instances_with_flavors = r_instances_with_flavors.unwrap()
+        for instance in instances_with_flavors:
+            # get flavor tag from instance tags
+            flavor_name = next((tag for tag in instance['tags'] if tag.startswith('flavor')), None)
+            if not flavor_name or flavor_name not in flavors:
+                # flavor cache not populated yet?
+                pass
+
+        return Ok(None)
 
     def _create_instance_request(
         self,

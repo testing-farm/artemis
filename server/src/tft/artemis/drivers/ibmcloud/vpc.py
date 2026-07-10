@@ -380,20 +380,20 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, 
                 # ibmcloud is doesn't have info about cores per instance, but rather vcpus per instance. Anyway, will
                 # be storing this info under cores
                 usage.cores += int(raw_instance.get('vcpu', {}).get('count', 0))
-
                 # Instance memory is in GB
                 usage.memory += UNITS.Quantity(raw_instance['memory'], UNITS.gigabytes).to('bytes').magnitude
-
-                # TODO: once we find the flavor name, we can update its usage.
+                # Record actual flavor used
+                if flavor:
+                    usage.record_flavor(flavor.name)
 
                 return Ok(None)
 
+            instances_with_flavors = self.get_instances_with_flavor_tags_names(logger, 'tags:flavor* AND type:instance')
             r_instances_usage = self.do_fetch_pool_resources_metrics_flavor_usage(
                 logger,
                 resources.usage,
                 _fetch_instances,
-                # TODO: once we find the flavor name, we can update its usage.
-                lambda raw_instance: 'dummy-flavor-name-does-not-exist',
+                lambda raw_instance: instances_with_flavors.get(raw_instance['name'], 'unknown flavor'),
                 _update_instance_usage,
             )
 

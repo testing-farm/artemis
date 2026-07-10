@@ -647,6 +647,17 @@ class PoolResources(PoolMetricsBase):
             datetime.datetime.timestamp(datetime.datetime.utcnow()),
         )
 
+    def record_flavor(self, flavor_name: str) -> None:
+        """
+        Record instance flavor info into the usage counter.
+
+        :param flavor_name: name of the flavor to record.
+        """
+        if flavor_name not in self.flavors:
+            self.flavors[flavor_name] = 0
+
+        self.flavors[flavor_name] += 1
+
 
 class PoolResourcesUsage(PoolResources):
     """
