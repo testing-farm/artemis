@@ -31,7 +31,7 @@ from jinja2 import Template
 from returns.pipeline import is_successful
 from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS, Operator
-from typing_extensions import Literal, TypeAlias, TypedDict, override
+from typing_extensions import Literal, NotRequired, TypeAlias, TypedDict, override
 
 from .. import (
     Failure,
@@ -128,6 +128,7 @@ class APIBlockDeviceMappingType(TypedDict, total=True):
 class APIInstanceTypeProcessorInfo(TypedDict):
     SupportedArchitectures: list[str]
     SustainedClockSpeedInGhz: float
+    SupportedFeatures: NotRequired[list[str]]
 
 
 DEFAULT_VOLUME_DELETE_ON_TERMINATION = True
@@ -2348,7 +2349,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
         if self.pool_config.get('expose-instance-tags-in-metadata', False):
             command += ['--metadata-options', 'InstanceMetadataTags=enabled']
 
-        # Check if confidential computing is requested
+        # Build CPU options from requested virtualization features
         r_span = _get_constraint_span(logger, guest_request, instance_type)
 
         if r_span.is_error:
@@ -2356,17 +2357,19 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
 
         span = r_span.unwrap()
 
-        confidential_computing_requested = False
+        cpu_options: set[str] = set()
 
         for constraint in span:
             property_name, _, child_property, _ = (constraint.original_constraint or constraint).expand_name()
 
-            if property_name == 'virtualization' and child_property == 'confidential':
-                confidential_computing_requested = constraint.value is True
-                break
+            if property_name == 'virtualization' and child_property == 'confidential' and constraint.value is True:
+                cpu_options.add('AmdSevSnp=enabled')
 
-        if confidential_computing_requested:
-            command += ['--cpu-options', 'AmdSevSnp=enabled']
+            elif property_name == 'virtualization' and child_property == 'is_supported' and constraint.value is True:
+                cpu_options.add('NestedVirtualization=enabled')
+
+        if cpu_options:
+            command += ['--cpu-options', ','.join(cpu_options)]
 
         if 'subnet-id' in self.pool_config:
             command.extend(['--subnet-id', self.pool_config['subnet-id']])
@@ -2940,6 +2943,8 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
                         virtualization=FlavorVirtualization(
                             hypervisor=raw_flavor.get('Hypervisor'),
                             is_virtualized=bool(raw_flavor.get('Hypervisor', '').lower() in AWS_VM_HYPERVISORS),
+                            is_supported='nested-virtualization'
+                            in (raw_flavor.get('ProcessorInfo', {}).get('SupportedFeatures') or []),
                         ),
                         ena_support=raw_flavor.get('NetworkInfo', {}).get('EnaSupport', 'unsupported'),
                     )
