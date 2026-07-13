@@ -728,11 +728,15 @@ class AzureDriver(
         instance_request.post_install_script = r_post_install_script.unwrap()
 
         # Pass tags
+        r_flavor_tag = self._get_instance_flavor_tag()
+        if r_flavor_tag.is_error:
+            return _Error(r_flavor_tag.unwrap_error())
+
         r_base_tags = self.get_guest_tags(
             logger,
             session,
             guest_request,
-            extra_tags={'flavor': instance_request.flavor.name},
+            extra_tags={r_flavor_tag.unwrap(): instance_request.flavor.name},
         )
         if r_base_tags.is_error:
             return _Error(r_base_tags.unwrap_error())

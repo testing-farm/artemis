@@ -289,6 +289,16 @@ KNOB_INSTANCE_NAME_TEMPLATE: Knob[str] = Knob(
     default='artemis-{{ GUESTNAME }}',
 )
 
+KNOB_INSTANCE_FLAVOR_TAG: Knob[str] = Knob(
+    'artemis.instance.tag.flavor',
+    'Artemis tag to hold the actual instance flavor',
+    has_db=False,
+    per_entity=True,
+    envvar='ARTEMIS_INSTANCE_TAG_FLAVOR',
+    cast_from_str=str,
+    default='ArtemisFlavor',
+)
+
 
 KNOB_DISPATCH_RESOURCE_CLEANUP_DELAY: Knob[int] = Knob(
     'pool.dispatch-resource-cleanup',
@@ -1705,6 +1715,14 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
 
         return Ok(image_info)
 
+    def _get_instance_flavor_tag(self) -> Result[str, Failure]:
+        r_value = KNOB_INSTANCE_FLAVOR_TAG.get_value(entityname=self.poolname)
+
+        if r_value.is_error:
+            return Error(Failure.from_failure('Could not get instance flavor tag name', r_value.unwrap_error()))
+
+        return Ok(r_value.unwrap())
+
     def _render_instance_name(self, guest_request: GuestRequest) -> _Result[str, Failure]:
         r_instance_name_template = KNOB_INSTANCE_NAME_TEMPLATE.get_value(entityname=self.poolname)
         if r_instance_name_template.is_error:
@@ -2177,6 +2195,8 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
           over time.
         * ``ArtemisGuestLabel``: nice, human-readable label assigned to the guest, usable e.g. for naming instances.
           This label **does** change over time.
+        * ``ArtemisFlavor``: the name of the actual flavor from artemis configuration that was used for the instance.
+          The name of the tag is controlled by a knob.
         """
         extra_tags = extra_tags or {}
 
