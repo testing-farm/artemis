@@ -1086,7 +1086,7 @@ deployments.
 |`gcp.mapping.environment-to-image.pattern-map.filepath`
 |`str`
 |`ARTEMIS_GCP_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH`
-|`configuration/artemis-image-map-gcp.yaml`
+|`artemis-image-map-gcp.yaml`
 |no
 
 
