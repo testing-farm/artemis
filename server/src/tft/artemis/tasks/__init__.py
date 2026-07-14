@@ -1486,10 +1486,15 @@ def _request_task(
     task_sequence_request_id: Optional[int] = None,
     guestname: Optional[str] = None,
 ) -> Result[None, Failure]:
+    task_call = TaskCall.from_call(
+        task,
+        *task_arguments,
+        delay=delay,
+        task_sequence_request_id=task_sequence_request_id,
+    )
+
     failure_details: dict[str, Any] = {
-        'task_name': task.actor_name,
-        'task_args': task_arguments,
-        'task_sequence_request_id': task_sequence_request_id,
+        'task': task_call.serialize(),
     }
 
     r = TaskRequest.create(
@@ -1505,15 +1510,7 @@ def _request_task(
             )
         )
 
-    task_request_id = r.unwrap()
-
-    task_call = TaskCall.from_call(
-        task,
-        *task_arguments,
-        delay=delay,
-        task_request_id=task_request_id,
-        task_sequence_request_id=task_sequence_request_id,
-    )
+    task_call.task_request_id = r.unwrap()
 
     failure_details['task'] = task_call.serialize()
 
@@ -1521,7 +1518,7 @@ def _request_task(
         if guestname is None:
             log_dict_yaml(
                 logger.info,
-                f'requested task #{task_request_id}',
+                f'requested task #{task_call.task_request_id}',
                 task_call.serialize(),
             )
 
@@ -1538,7 +1535,7 @@ def _request_task(
         if guestname is None:
             log_dict_yaml(
                 logger.info,
-                f'requested task #{task_sequence_request_id}/#{task_request_id}',
+                f'requested task #{task_sequence_request_id}/#{task_call.task_request_id}',
                 task_call.serialize(),
             )
 
