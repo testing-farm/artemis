@@ -1717,6 +1717,7 @@ class DB:
     def _setup_instance(
         self, logger: gluetool.log.ContextAdapter, url: str, application_name: Optional[str] = None
     ) -> None:
+        from . import log_dict_yaml
         from .knobs import KNOB_DB_POOL_MAX_OVERFLOW, KNOB_DB_POOL_SIZE, KNOB_LOGGING_DB_POOL
 
         self.logger = logger
@@ -1738,7 +1739,7 @@ class DB:
             if application_name is not None:
                 connect_args['application_name'] = application_name
 
-            gluetool.log.log_dict(
+            log_dict_yaml(
                 logger.info,
                 'postgresql create_engine parameters',
                 {
@@ -1766,7 +1767,7 @@ class DB:
             if application_name is not None:
                 connect_args['application_name'] = application_name
 
-            gluetool.log.log_dict(
+            log_dict_yaml(
                 logger.info,
                 'sqlite create_engine parameters',
                 {
@@ -1866,9 +1867,10 @@ class DB:
             )
 
             if self._echo_pool:
+                from . import log_dict_yaml
                 from .metrics import DBPoolMetrics
 
-                gluetool.log.log_dict(
+                log_dict_yaml(
                     logger.info,
                     'pool metrics',
                     DBPoolMetrics.load(self.logger, self, session),  # type: ignore[attr-defined]

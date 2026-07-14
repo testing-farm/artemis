@@ -24,7 +24,7 @@ import gluetool.log
 import gluetool.utils
 import jq
 import sqlalchemy.orm.session
-from gluetool.log import ContextAdapter, log_dict
+from gluetool.log import ContextAdapter
 from gluetool.result import Error, Ok, Result
 from gluetool.utils import normalize_bool_option
 from jinja2 import Template
@@ -2030,7 +2030,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
 
         prices = cast(list[dict[str, str]], r_spot_price.unwrap())
 
-        log_dict(logger.debug, 'spot prices', prices)
+        log_dict_yaml(logger.debug, 'spot prices', prices)
 
         try:
             current_price = float(prices[0]['SpotPrice'])

@@ -235,6 +235,9 @@ extend-allowed-calls = [
 [tool.ruff.lint.flake8-quotes]
 inline-quotes = "single"
 
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"gluetool.log.log_dict".msg = "Use log_dict_yaml instead."
+
 [tool.ruff.lint.isort]
 combine-as-imports = true
 force-sort-within-sections = false

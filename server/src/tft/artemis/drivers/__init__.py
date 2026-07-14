@@ -2336,7 +2336,7 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
 
         resources = r_resource_metrics.unwrap()
 
-        gluetool.log.log_dict(logger.debug, 'resources metrics refresh', dataclasses.asdict(resources))
+        log_dict_yaml(logger.debug, 'resources metrics refresh', dataclasses.asdict(resources))
 
         resources.limits.store()
         resources.usage.store()
@@ -2489,7 +2489,7 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
         if not patch_image_specs:
             return Ok(None)
 
-        gluetool.log.log_dict(logger.debug, 'base images', images)
+        log_dict_yaml(logger.debug, 'base images', images)
 
         for patch_image_spec in patch_image_specs:
             if 'name' in patch_image_spec:
@@ -2942,7 +2942,7 @@ class FlavorBasedPoolDriver(
 
         flavors = r_flavors.unwrap()
 
-        gluetool.log.log_dict(logger.debug, 'available flavors', flavors)
+        log_dict_yaml(logger.debug, 'available flavors', flavors)
 
         # Extract HW constraints specified by the environment.
         r_constraints = environment.get_hw_constraints()
@@ -2969,7 +2969,7 @@ class FlavorBasedPoolDriver(
             if r_suitable.unwrap() is True:
                 suitable_flavors.append(flavor)
 
-        gluetool.log.log_dict(logger.debug, 'suitable flavors', suitable_flavors)
+        log_dict_yaml(logger.debug, 'suitable flavors', suitable_flavors)
 
         if not suitable_flavors:
             return Ok([])
@@ -2978,10 +2978,9 @@ class FlavorBasedPoolDriver(
         # the smaller it is in eyes of this ordering.
         sorted_suitable_flavors = sorted(suitable_flavors, key=sort_key_getter)
 
-        gluetool.log.log_dict(logger.debug, 'sorted suitable flavors', sorted_suitable_flavors)
+        log_dict_yaml(logger.debug, 'sorted suitable flavors', sorted_suitable_flavors)
 
-        gluetool.log.log_dict(logger.debug, 'environment', environment.serialize())
-        log_dict_yaml(logger.debug, 'constraints', constraints.serialize())
+        log_dict_yaml(logger.debug, 'environment', environment.serialize())
 
         return Ok(sorted_suitable_flavors)
 

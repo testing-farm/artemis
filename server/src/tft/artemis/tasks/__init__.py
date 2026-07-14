@@ -950,8 +950,6 @@ def run_doer_multithread(
             # to doer thread. The actual timeout length is pretty much pointless.
             done_futures, undone_futures = concurrent.futures.wait({doer_future}, timeout=10.0)
 
-            gluetool.log.log_dict(logger.debug, 'doer futures', [done_futures, undone_futures])
-
             if len(undone_futures) != 0:
                 logger.debug('doer is still running')
                 continue

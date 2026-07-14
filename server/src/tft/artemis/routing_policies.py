@@ -9,7 +9,7 @@ from typing import Any, Callable, Optional, cast
 import gluetool.log
 import gluetool.utils
 import sqlalchemy
-from gluetool.log import log_dict, log_table
+from gluetool.log import log_table
 from gluetool.result import Error, Ok, Result
 from returns.pipeline import is_successful
 from returns.result import Failure as _Error, Result as _Result, Success as _Ok
@@ -271,8 +271,6 @@ def policy_boilerplate(fn: PolicyType) -> PolicyType:
     ) -> PolicyReturnType:
         try:
             policy_logger = PolicyLogger(logger, policy_name)
-
-            log_dict(policy_logger.debug, 'input pools', pools)
 
             r_enabled = knob_enabled.get_value(session=session)
 
@@ -642,8 +640,6 @@ def policy_least_crowded(
         return Error(r_pool_metrics.unwrap_error())
 
     pool_metrics = r_pool_metrics.unwrap()
-
-    log_dict(logger.debug, 'pool metrics', pool_metrics)
 
     min_usage = min(metrics.current_guest_request_count for _, metrics in pool_metrics)
 
