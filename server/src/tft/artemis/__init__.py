@@ -5,6 +5,8 @@ import contextlib
 import dataclasses
 import enum
 import importlib
+import importlib.metadata
+import importlib.resources
 import inspect
 import itertools
 import json
@@ -49,7 +51,6 @@ import jinja2.filters
 import jinja2_ansible_filters.core_filters
 import jsonschema
 import periodiq
-import pkg_resources
 import redis
 import ruamel.yaml
 import ruamel.yaml.compat
@@ -76,7 +77,7 @@ from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
 from typing_extensions import ParamSpec, Self
 
-__VERSION__ = pkg_resources.get_distribution('tft-artemis').version
+__VERSION__ = importlib.metadata.version('tft-artemis')
 
 
 # Install additional Jinja2 filters. This must be done before we call `render_template` for the first
@@ -1541,7 +1542,7 @@ def load_packaged_validation_schema(schema_subpath: str) -> Result[JSONSchemaTyp
     :param schema_subpath: path to a schema file relative to ``schema`` directory in ``tft.artemis`` package.
     """
 
-    root_schema_dirpath = pkg_resources.resource_filename('tft.artemis', 'schema')
+    root_schema_dirpath = str(importlib.resources.files('tft.artemis').joinpath('schema'))
 
     return load_validation_schema(os.path.join(root_schema_dirpath, schema_subpath))
 
