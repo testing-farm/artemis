@@ -3,25 +3,24 @@
 
 import dataclasses
 import datetime
+import functools
 import re
 import string
 import threading
-from functools import cached_property
 from typing import Any, Optional, cast
 
 import gluetool.log
 import google.api_core
 import google.api_core.exceptions
-import proto
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 from google.cloud import compute_v1
 from returns.pipeline import is_successful
-from returns.result import Result as _Result, Success as _Ok
+from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
 from typing_extensions import TypeAlias, override
 
-from .. import Failure, log_dict_yaml
+from .. import Failure, rewrap_to_gluetool
 from ..db import GuestRequest
 from ..environment import Flavor, FlavorBoot, FlavorCpu, FlavorNetworks, FlavorVirtualization, SizeType
 from ..knobs import Knob
@@ -44,6 +43,9 @@ from . import (
     ProvisioningProgress,
     ProvisioningState,
     ReleasePoolResourcesState,
+    ResourceCreationOutcome,
+    ResourceCreationRequest,
+    ResourceManager,
     SerializedPoolResourcesIDs,
     Tags,
     create_error_cause_extractor,
@@ -127,17 +129,69 @@ BackendFlavor: TypeAlias = str
 
 @dataclasses.dataclass
 class GCPPoolData(PoolData):
-    name: str
-    id: int
-    project: str
-    zone: str
+    instance_name: Optional[str] = None
+    instance_id: Optional[int] = None
 
 
 @dataclasses.dataclass
 class GCPPoolResourcesIDs(PoolResourcesIDs):
-    name: Optional[str] = None
-    project: Optional[str] = None
-    zone: Optional[str] = None
+    instance_name: Optional[str] = None
+
+
+@dataclasses.dataclass
+class GCPInstance(Instance):
+    status: str
+    created_at: datetime.datetime
+
+    def __post_init__(self) -> None:
+        self.status = self.status.lower()
+
+    @override
+    @functools.cached_property
+    def is_ready(self) -> bool:
+        return self.status == 'running'
+
+    @override
+    @functools.cached_property
+    def is_error(self) -> bool:
+        return self.status == 'failed'
+
+    @override
+    @functools.cached_property
+    def is_pending(self) -> bool:
+        return not self.is_ready and not self.is_error
+
+    @override
+    def to_pool_resource_ids(self) -> GCPPoolResourcesIDs:
+        return GCPPoolResourcesIDs(instance_name=self.name)
+
+    def serialize(self) -> dict[str, Any]:
+        serialized = super().serialize()
+
+        if self.created_at:
+            serialized['created_at'] = self.created_at.strftime(GCP_DATETIME_FORMAT)
+
+        return serialized
+
+    @classmethod
+    def unserialize(cls, serialized: dict[str, Any]) -> 'GCPInstance':
+        instance = super().unserialize(serialized)
+
+        if serialized['created_at']:
+            instance.created_at = datetime.datetime.strptime(serialized['created_at'], GCP_DATETIME_FORMAT)
+
+        return instance
+
+
+@dataclasses.dataclass
+class InstanceCreationRequest(ResourceCreationRequest):
+    image: PoolImageInfo
+    tags: Optional[Tags] = None
+
+
+@dataclasses.dataclass
+class InstanceCreationOutcome(ResourceCreationOutcome[GCPInstance]):
+    image: PoolImageInfo
 
 
 class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, BackendFlavor, Instance]):
@@ -155,6 +209,19 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
 
     def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str, pool_config: dict[str, Any]) -> None:
         super().__init__(logger, poolname, pool_config)
+
+        self.instance_resource_manager: ResourceManager[
+            GCPInstance, InstanceCreationRequest, InstanceCreationOutcome
+        ] = ResourceManager(
+            logger=logger,
+            pool=self,
+            resource_type='instance',
+            list_resources=self._query_instances_by_guest_request,
+            resource_name=self._render_instance_name,
+            create_resource_request=self._create_instance_request,
+            create_resource=self._create_instance,
+            reuse_resource=self._reuse_instance,
+        )
 
     @property
     def _instances_client(self) -> compute_v1.InstancesClient:
@@ -183,7 +250,7 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
         capabilities.supports_hostnames = False
         return _Ok(capabilities)
 
-    @cached_property
+    @functools.cached_property
     def _service_account_info(self) -> dict[Any, Any]:
         # The type is validated using pool's jsonschema (object)
         return cast(dict[Any, Any], self.pool_config['service-account-info'])
@@ -262,22 +329,58 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
     def _query_backend_flavors(self, logger: gluetool.log.ContextAdapter) -> _Result[list[BackendFlavor], Failure]:
         return _Ok([])
 
-    def _query_instance_id(self, instance_name: str, project: str, zone: str) -> Result[int, Failure]:
-        """Perform API call to GCP, asking about the given instance"""
-        request = compute_v1.GetInstanceRequest()
-        request.instance = instance_name
-        request.project = project
-        request.zone = zone
+    def list_instances(self, logger: gluetool.log.ContextAdapter) -> Result[list[GCPInstance], Failure]:
+        project = self.pool_config['project']
+        zone = self.pool_config['zone']
 
         try:
-            instance_info = self._instances_client.get(request=request)
-        except google.api_core.exceptions.NotFound as exc:
-            failure = Failure.from_exc(
-                f'Failed to locate instance {request.instance}', exc, recoverable=False, fail_guest_request=False
-            )
-            return Error(failure)
+            raw_instances = list(self._instances_client.list(project=project, zone=zone))
+        except Exception as exc:
+            return Error(Failure.from_exc('failed to list instances', exc))
 
-        return Ok(instance_info.id)
+        res = []
+        for raw_instance in raw_instances:
+            r_created_at = self.timestamp_to_datetime(raw_instance.creation_timestamp)
+            if r_created_at.is_error:
+                return Error(
+                    Failure.from_failure(
+                        'Could not parse instance timestamp',
+                        r_created_at.unwrap_error(),
+                        instance=raw_instance.name,
+                    )
+                )
+
+            res.append(
+                GCPInstance(
+                    id=str(raw_instance.id),
+                    name=raw_instance.name,
+                    status=raw_instance.status,
+                    created_at=r_created_at.unwrap(),
+                )
+            )
+
+        return Ok(res)
+
+    def _query_instances_by_guest_request(
+        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
+    ) -> _Result[list[GCPInstance], Failure]:
+        r_instances_list = self.list_instances(logger)
+        if r_instances_list.is_error:
+            return _Error(Failure.from_failure('failed to list instances', r_instances_list.unwrap_error()))
+
+        r_expected_name = self._render_instance_name(guest_request)
+        if not is_successful(r_expected_name):
+            return _Error(Failure.from_failure('failed to get expected instance name', r_expected_name.failure()))
+        expected_name = r_expected_name.unwrap()
+
+        res = [instance for instance in r_instances_list.unwrap() if instance.name.startswith(expected_name)]
+
+        try:
+            res = sorted(res, key=lambda x: x.created_at)
+        except ValueError as exc:
+            return _Error(Failure.from_exc('Double check time format, could not convert time data', exc))
+
+        return _Ok(res)
 
     @override
     def update_guest(
@@ -289,10 +392,14 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
     ) -> Result[ProvisioningProgress, Failure]:
         pool_data = guest_request.pool_data.mine(self, GCPPoolData)
 
-        request = compute_v1.GetInstanceRequest()
-        request.instance = pool_data.name
-        request.project = pool_data.project
-        request.zone = pool_data.zone
+        if not pool_data.instance_id:
+            return Error(Failure('Need instance ID to fetch guest info'))
+
+        request = compute_v1.GetInstanceRequest(
+            instance=str(pool_data.instance_id),
+            project=self.pool_config['project'],
+            zone=self.pool_config['zone'],
+        )
 
         try:
             instance_info = self._instances_client.get(request=request)
@@ -346,7 +453,7 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
         return self.dispatch_resource_cleanup(
             logger,
             session,
-            GCPPoolResourcesIDs(name=pool_data.name, project=pool_data.project, zone=pool_data.zone),
+            GCPPoolResourcesIDs(instance_name=pool_data.instance_name),
             guest_request=guest_request,
         )
 
@@ -356,7 +463,9 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
     ) -> Result[ReleasePoolResourcesState, Failure]:
         resource_ids = GCPPoolResourcesIDs.unserialize_from_json(raw_resource_ids)
         request = compute_v1.DeleteInstanceRequest(
-            instance=resource_ids.name, project=resource_ids.project, zone=resource_ids.zone
+            instance=resource_ids.instance_name,
+            project=self.pool_config['project'],
+            zone=self.pool_config['zone'],
         )
         try:
             self._instances_client.delete(request=request)
@@ -382,99 +491,158 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
         if not zone:
             zone = self.pool_config['zone']
 
-        boot_disk = compute_v1.AttachedDisk()
-        initialize_params = compute_v1.AttachedDiskInitializeParams()
-        initialize_params.source_image = image_link
-        initialize_params.disk_size_gb = int(size.to('GiB').magnitude)
-        initialize_params.disk_type = disk_type
+        initialize_params = compute_v1.AttachedDiskInitializeParams(
+            source_image=image_link,
+            disk_size_gb=int(size.to('GiB').magnitude),
+            disk_type=disk_type,
+        )
 
         if labels:
             initialize_params.labels = labels
 
-        boot_disk.initialize_params = initialize_params
-        boot_disk.auto_delete = True
-        boot_disk.boot = True
-
-        return boot_disk
+        return compute_v1.AttachedDisk(
+            initialize_params=initialize_params,
+            auto_delete=True,
+            boot=True,
+        )
 
     def _ensure_machine_type_is_canonical(self, machine_type: str, zone: str) -> str:
         if re.match(r'^zones/[a-z\d\-]+/machineTypes/[a-z\d\-]+$', machine_type):
             return machine_type
         return f'zones/{zone}/machineTypes/{machine_type}'
 
+    def _create_instance_request(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+    ) -> _Result[InstanceCreationRequest, Failure]:
+        r_images: Result[list[PoolImageInfo], Failure] = self._guest_request_to_image(logger, session, guest_request)
+        if r_images.is_error:
+            return _Error(r_images.unwrap_error())
+
+        images = r_images.unwrap()
+
+        if guest_request.environment.has_ks_specification:
+            images = [image for image in images if image.supports_kickstart is True]
+
+        image = images[0]
+
+        r_base_tags = self.get_guest_tags(logger, session, guest_request)
+        if r_base_tags.is_error:
+            return _Error(r_base_tags.unwrap_error())
+
+        return _Ok(
+            InstanceCreationRequest(
+                image=image,
+                tags=r_base_tags.unwrap(),
+            )
+        )
+
     def _create_instance(
         self,
-        client: compute_v1.InstancesClient,
-        image: PoolImageInfo,
-        ssh_pubkey: str,
-        project_id: str,
-        zone: str,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
         instance_name: str,
-        disks: list[compute_v1.AttachedDisk],
-        machine_type: Optional[str] = None,
-        network_link: Optional[str] = None,
-        *,
-        delete_protection: bool = False,
-        tags: Optional[Tags] = None,
-    ) -> Result[compute_v1.Instance, Failure]:
-        network_link = network_link or self.pool_config['network-resource-url']
-        machine_type = machine_type or self.pool_config['default-flavor']
+        instance_request: InstanceCreationRequest,
+    ) -> _Result[InstanceCreationOutcome, Failure]:
+        from ..tasks import _get_ssh_key
 
-        network_interface = compute_v1.NetworkInterface()
-        network_interface.network = network_link
+        project_id = self.pool_config['project']
+        zone = self.pool_config['zone']
+        network_link = self.pool_config['network-resource-url']
+        machine_type = self.pool_config['default-flavor']
 
-        # Configure external access - external IP will be auto assigned
-        access = compute_v1.AccessConfig()
-        access.type_ = compute_v1.AccessConfig.Type.ONE_TO_ONE_NAT.name  # type: ignore[attr-defined]
-        access.name = 'External NAT'
-        access.network_tier = access.NetworkTier.PREMIUM.name  # type: ignore[attr-defined]
-        network_interface.access_configs = [access]
+        r_ssh_key = _get_ssh_key(guest_request.ownername, guest_request.ssh_keyname)
+        if r_ssh_key.is_error:
+            return _Error(
+                Failure.from_failure(
+                    'failed to get SSH key', r_ssh_key.unwrap_error(), keyname=guest_request.ssh_keyname
+                )
+            )
 
-        # Collect information into the Instance object.
-        instance = compute_v1.Instance()
-        instance.network_interfaces = [network_interface]
-        instance.name = instance_name
-        instance.disks = disks
+        ssh_key = r_ssh_key.unwrap()
+        if not ssh_key:
+            return _Error(Failure('failed to get SSH key', keyname=guest_request.ssh_keyname))
 
-        if tags:
-            instance.labels = _serialize_tags(tags)
+        labels = _serialize_tags(instance_request.tags) if instance_request.tags else {}
 
-        instance.machine_type = self._ensure_machine_type_is_canonical(zone=zone, machine_type=machine_type)
+        boot_disk = self._create_boot_disk_for_image_link(instance_request.image.id, zone=zone, labels=labels)
 
-        # Add a ssh-key to the file
-        ssh_key = compute_v1.Items()
-        ssh_key.key = 'ssh-keys'
-        ssh_key.value = f'{image.ssh.username}:{ssh_pubkey}'
-        instance.metadata.items.append(ssh_key)
+        access = compute_v1.AccessConfig(
+            type_=compute_v1.AccessConfig.Type.ONE_TO_ONE_NAT.name,  # type: ignore[attr-defined]
+            name='External NAT',
+            network_tier=compute_v1.AccessConfig.NetworkTier.PREMIUM.name,  # type: ignore[attr-defined]
+        )
 
-        instance.scheduling = compute_v1.Scheduling()
+        network_interface = compute_v1.NetworkInterface(
+            network=network_link,
+            access_configs=[access],
+        )
 
-        if delete_protection:
-            instance.deletion_protection = True
+        ssh_metadata = compute_v1.Items(
+            key='ssh-keys',
+            value=f'{instance_request.image.ssh.username}:{ssh_key.public}',
+        )
 
-        # Prepare the request to insert an instance.
-        request = compute_v1.InsertInstanceRequest()
-        request.zone = zone
-        request.project = project_id
-        request.instance_resource = instance
+        instance = compute_v1.Instance(
+            network_interfaces=[network_interface],
+            name=instance_name,
+            disks=[boot_disk],
+            machine_type=self._ensure_machine_type_is_canonical(zone=zone, machine_type=machine_type),
+            scheduling=compute_v1.Scheduling(),
+        )
+
+        if instance_request.tags:
+            instance.labels = labels
+
+        instance.metadata.items.append(ssh_metadata)
+
+        request = compute_v1.InsertInstanceRequest(
+            zone=zone,
+            project=project_id,
+            instance_resource=instance,
+        )
+
+        client = self._instances_client
 
         try:
-            client.insert(request=request)
+            operation = client.insert(request=request)
         except google.api_core.exceptions.BadRequest as exc:
-            return Error(Failure.from_exc('Failed to create a GCP instance', exc))
+            return _Error(Failure.from_exc('Failed to create a GCP instance', exc))
+        # NOTE(ivasilev) this should not happen anymore with ResourceManager approach
         except google.api_core.exceptions.Conflict as exc:
-            return Error(Failure.from_exc('Failed to create a GCP instance', exc))
+            return _Error(Failure.from_exc('Failed to create a GCP instance because of a conflict', exc))
         except google.api_core.exceptions.PreconditionFailed as exc:
-            return Error(Failure.from_exc('Instance creation failed due to policy', exc))
+            return _Error(Failure.from_exc('Instance creation failed due to policy', exc))
 
-        try:
-            # NOTE(ivasilev) Needs revision, this may easily fail because of the lag between creation -> instance
-            # actually listed, then the whole request is retried include resource recreation which can leave untracked
-            # leftovers.. Will probably go away once ResourceManager approach is implemented for gcp.
-            created_instance = client.get(project=project_id, zone=zone, instance=instance_name)
-        except google.api_core.exceptions.NotFound as exc:
-            return Error(Failure.from_exc('Failed to query information about the freshly created instance', exc))
-        return Ok(created_instance)
+        return _Ok(
+            InstanceCreationOutcome(
+                resource=GCPInstance(
+                    id=str(operation.target_id),
+                    name=instance_name,
+                    status='',
+                    created_at=datetime.datetime.now(tz=datetime.timezone.utc),
+                ),
+                image=instance_request.image,
+            )
+        )
+
+    def _reuse_instance(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        instance_request: InstanceCreationRequest,
+        instance: GCPInstance,
+    ) -> _Result[InstanceCreationOutcome, Failure]:
+        return _Ok(
+            InstanceCreationOutcome(
+                resource=instance,
+                image=instance_request.image,
+            )
+        )
 
     @override
     def list_images(
@@ -531,108 +699,38 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
         return Ok(res)
 
     @override
+    @rewrap_to_gluetool
     def acquire_guest(
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         cancelled: Optional[threading.Event] = None,
-    ) -> Result[ProvisioningProgress, Failure]:
-        map_request_to_image_result: Result[list[PoolImageInfo], Failure] = self._guest_request_to_image(
-            logger, session, guest_request
-        )
-        if map_request_to_image_result.is_error:
-            return Error(map_request_to_image_result.unwrap_error())
-
-        images = map_request_to_image_result.unwrap()
-
-        if guest_request.environment.has_ks_specification:
-            images = [image for image in images if image.supports_kickstart is True]
-
-        image = images[0]
-
-        self.log_acquisition_attempt(logger, session, guest_request, image=image)
-
-        r_base_tags = self.get_guest_tags(logger, session, guest_request)
-        if r_base_tags.is_error:
-            return Error(r_base_tags.unwrap_error())
-
-        tags = r_base_tags.unwrap()
-
-        # As guest IDs (names) can start with a number, add 'artemis-' prefix to make sure the instance nam
-        # will start with a letter
-        instance_name = f'artemis-{guest_request.guestname}'
-
-        project_id = self.pool_config['project']
-        zone = self.pool_config['zone']
-
-        labels = _serialize_tags(tags)
-
-        # Image.id contains self_link
-        boot_disk = self._create_boot_disk_for_image_link(image.id, zone=zone, labels=labels)
-
-        from ..tasks import _get_ssh_key  # Late import as top-level import leads to circular imports
-
-        r_ssh_key = _get_ssh_key(guest_request.ownername, guest_request.ssh_keyname)
-        if r_ssh_key.is_error:
-            return Error(
-                Failure.from_failure(
-                    'failed to get SSH key', r_ssh_key.unwrap_error(), keyname=guest_request.ssh_keyname
-                )
-            )
-
-        ssh_key = r_ssh_key.unwrap()
-        if not ssh_key:
-            return Error(Failure('failed to get SSH key', keyname=guest_request.ssh_keyname))
-
-        r_instance = self._create_instance(
-            self._instances_client,
-            image,
-            ssh_key.public,
-            project_id,
-            zone,
-            instance_name,
-            disks=[boot_disk],
-            tags=tags,
-        )
-        if r_instance.is_error:
-            failure = r_instance.unwrap_error()
-            if not failure.exc_info:
-                return Error(failure)
-
-            exc_instance = failure.exc_info[1]
-            if isinstance(exc_instance, google.api_core.exceptions.AlreadyExists):
-                # The instance already exists, do not try creating it again
-                r_instance_id = self._query_instance_id(instance_name, project_id, zone)
-                if r_instance_id.is_error:
-                    return Error(r_instance_id.unwrap_error())
-
-                return Ok(
+    ) -> _Result[ProvisioningProgress, Failure]:
+        return (
+            self.instance_resource_manager.acquire(logger, guest_request, session)
+            .bind(
+                lambda instance_outcome: _Ok(
                     ProvisioningProgress(
-                        state=ProvisioningState.PENDING,  # Check the VM state again - schedule update_guest()
+                        state=ProvisioningState.PENDING,
                         pool_data=GCPPoolData(
-                            id=r_instance_id.unwrap(), project=project_id, name=instance_name, zone=zone
+                            instance_id=int(instance_outcome.resource.id),
+                            instance_name=instance_outcome.resource.name,
                         ),
-                        ssh_info=image.ssh,
-                        address=None,
+                        ssh_info=instance_outcome.image.ssh,
                     )
                 )
-
-            return Error(r_instance.unwrap_error())
-
-        instance = r_instance.unwrap()
-
-        log_dict_yaml(logger.info, 'created instance', proto.Message.to_dict(instance))
-
-        # It is unlikely that the machine would be up and running
-        provisioninig_state = ProvisioningState.PENDING
-
-        return Ok(
-            ProvisioningProgress(
-                state=provisioninig_state,
-                pool_data=GCPPoolData(id=instance.id, project=project_id, name=instance_name, zone=zone),
-                ssh_info=image.ssh,
-                address=None,
+            )
+            .lash(
+                lambda failure: _Error(failure)
+                if failure.recoverable
+                else _Ok(
+                    ProvisioningProgress(
+                        state=ProvisioningState.CANCEL,
+                        pool_data=GCPPoolData(),
+                        pool_failures=[failure],
+                    )
+                )
             )
         )
 
@@ -653,7 +751,7 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
             return Ok(None)
 
         request = compute_v1.ResetInstanceRequest(
-            instance=pool_data.name, project=pool_data.project, zone=pool_data.zone
+            instance=pool_data.instance_name, project=self.pool_config['project'], zone=self.pool_config['zone']
         )
 
         try:
