@@ -423,7 +423,7 @@ class Workspace(_Workspace):
             if r_delay.is_error:
                 return self._error(r_delay, 'failed to load the delay for installation check task')
 
-            self.request_task(prepare_kickstart_wait, self.guestname, delay=r_delay.unwrap())
+            self.request_task(prepare_kickstart_wait, self.guestname, delay=r_delay.unwrap(), guestname=self.guestname)
 
     @classmethod
     def create(

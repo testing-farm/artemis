@@ -131,7 +131,7 @@ class Workspace(_Workspace):
                     user_data=self.guest_template.user_data,
                 )
 
-                self.request_task(guest_shelf_lookup, guestname)
+                self.request_task(guest_shelf_lookup, guestname, guestname=guestname)
 
     @classmethod
     def create(

@@ -1484,7 +1484,14 @@ def _request_task(
     *task_arguments: ActorArgumentType,
     delay: Optional[int] = None,
     task_sequence_request_id: Optional[int] = None,
+    guestname: Optional[str] = None,
 ) -> Result[None, Failure]:
+    failure_details: dict[str, Any] = {
+        'task_name': task.actor_name,
+        'task_args': task_arguments,
+        'task_sequence_request_id': task_sequence_request_id,
+    }
+
     r = TaskRequest.create(
         logger, session, task, *task_arguments, delay=delay, task_sequence_request_id=task_sequence_request_id
     )
@@ -1494,27 +1501,55 @@ def _request_task(
             Failure.from_failure(
                 'failed to add task request',
                 r.unwrap_error(),
-                task_name=task.actor_name,
-                task_args=task_arguments,
-                task_sequence_request_id=task_sequence_request_id,
+                **failure_details,
             )
         )
 
     task_request_id = r.unwrap()
 
+    task_call = TaskCall.from_call(
+        task,
+        *task_arguments,
+        delay=delay,
+        task_request_id=task_request_id,
+        task_sequence_request_id=task_sequence_request_id,
+    )
+
+    failure_details['task'] = task_call.serialize()
+
     if task_sequence_request_id is None:
-        log_dict_yaml(
-            logger.info,
-            f'requested task #{task_request_id}',
-            TaskCall.from_call(task, *task_arguments, delay=delay, task_request_id=task_request_id).serialize(),
-        )
+        if guestname is None:
+            log_dict_yaml(
+                logger.info,
+                f'requested task #{task_request_id}',
+                task_call.serialize(),
+            )
+
+        else:
+            GuestRequest.log_event_by_guestname(
+                logger,
+                session,
+                guestname,
+                'task-requested',
+                **failure_details,
+            )
 
     else:
-        log_dict_yaml(
-            logger.info,
-            f'requested task #{task_sequence_request_id}/#{task_request_id}',
-            TaskCall.from_call(task, *task_arguments, delay=delay, task_request_id=task_request_id).serialize(),
-        )
+        if guestname is None:
+            log_dict_yaml(
+                logger.info,
+                f'requested task #{task_sequence_request_id}/#{task_request_id}',
+                task_call.serialize(),
+            )
+
+        else:
+            GuestRequest.log_event_by_guestname(
+                logger,
+                session,
+                guestname,
+                'task-requested',
+                **failure_details,
+            )
 
     return Ok(None)
 
@@ -1524,6 +1559,7 @@ def _request_task_sequence(
     session: sqlalchemy.orm.session.Session,
     tasks: list[tuple[Actor, tuple[ActorArgumentType, ...]]],
     delay: Optional[int] = None,
+    guestname: Optional[str] = None,
 ) -> Result[None, Failure]:
     r = TaskSequenceRequest.create(logger, session)
 
@@ -1537,12 +1573,23 @@ def _request_task_sequence(
     for i, (task, task_arguments) in enumerate(tasks):
         if i == 0:
             r_task = _request_task(
-                logger, session, task, *task_arguments, delay=delay, task_sequence_request_id=task_sequence_request_id
+                logger,
+                session,
+                task,
+                *task_arguments,
+                delay=delay,
+                task_sequence_request_id=task_sequence_request_id,
+                guestname=guestname,
             )
 
         else:
             r_task = _request_task(
-                logger, session, task, *task_arguments, task_sequence_request_id=task_sequence_request_id
+                logger,
+                session,
+                task,
+                *task_arguments,
+                task_sequence_request_id=task_sequence_request_id,
+                guestname=guestname,
             )
 
         if r_task.is_error:
@@ -1702,7 +1749,7 @@ def _update_guest_state_and_request_task(
 
     logger.warning(f'state switch: {current_state_label} => {new_state.value}: proposed')
 
-    r_task = _request_task(logger, session, task, *task_arguments, delay=delay)
+    r_task = _request_task(logger, session, task, *task_arguments, delay=delay, guestname=guestname)
 
     if r_task.is_error:
         return handle_error(r_task, 'failed to add task request')
@@ -2148,22 +2195,31 @@ class Workspace:
         if r.is_error:
             self._error(r, 'failed to dispatch task')
 
-    def request_task(self, task: Actor, *task_arguments: ActorArgumentType, delay: Optional[int] = None) -> None:
+    def request_task(
+        self,
+        task: Actor,
+        *task_arguments: ActorArgumentType,
+        delay: Optional[int] = None,
+        guestname: Optional[str] = None,
+    ) -> None:
         if self.result:
             return
 
-        r = _request_task(self.logger, self.session, task, *task_arguments, delay=delay)
+        r = _request_task(self.logger, self.session, task, *task_arguments, delay=delay, guestname=guestname)
 
         if r.is_error:
             self._error(r, 'failed to create task request')
 
     def request_task_sequence(
-        self, tasks: list[tuple[Actor, tuple[ActorArgumentType, ...]]], delay: Optional[int] = None
+        self,
+        tasks: list[tuple[Actor, tuple[ActorArgumentType, ...]]],
+        delay: Optional[int] = None,
+        guestname: Optional[str] = None,
     ) -> None:
         if self.result:
             return
 
-        r = _request_task_sequence(self.logger, self.session, tasks, delay=delay)
+        r = _request_task_sequence(self.logger, self.session, tasks, delay=delay, guestname=guestname)
 
         if r.is_error:
             self._error(r, 'failed to create task sequence request')

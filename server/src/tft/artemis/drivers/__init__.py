@@ -1812,6 +1812,7 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
                 resource_id.serialize_to_json(),
                 guest_request.guestname if guest_request else None,
                 delay=delay,
+                guestname=None if guest_request is None else guest_request.guestname,
             )
 
         return _request_task_sequence(
@@ -1829,6 +1830,7 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
                 for resource_id in resource_ids
             ],
             delay=delay,
+            guestname=None if guest_request is None else guest_request.guestname,
         )
 
     @abc.abstractmethod

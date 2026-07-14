@@ -101,7 +101,7 @@ class Workspace(_Workspace):
             if self.gr.environment.has_ks_specification and not r_capabilities.unwrap().supports_native_kickstart:
                 next_task = prepare_kickstart
 
-            self.request_task(next_task, self.guestname)
+            self.request_task(next_task, self.guestname, guestname=self.guestname)
 
     @classmethod
     def create(

@@ -237,6 +237,7 @@ class Workspace(_Workspace):
                 self.logname,
                 self.contenttype.value,
                 delay=update_progress.delay_update or r_delay_update.unwrap(),
+                guestname=self.guestname,
             )
 
     @classmethod

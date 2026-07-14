@@ -264,7 +264,9 @@ class Workspace(_Workspace):
                 if r_delay.is_error:
                     return self._error(r_delay, 'failed to load task retry delay')
 
-                self.request_task(prepare_kickstart_wait, self.guestname, delay=r_delay.unwrap())
+                self.request_task(
+                    prepare_kickstart_wait, self.guestname, delay=r_delay.unwrap(), guestname=self.guestname
+                )
 
                 return None
 
@@ -291,7 +293,7 @@ class Workspace(_Workspace):
                 self._fail(r_logs.unwrap_error(), 'failed to fetch and store kickstart logs', no_effect=True)
 
             # Dispatch next task.
-            self.request_task(prepare_finalize_pre_connect, self.guestname)
+            self.request_task(prepare_finalize_pre_connect, self.guestname, guestname=self.guestname)
 
     @classmethod
     def create(

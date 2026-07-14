@@ -66,7 +66,7 @@ class Workspace(_Workspace):
                 from .release_guest_request import release_guest_request
 
                 if self.current_state == GuestState.CONDEMNED:
-                    self.request_task(release_guest_request, self.guestname)
+                    self.request_task(release_guest_request, self.guestname, guestname=self.guestname)
 
                 else:
                     self.update_guest_state_and_request_task(
