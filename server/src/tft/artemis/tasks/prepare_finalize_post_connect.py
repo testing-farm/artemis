@@ -138,7 +138,7 @@ class Workspace(_Workspace):
                 if r_actor.is_error:
                     return self._error(transaction, r_actor, 'failed to find task')
 
-                self.request_task(transaction, r_actor.unwrap(), self.guestname, *arguments)
+                self.request_task(transaction, r_actor.unwrap(), self.guestname, *arguments, guestname=self.guestname)
 
     @classmethod
     def create(
