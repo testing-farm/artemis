@@ -64,6 +64,15 @@ properties:
   use-only-when-addressed:
     type: boolean
 
+  flavor-regex:
+    type: string
+
+  custom-flavors:
+    type: array
+
+  patch-flavors:
+    type: array
+
 additionalProperties: false
 
 required: [service-account-info, zone, project, image-project, network-resource-url, default-flavor]
