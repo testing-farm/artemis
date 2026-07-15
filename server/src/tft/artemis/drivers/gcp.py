@@ -131,7 +131,7 @@ def _serialize_tags(tags: Tags) -> dict[str, str]:
 BackendFlavor: TypeAlias = dict[str, Any]
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class GCPPoolData(PoolData):
     instance_name: Optional[str] = None
     instance_id: Optional[int] = None

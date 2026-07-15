@@ -45,7 +45,7 @@ FlasherErrorCauses = CommonErrorCauses
 error_cause_extractor = create_error_cause_extractor(FlasherErrorCauses)
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class FlasherPoolData(PoolData):
     flasher_id: Optional[str] = None
 
