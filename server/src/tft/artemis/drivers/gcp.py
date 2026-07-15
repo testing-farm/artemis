@@ -7,6 +7,7 @@ import functools
 import re
 import string
 import threading
+from collections.abc import Iterator
 from typing import Any, Optional, cast
 
 import gluetool.log
@@ -26,7 +27,6 @@ from ..environment import Flavor, FlavorBoot, FlavorCpu, FlavorNetworks, FlavorV
 from ..knobs import Knob
 from ..metrics import PoolResourcesMetrics, PoolResourcesUsage
 from . import (
-    AnyArchitecture,
     CanAcquire,
     CommonErrorCauses,
     ConfigImageFilter,
@@ -94,6 +94,10 @@ _sanitize_tags = create_sanitize_tags(
 )
 
 
+@dataclasses.dataclass(repr=False)
+class GCPFlavor(Flavor): ...
+
+
 def _serialize_tags(tags: Tags) -> dict[str, str]:
     """
     Serialize tags to make them acceptable as GCP labels.
@@ -124,7 +128,7 @@ def _serialize_tags(tags: Tags) -> dict[str, str]:
     return labels
 
 
-BackendFlavor: TypeAlias = str
+BackendFlavor: TypeAlias = dict[str, Any]
 
 
 @dataclasses.dataclass
@@ -186,18 +190,22 @@ class GCPInstance(Instance):
 @dataclasses.dataclass
 class InstanceCreationRequest(ResourceCreationRequest):
     image: PoolImageInfo
+    flavor: GCPFlavor
     tags: Optional[Tags] = None
 
 
 @dataclasses.dataclass
 class InstanceCreationOutcome(ResourceCreationOutcome[GCPInstance]):
     image: PoolImageInfo
+    flavor: GCPFlavor
 
 
-class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, BackendFlavor, Instance]):
+class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, BackendFlavor, Instance]):
     drivername = 'gcp'
 
     pool_data_class = GCPPoolData
+
+    flavor_info_class = GCPFlavor
 
     error_cause_extractor = staticmethod(error_cause_extractor)
 
@@ -229,6 +237,13 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
             compute_v1.InstancesClient, compute_v1.InstancesClient.from_service_account_info(self._service_account_info)
         )
 
+    @property
+    def _flavors_client(self) -> compute_v1.MachineTypesClient:
+        return cast(
+            compute_v1.MachineTypesClient,
+            compute_v1.MachineTypesClient.from_service_account_info(self._service_account_info),
+        )
+
     @classmethod
     def timestamp_to_datetime(cls, timestamp: str) -> Result[datetime.datetime, Failure]:
         try:
@@ -241,7 +256,6 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
             )
 
     def adjust_capabilities(self, capabilities: PoolCapabilities) -> _Result[PoolCapabilities, Failure]:
-        capabilities.supported_architectures = ['x86_64']
         capabilities.supports_console_url = False
         capabilities.supports_spot_instances = False
         capabilities.supports_confidential_computing = False
@@ -327,7 +341,15 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
 
     @override
     def _query_backend_flavors(self, logger: gluetool.log.ContextAdapter) -> _Result[list[BackendFlavor], Failure]:
-        return _Ok([])
+        project = self.pool_config['project']
+        zone = self.pool_config['zone']
+
+        try:
+            flavors = self._flavors_client.list(project=project, zone=zone)
+        except Exception as exc:
+            return _Error(Failure.from_exc('failed to list flavors', exc))
+
+        return _Ok([compute_v1.types.MachineType.to_dict(flavor) for flavor in flavors])
 
     def list_instances(self, logger: gluetool.log.ContextAdapter) -> Result[list[GCPInstance], Failure]:
         project = self.pool_config['project']
@@ -517,16 +539,21 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
     ) -> _Result[InstanceCreationRequest, Failure]:
-        r_images: Result[list[PoolImageInfo], Failure] = self._guest_request_to_image(logger, session, guest_request)
-        if r_images.is_error:
-            return _Error(r_images.unwrap_error())
+        r_image_flavor_pairs = self._collect_image_flavor_pairs(logger, session, guest_request)
 
-        images = r_images.unwrap()
+        if r_image_flavor_pairs.is_error:
+            return _Error(r_image_flavor_pairs.unwrap_error())
 
-        if guest_request.environment.has_ks_specification:
-            images = [image for image in images if image.supports_kickstart is True]
+        can_acquire, pairs = r_image_flavor_pairs.unwrap()
 
-        image = images[0]
+        if not can_acquire.can_acquire:
+            assert can_acquire.reason is not None
+
+            return _Error(Failure(can_acquire.reason.message))
+
+        image = pairs[0][0]
+
+        flavor = pairs[0][1]
 
         r_base_tags = self.get_guest_tags(logger, session, guest_request)
         if r_base_tags.is_error:
@@ -535,6 +562,7 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
         return _Ok(
             InstanceCreationRequest(
                 image=image,
+                flavor=flavor,
                 tags=r_base_tags.unwrap(),
             )
         )
@@ -552,7 +580,7 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
         project_id = self.pool_config['project']
         zone = self.pool_config['zone']
         network_link = self.pool_config['network-resource-url']
-        machine_type = self.pool_config['default-flavor']
+        machine_type = instance_request.flavor.id
 
         r_ssh_key = _get_ssh_key(guest_request.ownername, guest_request.ssh_keyname)
         if r_ssh_key.is_error:
@@ -626,6 +654,7 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
                     created_at=datetime.datetime.now(tz=datetime.timezone.utc),
                 ),
                 image=instance_request.image,
+                flavor=instance_request.flavor,
             )
         )
 
@@ -638,10 +667,7 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
         instance: GCPInstance,
     ) -> _Result[InstanceCreationOutcome, Failure]:
         return _Ok(
-            InstanceCreationOutcome(
-                resource=instance,
-                image=instance_request.image,
-            )
+            InstanceCreationOutcome(resource=instance, image=instance_request.image, flavor=instance_request.flavor)
         )
 
     @override
@@ -764,32 +790,25 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, Flavor, Bac
         return Ok(None)
 
     @override
-    def fetch_pool_flavor_info(self) -> Result[list[Flavor], Failure]:
-        r_capabilities = self.capabilities()
-
-        if not is_successful(r_capabilities):
-            return Error(r_capabilities.failure())
-
-        capabilities = r_capabilities.unwrap()
-
-        if capabilities.supported_architectures == AnyArchitecture:
-            return Ok([])
-
-        assert isinstance(capabilities.supported_architectures, list)  # narrow type
-
-        return Ok(
-            [
-                Flavor(
-                    name=self.pool_config['default-flavor'],
-                    id=self.pool_config['default-flavor'],
-                    arch=arch,
+    def fetch_pool_flavor_info(self) -> Result[list[GCPFlavor], Failure]:
+        def _constructor(
+            logger: gluetool.log.ContextAdapter, raw_flavor: dict[str, Any]
+        ) -> Iterator[Result[GCPFlavor, Failure]]:
+            yield Ok(
+                GCPFlavor(
+                    name=raw_flavor['name'],
+                    # The id will be the flavor name the cloud expects to see for provisioning
+                    id=raw_flavor['name'],
                     boot=FlavorBoot(),
-                    cpu=FlavorCpu(),
+                    cpu=FlavorCpu(processors=int(raw_flavor['guest_cpus'])),
+                    memory=UNITS.Quantity(int(raw_flavor['memory_mb']), UNITS.megabytes),
                     network=FlavorNetworks(),
                     virtualization=FlavorVirtualization(),
                 )
-                for arch in capabilities.supported_architectures
-            ]
+            )
+
+        return self._construct_pool_flavor_infos(
+            self.logger, self._query_backend_flavors, lambda raw_flavor: cast(str, raw_flavor['name']), _constructor
         )
 
     def fetch_pool_resources_metrics(
