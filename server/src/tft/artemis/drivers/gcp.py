@@ -95,24 +95,7 @@ _sanitize_tags = create_sanitize_tags(
 
 
 @dataclasses.dataclass(repr=False)
-class GCPFlavor(Flavor):
-    description: Optional[str] = None
-
-    def serialize(self) -> dict[str, Any]:
-        serialized = super().serialize()
-
-        if self.description is not None:
-            serialized['description'] = self.description
-
-        return serialized
-
-    @classmethod
-    def unserialize(cls, serialized: dict[str, Any]) -> 'GCPFlavor':
-        description = serialized.pop('description', None)
-        flavor = cast('GCPFlavor', super().unserialize(serialized))
-        flavor.description = description
-
-        return flavor
+class GCPFlavor(Flavor): ...
 
 
 def _serialize_tags(tags: Tags) -> dict[str, str]:
@@ -819,7 +802,6 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, 
                     boot=FlavorBoot(),
                     cpu=FlavorCpu(processors=int(raw_flavor['guest_cpus'])),
                     memory=UNITS.Quantity(int(raw_flavor['memory_mb']), UNITS.megabytes),
-                    description=raw_flavor['description'],
                     network=FlavorNetworks(),
                     virtualization=FlavorVirtualization(),
                 )
