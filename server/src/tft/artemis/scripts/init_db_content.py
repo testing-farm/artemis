@@ -19,6 +19,7 @@ from .. import (
     get_logger,
     load_packaged_validation_schema,
     load_validation_schema,
+    log_dict_yaml,
     validate_data,
 )
 from ..db import DB, GuestShelf, GuestTag, Pool, PoolTag, PriorityGroup, SSHKey, User, UserRoles, upsert
@@ -211,7 +212,7 @@ def config_to_db(logger: gluetool.log.ContextAdapter, db: DB, server_config: dic
     validation_errors = r_validation.unwrap()
 
     if validation_errors:
-        gluetool.log.log_dict(logger.error, 'configuration schema validation failed', validation_errors)
+        log_dict_yaml(logger.error, 'configuration schema validation failed', validation_errors)
 
         sys.exit(1)
 
