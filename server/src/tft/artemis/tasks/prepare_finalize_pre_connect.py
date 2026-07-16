@@ -43,9 +43,9 @@ class Workspace(_Workspace):
         from .prepare_finalize_post_connect import prepare_finalize_post_connect
         from .prepare_post_install_script import prepare_post_install_script
 
-        with self.transaction():
-            self.load_guest_request(self.guestname, state=GuestState.PREPARING)
-            self.load_gr_pool()
+        with self.transaction() as transaction:
+            self.load_guest_request(transaction, self.guestname, state=GuestState.PREPARING)
+            self.load_gr_pool(transaction)
 
             if self.result:
                 return None
@@ -59,16 +59,16 @@ class Workspace(_Workspace):
                 r_capabilities = self.pool.capabilities()
 
                 if not is_successful(r_capabilities):
-                    return self._error_v2(r_capabilities, 'failed to fetch pool capabilities')
+                    return self._error_v2(transaction, r_capabilities, 'failed to fetch pool capabilities')
 
                 if r_capabilities.unwrap().supports_native_post_install_script is False:
-                    self.dispatch_task(prepare_post_install_script, self.guestname)
+                    self.dispatch_task(transaction, prepare_post_install_script, self.guestname)
 
                 else:
-                    self.dispatch_task(prepare_finalize_post_connect, self.guestname)
+                    self.dispatch_task(transaction, prepare_finalize_post_connect, self.guestname)
 
             else:
-                self.dispatch_task(prepare_finalize_post_connect, self.guestname)
+                self.dispatch_task(transaction, prepare_finalize_post_connect, self.guestname)
 
     @classmethod
     def create(

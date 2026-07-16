@@ -52,19 +52,20 @@ class Workspace(_Workspace):
 
     @step
     def run(self) -> None:
-        with self.transaction():
-            self.load_pools()
+        with self.transaction() as transaction:
+            self.load_pools(transaction)
 
-        if self.result:
-            return
+            if self.result:
+                return
 
-        self._progress('scheduling pool metrics refresh')
+            self._progress(transaction, 'scheduling pool metrics refresh')
 
         for pool in self.pools:
             if self.result:
                 return
 
             self.dispatch_task(
+                transaction,
                 refresh_pool_resources_metrics,
                 pool.poolname,
                 logger=get_pool_logger(Workspace.TASKNAME, _ROOT_LOGGER, pool.poolname),

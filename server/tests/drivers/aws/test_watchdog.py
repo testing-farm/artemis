@@ -75,6 +75,7 @@ def test_aws_guest_watchdog(
     monkeypatch: _pytest.monkeypatch.MonkeyPatch,
     logger: ContextAdapter,
     session: sqlalchemy.orm.session.Session,
+    transaction: tft.artemis.db.Transaction,
     caplog: _pytest.logging.LogCaptureFixture,
 ) -> None:
     guest_request = tft.artemis.db.GuestRequest(
@@ -111,7 +112,9 @@ def test_aws_guest_watchdog(
             'command': 'aws',
         },
     )
-    res_state = aws_driver.guest_watchdog(logger=logger, session=session, guest_request=guest_request)
+    res_state = aws_driver.guest_watchdog(
+        logger=logger, session=session, transaction=transaction, guest_request=guest_request
+    )
     assert res_state == expected_state
     if not expected_log_msg:
         # Check that no error has been logged
@@ -119,7 +122,7 @@ def test_aws_guest_watchdog(
     else:
         cast(MagicMock, guest_request.log_error_event).assert_called()
         cast(MagicMock, guest_request.log_error_event).assert_called_once_with(
-            logger, session, 'spot instance terminated prematurely', ANY
+            logger, transaction, 'spot instance terminated prematurely', ANY
         )
         failure = cast(MagicMock, guest_request.log_error_event).call_args.args[3]
         assert isinstance(failure, tft.artemis.Failure)

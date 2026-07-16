@@ -30,16 +30,16 @@ class Workspace(_Workspace):
 
     @step
     def run(self) -> None:
-        with self.transaction():
-            self.load_guest_request(self.guestname, state=GuestState.READY)
-            self.load_gr_pool()
-            self.test_pool_enabled()
+        with self.transaction() as transaction:
+            self.load_guest_request(transaction, self.guestname, state=GuestState.READY)
+            self.load_gr_pool(transaction)
+            self.test_pool_enabled(transaction)
 
             if self.result:
                 return None
 
             if not self.is_pool_enabled:
-                self._guest_request_event('pool-disabled')
+                self._guest_request_event(transaction, 'pool-disabled')
 
                 return None
 
@@ -49,7 +49,7 @@ class Workspace(_Workspace):
             r = self.pool.trigger_reboot(self.logger, self.gr)
 
             if r.is_error:
-                return self._error(r, 'failed to trigger guest reboot')
+                return self._error(transaction, r, 'failed to trigger guest reboot')
 
     @classmethod
     def create(

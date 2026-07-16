@@ -44,10 +44,10 @@ class Workspace(_Workspace):
         from .prepare_finalize_post_connect import prepare_finalize_post_connect
         from .prepare_verify_ssh import KNOB_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT
 
-        with self.transaction():
-            self.load_guest_request(self.guestname, state=GuestState.PREPARING)
-            self.load_gr_pool()
-            self.load_master_ssh_key()
+        with self.transaction() as transaction:
+            self.load_guest_request(transaction, self.guestname, state=GuestState.PREPARING)
+            self.load_gr_pool(transaction)
+            self.load_master_ssh_key(transaction)
 
             assert self.gr
             assert self.pool
@@ -58,7 +58,7 @@ class Workspace(_Workspace):
             )
 
             if r_ssh_timeout.is_error:
-                return self._error(r_ssh_timeout, 'failed to obtain ssh timeout value')
+                return self._error(transaction, r_ssh_timeout, 'failed to obtain ssh timeout value')
 
             with create_tempfile(file_contents=self.gr.post_install_script) as post_install_filepath:
                 r_upload = copy_to_remote(
@@ -76,7 +76,7 @@ class Workspace(_Workspace):
                 )
 
             if r_upload.is_error:
-                return self._error(r_upload, 'failed to upload post-install script')
+                return self._error(transaction, r_upload, 'failed to upload post-install script')
 
             r_ssh = run_remote(
                 self.logger,
@@ -92,9 +92,9 @@ class Workspace(_Workspace):
             )
 
             if r_ssh.is_error:
-                return self._error(r_ssh, 'failed to execute post-install script successfully')
+                return self._error(transaction, r_ssh, 'failed to execute post-install script successfully')
 
-            self.dispatch_task(prepare_finalize_post_connect, self.guestname)
+            self.dispatch_task(transaction, prepare_finalize_post_connect, self.guestname)
 
     @classmethod
     def create(

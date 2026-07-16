@@ -64,8 +64,8 @@ class Workspace(_Workspace):
 
     @step
     def run(self) -> None:
-        with self.transaction():
-            self.load_guest_request(self.guestname, state=GuestState.SHELVED)
+        with self.transaction() as transaction:
+            self.load_guest_request(transaction, self.guestname, state=GuestState.SHELVED)
 
             if self.result:
                 return None
@@ -73,10 +73,10 @@ class Workspace(_Workspace):
             assert self.gr
 
             if self.gr.skip_prepare_verify_ssh is True:
-                return self._progress('shelved-guest-watchdog-cancelled')
+                return self._progress(transaction, 'shelved-guest-watchdog-cancelled')
 
-            self.load_gr_pool()
-            self.load_master_ssh_key()
+            self.load_gr_pool(transaction)
+            self.load_master_ssh_key(transaction)
 
             if self.result:
                 return None
@@ -89,7 +89,7 @@ class Workspace(_Workspace):
             )
 
             if r_timeout.is_error:
-                return self._error(r_timeout, 'failed to obtain SSH timeout value')
+                return self._error(transaction, r_timeout, 'failed to obtain SSH timeout value')
 
             r_ping = ping_shell_remote(
                 self.logger,
@@ -106,19 +106,26 @@ class Workspace(_Workspace):
             if r_ping.is_error:
                 from .release_guest_request import release_guest_request
 
-                self._error(r_ping, 'ping failed, guest is inaccessible', no_effect=True)
+                self._error(transaction, r_ping, 'ping failed, guest is inaccessible', no_effect=True)
 
                 ShelfMetrics.inc_dead(self.gr.shelfname)
 
                 self.update_guest_state_and_request_task(
-                    GuestState.CONDEMNED, release_guest_request, self.guestname, current_state=GuestState.SHELVED
+                    transaction,
+                    GuestState.CONDEMNED,
+                    release_guest_request,
+                    self.guestname,
+                    current_state=GuestState.SHELVED,
                 )
 
                 ShelfMetrics.inc_removals(self.gr.shelfname)
 
             else:
                 self.dispatch_task(
-                    shelved_guest_watchdog, self.guestname, delay=KNOB_SHELVED_GUEST_WATCHDOG_DISPATCH_PERIOD.value
+                    transaction,
+                    shelved_guest_watchdog,
+                    self.guestname,
+                    delay=KNOB_SHELVED_GUEST_WATCHDOG_DISPATCH_PERIOD.value,
                 )
 
     @classmethod

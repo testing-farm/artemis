@@ -18,7 +18,7 @@ from tmt.hardware import UNITS
 from typing_extensions import TypeAlias, override
 
 from .. import Failure, JSONType, render_template, rewrap_to_gluetool
-from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
+from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, Transaction
 from ..environment import (
     Flavor,
     FlavorBoot,
@@ -426,6 +426,7 @@ class AzureDriver(
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
         guest_request: GuestRequest,
     ) -> _Result[ResourceGroupCreationRequest, Failure]:
         # Let's figure out a resource group for guest. If one is defined in pool config - we should be using it,
@@ -693,6 +694,7 @@ class AzureDriver(
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
         guest_request: GuestRequest,
     ) -> _Result[InstanceCreationRequest, Failure]:
         r_image_flavor_pairs = self._collect_image_flavor_pairs(logger, session, guest_request)
@@ -708,7 +710,7 @@ class AzureDriver(
             return _Error(Failure(can_acquire.reason.message))
 
         # XXX FIXME Figure out how to pass tags to resource group creation
-        r_resource_group = self.resource_group_resource_manager.acquire(logger, guest_request, session)
+        r_resource_group = self.resource_group_resource_manager.acquire(logger, guest_request, session, transaction)
         if not is_successful(r_resource_group):
             return _Error(Failure.from_failure('Could not acquire resource group', r_resource_group.failure()))
 
@@ -1006,7 +1008,11 @@ class AzureDriver(
 
     @override
     def release_guest(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
+        guest_request: GuestRequest,
     ) -> Result[None, Failure]:
         """
         Release resources allocated for the guest back to the pool infrastructure.
@@ -1064,7 +1070,7 @@ class AzureDriver(
         else:
             resource_ids.append(AzurePoolResourcesIDs(boot_log_container=r_boot_log_storage.unwrap()['name']))
 
-        return self.dispatch_resource_cleanup(logger, session, *resource_ids, guest_request=guest_request)
+        return self.dispatch_resource_cleanup(logger, transaction, *resource_ids, guest_request=guest_request)
 
     def _query_backend_instance(
         self, logger: gluetool.log.ContextAdapter, instance_id: str
@@ -1225,10 +1231,14 @@ class AzureDriver(
     @override
     @rewrap_to_gluetool
     def acquire_guest(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
+        guest_request: GuestRequest,
     ) -> _Result[ProvisioningProgress, Failure]:
         return (
-            self.instance_resource_manager.acquire(logger, guest_request, session)
+            self.instance_resource_manager.acquire(logger, guest_request, session, transaction)
             .bind(
                 lambda instance_outcome: _Ok(
                     ProvisioningProgress(

@@ -43,8 +43,8 @@ class Workspace(_Workspace):
 
     @step
     def run(self) -> None:
-        with self.transaction():
-            self.load_guest_request(self.guestname, state=self.current_state)
+        with self.transaction() as transaction:
+            self.load_guest_request(transaction, self.guestname, state=self.current_state)
 
             if self.result:
                 return None
@@ -60,17 +60,21 @@ class Workspace(_Workspace):
             )
 
             if r_shelf.is_error:
-                return self._error(r_shelf, 'failed to load shelf')
+                return self._error(transaction, r_shelf, 'failed to load shelf')
 
             def _release() -> None:
                 from .release_guest_request import release_guest_request
 
                 if self.current_state == GuestState.CONDEMNED:
-                    self.request_task(release_guest_request, self.guestname)
+                    self.request_task(transaction, release_guest_request, self.guestname)
 
                 else:
                     self.update_guest_state_and_request_task(
-                        GuestState.CONDEMNED, release_guest_request, self.guestname, current_state=self.current_state
+                        transaction,
+                        GuestState.CONDEMNED,
+                        release_guest_request,
+                        self.guestname,
+                        current_state=self.current_state,
                     )
 
             shelf: Optional[GuestShelf] = r_shelf.unwrap()
@@ -87,14 +91,16 @@ class Workspace(_Workspace):
             )
 
             if r_shelved_count.is_error:
-                return self._error(r_shelved_count, 'failed to load the number of shelved guests')
+                return self._error(transaction, r_shelved_count, 'failed to load the number of shelved guests')
 
             shelved_count = r_shelved_count.unwrap()
 
             r_shelf_max_guests = KNOB_SHELF_MAX_GUESTS.get_value(session=self.session, entityname=shelf.shelfname)
 
             if r_shelf_max_guests.is_error:
-                return self._error(r_shelf_max_guests, 'failed to obtain the maximum allowed number of guests')
+                return self._error(
+                    transaction, r_shelf_max_guests, 'failed to obtain the maximum allowed number of guests'
+                )
 
             shelf_max_guests = r_shelf_max_guests.unwrap()
 
@@ -114,7 +120,11 @@ class Workspace(_Workspace):
             from .shelved_guest_watchdog import shelved_guest_watchdog
 
             self.update_guest_state_and_request_task(
-                GuestState.SHELVED, shelved_guest_watchdog, self.guestname, current_state=self.current_state
+                transaction,
+                GuestState.SHELVED,
+                shelved_guest_watchdog,
+                self.guestname,
+                current_state=self.current_state,
             )
 
     @classmethod

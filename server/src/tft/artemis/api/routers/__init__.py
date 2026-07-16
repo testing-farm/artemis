@@ -166,7 +166,7 @@ class GuestRequestManager:
 
         guest_logger = get_guest_logger('create-guest-request', logger, guestname)
 
-        with get_session(guest_logger, self.db) as (session, _):
+        with get_session(guest_logger, self.db) as (session, transaction):
             SESSION.set(session)
 
             # Validate guest request
@@ -204,18 +204,18 @@ class GuestRequestManager:
                 security_group_rules_egress=security_group_rules_egress,
             )
 
-            execute_dml(guest_logger, session, create_guest_stmt, failure_details=failure_details)
+            execute_dml(guest_logger, transaction, create_guest_stmt, failure_details=failure_details)
 
             artemis_db.GuestRequest.log_event_by_guestname(
                 guest_logger,
-                session,
+                transaction,
                 guestname,
                 'created',
                 environment=environment.serialize(),
                 user_data=guest_request.user_data,
             )
 
-            r_task = artemis_db.TaskRequest.create(guest_logger, session, guest_shelf_lookup, guestname)
+            r_task = artemis_db.TaskRequest.create(guest_logger, transaction, guest_shelf_lookup, guestname)
 
             if r_task.is_error:
                 raise errors.InternalServerError(
@@ -278,7 +278,7 @@ class GuestRequestManager:
 
         guest_logger = get_guest_logger('delete-guest-request', logger, guestname)
 
-        with get_session(logger, self.db) as (session, _):
+        with get_session(logger, self.db) as (session, transaction):
             gr_query = artemis_db.SafeQuery.from_session(session, artemis_db.GuestRequest).filter(
                 artemis_db.GuestRequest.guestname == guestname
             )
@@ -308,9 +308,8 @@ class GuestRequestManager:
                 extra_actor_args = [GuestState.CONDEMNED.value]
 
             if guest_request.state != GuestState.CONDEMNED:
-                r_state: artemis_db.DMLResult[artemis_db.GuestRequest] = artemis_db.execute_dml(
+                r_state: artemis_db.DMLResult[artemis_db.GuestRequest] = transaction.execute_dml(
                     guest_logger,
-                    session,
                     sqlalchemy.update(artemis_db.GuestRequest)
                     .where(artemis_db.GuestRequest.guestname == guestname)
                     .values(state=GuestState.CONDEMNED),
@@ -328,12 +327,12 @@ class GuestRequestManager:
                         logger=guest_logger, caused_by=failure, failure_details=failure_details
                     )
 
-                artemis_db.GuestRequest.log_event_by_guestname(guest_logger, session, guestname, 'condemned')
+                artemis_db.GuestRequest.log_event_by_guestname(guest_logger, transaction, guestname, 'condemned')
 
                 guest_logger.info('condemned')
 
             r_task = artemis_db.TaskRequest.create(
-                guest_logger, session, guest_delete_task, guestname, *extra_actor_args
+                guest_logger, transaction, guest_delete_task, guestname, *extra_actor_args
             )
 
             if r_task.is_error:
@@ -662,7 +661,7 @@ class GuestEventManager:
 
 def execute_dml(
     logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
+    transaction: artemis_db.Transaction,
     query: sqlalchemy.sql.dml.UpdateBase,
     conflict_error: Union[
         type[errors.ConflictError], type[errors.NoSuchEntityError], type[errors.InternalServerError]
@@ -677,7 +676,7 @@ def execute_dml(
     * do nothing and return when the query didn't fail and changed expected number of records.
     """
 
-    r_change: artemis_db.DMLResult[artemis_db.Base] = artemis_db.execute_dml(logger, session, query)
+    r_change: artemis_db.DMLResult[artemis_db.Base] = transaction.execute_dml(logger, query)
 
     if r_change.is_error:
         raise errors.InternalServerError(
@@ -691,21 +690,23 @@ def execute_dml(
 @contextlib.contextmanager
 def get_session(
     logger: gluetool.log.ContextAdapter, db: artemis_db.DB, *, read_only: bool = False
-) -> Generator[tuple[sqlalchemy.orm.session.Session, artemis_db.TransactionResult], None, None]:
+) -> Generator[tuple[sqlalchemy.orm.session.Session, artemis_db.Transaction], None, None]:
     with db.get_session(logger, read_only=read_only) as session:
-        with artemis_db.transaction(logger, session) as t:
-            yield session, t
+        with artemis_db.Transaction.go(logger, session) as transaction:
+            yield session, transaction
 
-        if not t.complete:
-            assert t.failure is not None  # narrow type
+        if not transaction.complete:
+            assert transaction.failure is not None  # narrow type
 
-            if t.conflict:
-                raise errors.ConflictError(logger=logger, caused_by=t.failure)
+            if transaction.conflict:
+                raise errors.ConflictError(logger=logger, caused_by=transaction.failure)
 
-            if t.failure.exception is not None and isinstance(t.failure.exception, errors.ArtemisHTTPError):
-                raise t.failure.exception
+            if transaction.failure.exception is not None and isinstance(
+                transaction.failure.exception, errors.ArtemisHTTPError
+            ):
+                raise transaction.failure.exception
 
-            raise errors.InternalServerError(logger=logger, caused_by=t.failure)
+            raise errors.InternalServerError(logger=logger, caused_by=transaction.failure)
 
 
 class GuestShelfManager:
@@ -819,10 +820,10 @@ class GuestShelfManager:
     def create_shelf(self, shelfname: str, ownername: str, logger: gluetool.log.ContextAdapter) -> GuestShelfResponse:
         failure_details = {'shelfname': shelfname}
 
-        with get_session(logger, self.db) as (session, _):
+        with get_session(logger, self.db) as (_, transaction):
             execute_dml(
                 logger,
-                session,
+                transaction,
                 artemis_db.GuestShelf.create_query(shelfname, ownername),
                 conflict_error=errors.InternalServerError,
                 failure_details=failure_details,
@@ -840,7 +841,7 @@ class GuestShelfManager:
 
         failure_details = {'shelfname': shelfname}
 
-        with get_session(logger, self.db) as (session, _):
+        with get_session(logger, self.db) as (session, transaction):
             r_shelf = (
                 artemis_db.SafeQuery.from_session(session, artemis_db.GuestShelf)
                 .filter(artemis_db.GuestShelf.shelfname == shelfname)
@@ -863,7 +864,7 @@ class GuestShelfManager:
                 .values(state=GuestState.CONDEMNED)
             )
 
-            r_state: artemis_db.DMLResult[artemis_db.GuestShelf] = artemis_db.execute_dml(logger, session, query)
+            r_state: artemis_db.DMLResult[artemis_db.GuestShelf] = transaction.execute_dml(logger, query)
 
             if r_state.is_error:
                 raise errors.InternalServerError(
@@ -872,7 +873,7 @@ class GuestShelfManager:
 
             logger.info('condemned')
 
-            r_task = artemis_db.TaskRequest.create(logger, session, remove_shelf, shelfname)
+            r_task = artemis_db.TaskRequest.create(logger, transaction, remove_shelf, shelfname)
 
             if r_task.is_error:
                 raise errors.InternalServerError(
@@ -907,7 +908,7 @@ class GuestShelfManager:
             'raw_log_types': preprovisioning_request.guest.log_types,
         }
 
-        with get_session(logger, self.db) as (session, _):
+        with get_session(logger, self.db) as (session, transaction):
             preprovisioning_request.guest = _validate_guest_request(
                 logger, session, preprovisioning_request.guest, ownername, environment_schema, failure_details
             )
@@ -915,7 +916,7 @@ class GuestShelfManager:
             guest_template = json.dumps(dataclasses.asdict(preprovisioning_request.guest))
 
             r_task = artemis_db.TaskRequest.create(
-                logger, session, preprovision, shelfname, guest_template, str(preprovisioning_request.count)
+                logger, transaction, preprovision, shelfname, guest_template, str(preprovisioning_request.count)
             )
 
             if r_task.is_error:
@@ -1067,7 +1068,7 @@ class KnobManager:
     def set_knob(self, knobname: str, value: str, logger: gluetool.log.ContextAdapter) -> None:
         failure_details = {'knobname': knobname}
 
-        with get_session(logger, self.db) as (session, _):
+        with get_session(logger, self.db) as (_, transaction):
             knob = Knob.DB_BACKED_KNOBS.get(knobname)
 
             if knob is None:
@@ -1098,9 +1099,8 @@ class KnobManager:
                     failure_details=failure_details,
                 ) from exc
 
-            artemis_db.upsert(
+            transaction.upsert(
                 logger,
-                session,
                 artemis_db.Knob,
                 {
                     # using `knobname`, i.e. changing the original knob, not the parent
@@ -1114,8 +1114,10 @@ class KnobManager:
         logger.info(f'knob changed: {knobname} = {casted_value}')
 
     def delete_knob(self, logger: gluetool.log.ContextAdapter, knobname: str) -> None:
-        with get_session(logger, self.db) as (session, _):
-            execute_dml(logger, session, sqlalchemy.delete(artemis_db.Knob).where(artemis_db.Knob.knobname == knobname))
+        with get_session(logger, self.db) as (_, transaction):
+            execute_dml(
+                logger, transaction, sqlalchemy.delete(artemis_db.Knob).where(artemis_db.Knob.knobname == knobname)
+            )
 
 
 class URLLogger(gluetool.log.ContextAdapter):
@@ -1329,17 +1331,19 @@ class UserManager:
         return user
 
     def create_user(self, logger: gluetool.log.ContextAdapter, username: str, role: artemis_db.UserRoles) -> None:
-        with get_session(logger, self.db) as (session, _):
-            execute_dml(logger, session, sqlalchemy.insert(artemis_db.User).values(username=username, role=role.value))
+        with get_session(logger, self.db) as (_, transaction):
+            execute_dml(
+                logger, transaction, sqlalchemy.insert(artemis_db.User).values(username=username, role=role.value)
+            )
 
     def delete_user(self, logger: gluetool.log.ContextAdapter, username: str) -> None:
-        with get_session(logger, self.db) as (session, _):
+        with get_session(logger, self.db) as (session, transaction):
             # Provides nicer error when the user does not exist
             _ = self.get_user(session, username)
 
             execute_dml(
                 logger,
-                session,
+                transaction,
                 sqlalchemy.delete(artemis_db.User).where(artemis_db.User.username == username),
                 failure_details={'username': username},
             )
@@ -1347,7 +1351,7 @@ class UserManager:
     def reset_token(
         self, logger: gluetool.log.ContextAdapter, username: str, tokentype: TokenTypes
     ) -> TokenResetResponse:
-        with get_session(logger, self.db) as (session, _):
+        with get_session(logger, self.db) as (session, transaction):
             # Provides nicer error when the user does not exist
             user = self.get_user(session, username)
 
@@ -1366,7 +1370,9 @@ class UserManager:
             else:
                 raise AssertionError('Unreachable')
 
-            execute_dml(logger, session, query, failure_details={'username': username, 'tokentype': tokentype.value})
+            execute_dml(
+                logger, transaction, query, failure_details={'username': username, 'tokentype': tokentype.value}
+            )
 
         return TokenResetResponse(tokentype=tokentype, token=token)
 
@@ -1450,10 +1456,9 @@ def create_guest_request_log(
 
     guest_logger = get_guest_logger('create-guest-request-log', logger, guestname)
 
-    with get_session(guest_logger, manager.db) as (session, _):
-        r_upsert = artemis_db.upsert(
+    with get_session(guest_logger, manager.db) as (_, transaction):
+        r_upsert = transaction.upsert(
             guest_logger,
-            session,
             artemis_db.GuestLog,
             {
                 artemis_db.GuestLog.guestname: guestname,
@@ -1472,7 +1477,9 @@ def create_guest_request_log(
         if r_upsert.unwrap() is not True:
             raise errors.ConflictError(message='guest log already exists', logger=guest_logger)
 
-        r_task = artemis_db.TaskRequest.create(guest_logger, session, update_guest_log, guestname, logname, contenttype)
+        r_task = artemis_db.TaskRequest.create(
+            guest_logger, transaction, update_guest_log, guestname, logname, contenttype
+        )
 
         if r_task.is_error:
             raise errors.InternalServerError(
@@ -1490,7 +1497,7 @@ def create_guest_request_log(
         )
 
         artemis_db.GuestRequest.log_event_by_guestname(
-            guest_logger, session, guestname, 'guest-log-requested', logname=logname, contenttype=contenttype
+            guest_logger, transaction, guestname, 'guest-log-requested', logname=logname, contenttype=contenttype
         )
 
     return

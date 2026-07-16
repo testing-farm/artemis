@@ -835,7 +835,7 @@ class Failure:
     def from_exc(
         cls,
         message: str,
-        exc: Exception,
+        exc: BaseException,
         *,
         caused_by: Optional['Failure'] = None,
         sentry: Optional[bool] = True,

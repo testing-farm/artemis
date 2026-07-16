@@ -29,9 +29,9 @@ class Workspace(_Workspace):
 
     @step
     def run(self) -> None:
-        with self.transaction():
-            self.load_guest_request(self.guestname)
-            self.load_gr_pool()
+        with self.transaction() as transaction:
+            self.load_guest_request(transaction, self.guestname)
+            self.load_gr_pool(transaction)
 
             if self.result:
                 return None
@@ -43,13 +43,14 @@ class Workspace(_Workspace):
             r_console = self.pool.acquire_console_url(self.logger, self.gr)
 
             if r_console.is_error:
-                self._error(r_console, 'failed to get guest console', no_effect=True)
+                self._error(transaction, r_console, 'failed to get guest console', no_effect=True)
 
-                return self._reschedule()
+                return self._reschedule(transaction)
 
             console_url_data = r_console.unwrap()
 
             self.update_guest_state(
+                transaction,
                 GuestState(self.gr.state),
                 set_values={
                     'console_url': console_url_data.url,

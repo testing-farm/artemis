@@ -17,7 +17,7 @@ from returns.result import Result as _Result, Success as _Ok
 from typing_extensions import override
 
 from .. import Failure
-from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
+from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, Transaction
 from ..knobs import KNOB_DISABLE_CERT_VERIFICATION, KNOB_HTTP_TIMEOUT
 from ..metrics import PoolResourcesMetrics
 from . import (
@@ -102,11 +102,15 @@ class FlasherDriver(PoolDriver[FlasherErrorCauses, Instance]):
 
     @override
     def acquire_guest(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
+        guest_request: GuestRequest,
     ) -> Result[ProvisioningProgress, Failure]:
         self.log_acquisition_attempt(
             logger,
-            session,
+            transaction,
             guest_request,
         )
 
@@ -182,7 +186,11 @@ class FlasherDriver(PoolDriver[FlasherErrorCauses, Instance]):
 
     @override
     def release_guest(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
+        guest_request: GuestRequest,
     ) -> Result[None, Failure]:
         """
         Release resources allocated for the guest back to the pool infrastructure.
@@ -195,7 +203,7 @@ class FlasherDriver(PoolDriver[FlasherErrorCauses, Instance]):
 
         return self.dispatch_resource_cleanup(
             logger,
-            session,
+            transaction,
             FlasherPoolResourcesIDs(flasher_id=pool_data.flasher_id, guestname=guest_request.guestname),
             guest_request=guest_request,
         )

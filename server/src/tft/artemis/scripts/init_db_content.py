@@ -216,7 +216,7 @@ def config_to_db(logger: gluetool.log.ContextAdapter, db: DB, server_config: dic
 
         sys.exit(1)
 
-    with db.transaction(logger) as (session, t):
+    with db.transaction(logger) as (session, transaction):
 
         def _add_guest_tags(poolname: str, input_tags: Tags) -> None:
             for tag, value in input_tags.items():
@@ -225,6 +225,7 @@ def config_to_db(logger: gluetool.log.ContextAdapter, db: DB, server_config: dic
                 r = upsert(
                     logger,
                     session,
+                    transaction,
                     GuestTag,
                     {GuestTag.poolname: poolname, GuestTag.tag: tag},
                     GuestTag.__table_args__[0],
@@ -241,6 +242,7 @@ def config_to_db(logger: gluetool.log.ContextAdapter, db: DB, server_config: dic
                 r = upsert(
                     logger,
                     session,
+                    transaction,
                     PoolTag,
                     {PoolTag.poolname: poolname, PoolTag.tag: tag},
                     PoolTag.__table_args__[0],
@@ -279,6 +281,7 @@ def config_to_db(logger: gluetool.log.ContextAdapter, db: DB, server_config: dic
             r = upsert(
                 logger,
                 session,
+                transaction,
                 PriorityGroup,
                 {PriorityGroup.name: priority_group_config['name']},
                 PriorityGroup.__table_args__[0],
@@ -313,6 +316,7 @@ def config_to_db(logger: gluetool.log.ContextAdapter, db: DB, server_config: dic
             r = upsert(
                 logger,
                 session,
+                transaction,
                 Pool,
                 {Pool.poolname: poolname},
                 Pool.__table_args__[0],
@@ -336,6 +340,7 @@ def config_to_db(logger: gluetool.log.ContextAdapter, db: DB, server_config: dic
             r = upsert(
                 logger,
                 session,
+                transaction,
                 User,
                 {User.username: username},
                 User.__table_args__[0],
@@ -373,6 +378,7 @@ def config_to_db(logger: gluetool.log.ContextAdapter, db: DB, server_config: dic
             r = upsert(
                 logger,
                 session,
+                transaction,
                 GuestShelf,
                 {GuestShelf.shelfname: shelfname},
                 GuestShelf.__table_args__[0],
@@ -393,6 +399,7 @@ def config_to_db(logger: gluetool.log.ContextAdapter, db: DB, server_config: dic
             r = upsert(
                 logger,
                 session,
+                transaction,
                 SSHKey,
                 {SSHKey.keyname: key_config['name']},
                 SSHKey.__table_args__[0],
@@ -417,10 +424,10 @@ def config_to_db(logger: gluetool.log.ContextAdapter, db: DB, server_config: dic
 
             assert r.is_ok and r.unwrap() is True, 'Failed to initialize SSH key record'
 
-    if not t.complete:
-        assert t.failure is not None  # narrow type
+    if not transaction.complete:
+        assert transaction.failure is not None  # narrow type
 
-        t.failure.handle(logger)
+        transaction.failure.handle(logger)
 
         raise AssertionError('Failed to successfully populate DB')
 

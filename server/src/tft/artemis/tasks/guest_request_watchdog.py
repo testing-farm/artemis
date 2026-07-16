@@ -67,8 +67,8 @@ class Workspace(_Workspace):
 
     @step
     def run(self) -> None:
-        with self.transaction():
-            self.load_guest_request(self.guestname, state=GuestState.READY)
+        with self.transaction() as transaction:
+            self.load_guest_request(transaction, self.guestname, state=GuestState.READY)
 
             if self.result:
                 return None
@@ -78,8 +78,8 @@ class Workspace(_Workspace):
             if self.gr.poolname is None:
                 return None
 
-            self.load_gr_pool()
-            self.test_pool_enabled()
+            self.load_gr_pool(transaction)
+            self.test_pool_enabled(transaction)
 
             if self.result:
                 return None
@@ -92,10 +92,10 @@ class Workspace(_Workspace):
                 return None
 
             if self.is_pool_enabled:
-                r = self.pool.guest_watchdog(self.logger, self.session, self.gr)
+                r = self.pool.guest_watchdog(self.logger, self.session, transaction, self.gr)
 
                 if r.is_error:
-                    return self._error(r, 'failed to watchdog guest')
+                    return self._error(transaction, r, 'failed to watchdog guest')
 
                 watchdog_state: WatchdogState = r.unwrap()
 
@@ -103,7 +103,7 @@ class Workspace(_Workspace):
                     return None
 
             else:
-                self._guest_request_event('pool-disabled')
+                self._guest_request_event(transaction, 'pool-disabled')
 
             # Set the custom watchdog period delay if set by the user
             if self.gr.watchdog_period_delay is not None:
@@ -115,11 +115,11 @@ class Workspace(_Workspace):
                 )
 
                 if r_delay.is_error:
-                    return self._error(r, 'failed to fetch pool watchdog dispatch period')
+                    return self._error(transaction, r, 'failed to fetch pool watchdog dispatch period')
 
                 delay = r_delay.unwrap()
 
-            self.dispatch_task(guest_request_watchdog, self.guestname, delay=delay)
+            self.dispatch_task(transaction, guest_request_watchdog, self.guestname, delay=delay)
 
     @classmethod
     def create(

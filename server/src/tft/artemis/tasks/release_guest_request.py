@@ -16,7 +16,7 @@ import gluetool.log
 import sqlalchemy
 import sqlalchemy.orm.session
 
-from ..db import DB, DMLResult, GuestRequest, execute_dml
+from ..db import DB, DMLResult, GuestRequest
 from ..guest import GuestState
 from . import (
     _ROOT_LOGGER,
@@ -38,8 +38,8 @@ class Workspace(_Workspace):
 
     @step
     def run(self) -> None:
-        with self.transaction():
-            self.load_guest_request(self.guestname, state=GuestState.CONDEMNED)
+        with self.transaction() as transaction:
+            self.load_guest_request(transaction, self.guestname, state=GuestState.CONDEMNED)
 
             if self.result:
                 return None
@@ -47,7 +47,7 @@ class Workspace(_Workspace):
             assert self.gr
 
             if self.gr.poolname is not None:
-                self.load_gr_pool()
+                self.load_gr_pool(transaction)
 
                 if self.result:
                     return None
@@ -57,23 +57,22 @@ class Workspace(_Workspace):
                 pool_data = self.gr.pool_data.mine(self.pool, self.pool.pool_data_class)
 
                 if not pool_data.is_empty:
-                    r_release = self.pool.release_guest(self.logger, self.session, self.gr)
+                    r_release = self.pool.release_guest(self.logger, self.session, transaction, self.gr)
 
                     if r_release.is_error:
-                        return self._error(r_release, 'failed to release guest')
+                        return self._error(transaction, r_release, 'failed to release guest')
 
-            r_delete: DMLResult[GuestRequest] = execute_dml(
+            r_delete: DMLResult[GuestRequest] = transaction.execute_dml(
                 self.logger,
-                self.session,
                 sqlalchemy.delete(GuestRequest)
                 .where(GuestRequest.guestname == self.guestname)
                 .where(GuestRequest.state == GuestState.CONDEMNED),
             )
 
             if r_delete.is_error:
-                return self._error(r_delete, 'failed to remove guest request record')
+                return self._error(transaction, r_delete, 'failed to remove guest request record')
 
-            self._progress('released')
+            self._progress(transaction, 'released')
 
     @classmethod
     def create(

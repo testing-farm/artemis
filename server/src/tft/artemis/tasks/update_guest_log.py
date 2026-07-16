@@ -50,8 +50,8 @@ class Workspace(_Workspace):
         Foo.
         """
 
-        with self.transaction():
-            self.load_guest_request(self.guestname)
+        with self.transaction() as transaction:
+            self.load_guest_request(transaction, self.guestname)
 
             if self.result:
                 return None
@@ -67,7 +67,7 @@ class Workspace(_Workspace):
             )
 
             if r_guest_log.is_error:
-                return self._error(r_guest_log, 'failed to fetch the log')
+                return self._error(transaction, r_guest_log, 'failed to fetch the log')
 
             guest_log: Optional[GuestLog] = r_guest_log.unwrap()
 
@@ -84,6 +84,7 @@ class Workspace(_Workspace):
                     kwargs['new_state'] = new_state.value
 
                 self._guest_request_event(
+                    transaction,
                     'guest-log-updated',
                     logname=guest_log.logname,
                     contenttype=guest_log.contenttype.value,
@@ -92,7 +93,7 @@ class Workspace(_Workspace):
                 )
 
             if guest_log is None:
-                return self._fail(Failure('no such guest log'), 'no such guest log')
+                return self._fail(transaction, Failure('no such guest log'), 'no such guest log')
 
             if guest_log.state == GuestLogState.ERROR:
                 # TODO logs: there is a corner case: log crashes because of flapping API, the guest is reprovisioned
@@ -107,23 +108,23 @@ class Workspace(_Workspace):
 
                 r_log_update = guest_log.update(
                     self.logger,
-                    self.session,
+                    transaction,
                     state=GuestLogState.COMPLETE,
                     expires=guest_log.expires,
                     url=guest_log.url,
                 )
 
                 if r_log_update.is_error:
-                    return self._error(r_log_update, 'failed to update the log')
+                    return self._error(transaction, r_log_update, 'failed to update the log')
 
                 return None
 
             if self.gr.pool is None:
                 _log_state_event(resolution='guest-not-routed')
 
-                return self._reschedule()
+                return self._reschedule(transaction)
 
-            self.load_gr_pool()
+            self.load_gr_pool(transaction)
 
             if self.result:
                 return None
@@ -136,12 +137,12 @@ class Workspace(_Workspace):
             )
 
             if r_delay_update.is_error:
-                return self._error(r_delay_update, 'failed to load update delay')
+                return self._error(transaction, r_delay_update, 'failed to load update delay')
 
             r_capabilities = self.pool.capabilities()
 
             if not is_successful(r_capabilities):
-                return self._error_v2(r_capabilities, 'failed to fetch pool capabilities')
+                return self._error_v2(transaction, r_capabilities, 'failed to fetch pool capabilities')
 
             capabilities = r_capabilities.unwrap()
 
@@ -153,14 +154,14 @@ class Workspace(_Workspace):
 
                     r_log_update = guest_log.update(
                         self.logger,
-                        self.session,
+                        transaction,
                         state=GuestLogState.UNSUPPORTED,
                         expires=guest_log.expires,
                         url=guest_log.url,
                     )
 
                     if r_log_update.is_error:
-                        return self._error(r_log_update, 'failed to update the log')
+                        return self._error(transaction, r_log_update, 'failed to update the log')
 
                     return None
 
@@ -176,14 +177,14 @@ class Workspace(_Workspace):
 
                     r_log_update = guest_log.update(
                         self.logger,
-                        self.session,
+                        transaction,
                         state=GuestLogState.UNSUPPORTED,
                         expires=guest_log.expires,
                         url=guest_log.url,
                     )
 
                     if r_log_update.is_error:
-                        return self._error(r_log_update, 'failed to update the log')
+                        return self._error(transaction, r_log_update, 'failed to update the log')
 
                     return None
 
@@ -201,7 +202,7 @@ class Workspace(_Workspace):
                 r_update = self.pool.update_guest_log(self.logger, self.gr, guest_log)
 
             if r_update.is_error:
-                return self._error(r_update, 'failed to update the log')
+                return self._error(transaction, r_update, 'failed to update the log')
 
             update_progress = r_update.unwrap()
 
@@ -209,20 +210,20 @@ class Workspace(_Workspace):
 
             r_log_update = guest_log.update(
                 self.logger,
-                self.session,
+                transaction,
                 state=update_progress.state,
                 expires=update_progress.expires,
                 url=update_progress.url,
             )
 
             if r_log_update.is_error:
-                return self._error(r_log_update, 'failed to update the log')
+                return self._error(transaction, r_log_update, 'failed to update the log')
 
             for blob in update_progress.blobs:
-                r_blob_update = blob.save(self.logger, self.session, guest_log, overwrite=update_progress.overwrite)
+                r_blob_update = blob.save(self.logger, transaction, guest_log, overwrite=update_progress.overwrite)
 
                 if r_blob_update.is_error:
-                    return self._error(r_blob_update, 'failed to store a log blob')
+                    return self._error(transaction, r_blob_update, 'failed to store a log blob')
 
             if update_progress.state == GuestLogState.COMPLETE:
                 return None
@@ -232,6 +233,7 @@ class Workspace(_Workspace):
 
             # PENDING, IN_PROGRESS and UNSUPPORTED proceed the same way
             self.request_task(
+                transaction,
                 update_guest_log,
                 self.guestname,
                 self.logname,

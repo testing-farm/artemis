@@ -22,7 +22,7 @@ from tmt.hardware import UNITS
 from typing_extensions import TypeAlias, override
 
 from .. import Failure, rewrap_to_gluetool
-from ..db import GuestRequest
+from ..db import GuestRequest, Transaction
 from ..environment import Flavor, FlavorBoot, FlavorCpu, FlavorNetworks, FlavorVirtualization, SizeType
 from ..knobs import Knob
 from ..metrics import PoolResourcesMetrics, PoolResourcesUsage
@@ -426,7 +426,11 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, 
 
     @override
     def release_guest(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
+        guest_request: GuestRequest,
     ) -> Result[None, Failure]:
         """
         Release resources allocated for the guest back to the pool infrastructure.
@@ -439,7 +443,7 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, 
 
         return self.dispatch_resource_cleanup(
             logger,
-            session,
+            transaction,
             GCPPoolResourcesIDs(instance_name=pool_data.instance_name),
             guest_request=guest_request,
         )
@@ -502,6 +506,7 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, 
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
         guest_request: GuestRequest,
     ) -> _Result[InstanceCreationRequest, Failure]:
         r_image_flavor_pairs = self._collect_image_flavor_pairs(logger, session, guest_request)
@@ -701,11 +706,12 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, 
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
         guest_request: GuestRequest,
         cancelled: Optional[threading.Event] = None,
     ) -> _Result[ProvisioningProgress, Failure]:
         return (
-            self.instance_resource_manager.acquire(logger, guest_request, session)
+            self.instance_resource_manager.acquire(logger, guest_request, session, transaction)
             .bind(
                 lambda instance_outcome: _Ok(
                     ProvisioningProgress(

@@ -17,7 +17,7 @@ from sqlalchemy.schema import PrimaryKeyConstraint
 
 import tft.artemis.db
 import tft.artemis.tasks
-from tft.artemis.db import DB, Base, GuestEvent, GuestRequest, SafeQuery, TransactionResult, transaction, upsert
+from tft.artemis.db import DB, Base, DMLResult, GuestEvent, GuestRequest, SafeQuery, Transaction, upsert
 from tft.artemis.guest import GuestState
 
 from . import MockPatcher, assert_failure_log
@@ -140,10 +140,15 @@ def assert_upsert_counter(
 
 
 @pytest.mark.usefixtures('skip_sqlite', 'schema_test_db_counters')
-def test_upsert(logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session) -> None:
+def test_upsert(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    transaction: tft.artemis.db.Transaction,
+) -> None:
     r = upsert(
         logger,
         session,
+        transaction,
         Counters,
         {Counters.name: 'foo'},
         Counters.__table_args__[0],
@@ -158,9 +163,19 @@ def test_upsert(logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.ses
 
 
 @pytest.mark.usefixtures('skip_sqlite', 'schema_test_db_counters')
-def test_upsert_no_update(logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session) -> None:
+def test_upsert_no_update(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    transaction: tft.artemis.db.Transaction,
+) -> None:
     r = upsert(
-        logger, session, Counters, {Counters.name: 'foo'}, Counters.__table_args__[0], insert_data={Counters.count: 1}
+        logger,
+        session,
+        transaction,
+        Counters,
+        {Counters.name: 'foo'},
+        Counters.__table_args__[0],
+        insert_data={Counters.count: 1},
     )
 
     assert r.is_ok
@@ -170,10 +185,15 @@ def test_upsert_no_update(logger: gluetool.log.ContextAdapter, session: sqlalche
 
 
 @pytest.mark.usefixtures('skip_sqlite', 'schema_test_db_counters')
-def test_upsert_compound_key(logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session) -> None:
+def test_upsert_compound_key(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    transaction: tft.artemis.db.Transaction,
+) -> None:
     r = upsert(
         logger,
         session,
+        transaction,
         Counters,
         {Counters.name: 'foo', Counters.subname: 'bar'},
         Counters.__table_args__[0],
@@ -188,10 +208,15 @@ def test_upsert_compound_key(logger: gluetool.log.ContextAdapter, session: sqlal
 
 
 @pytest.mark.usefixtures('skip_sqlite', 'schema_test_db_counters')
-def test_upsert_multiple_values(logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session) -> None:
+def test_upsert_multiple_values(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    transaction: tft.artemis.db.Transaction,
+) -> None:
     r = upsert(
         logger,
         session,
+        transaction,
         Counters,
         {Counters.name: 'foo'},
         Counters.__table_args__[0],
@@ -209,11 +234,16 @@ def test_upsert_multiple_values(logger: gluetool.log.ContextAdapter, session: sq
 
 
 @pytest.mark.usefixtures('skip_sqlite', 'schema_test_db_counters')
-def test_upsert_multiple_upserts(logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session) -> None:
+def test_upsert_multiple_upserts(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    transaction: tft.artemis.db.Transaction,
+) -> None:
     def do_upsert() -> None:
         r = upsert(
             logger,
             session,
+            transaction,
             Counters,
             {Counters.name: 'foo'},
             Counters.__table_args__[0],
@@ -232,11 +262,16 @@ def test_upsert_multiple_upserts(logger: gluetool.log.ContextAdapter, session: s
 
 
 @pytest.mark.usefixtures('skip_sqlite', 'schema_test_db_counters')
-def test_upsert_multiple_commits(logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session) -> None:
+def test_upsert_multiple_commits(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    transaction: tft.artemis.db.Transaction,
+) -> None:
     def do_upsert() -> None:
         r = upsert(
             logger,
             session,
+            transaction,
             Counters,
             {Counters.name: 'foo'},
             Counters.__table_args__[0],
@@ -372,7 +407,7 @@ def test_transaction_no_transactions(
 
     query2 = sqlalchemy.insert(Counters).values(name='counter2', count=2)
 
-    with transaction(logger, session) as r:
+    with Transaction.go(logger, session) as r:
         session.execute(query1)
         session.execute(query2)
 
@@ -402,7 +437,7 @@ def test_transaction(caplog: _pytest.logging.LogCaptureFixture, logger: gluetool
             updated=datetime.datetime.utcnow(), guestname='dummy-guest', eventname='dummy-event'
         )
 
-        with transaction(logger, session) as r:
+        with Transaction.go(logger, session) as r:
             session.execute(update)
             session.execute(insert)
 
@@ -437,7 +472,7 @@ def test_transaction_conflict(
     checkpoint_transactions_started = threading.Barrier(2)
     checkpoint_thread1_done = threading.Barrier(2)
 
-    transaction_results: dict[int, TransactionResult] = {}
+    transaction_results: dict[int, Transaction] = {}
 
     def thread1() -> None:
         with db.get_session(logger) as session:
@@ -449,7 +484,7 @@ def test_transaction_conflict(
                 updated=datetime.datetime.utcnow(), guestname='dummy-guest', eventname='dummy-event'
             )
 
-            with transaction(logger, session) as r:
+            with Transaction.go(logger, session) as r:
                 SafeQuery.from_session(session, GuestRequest).all()
 
                 checkpoint_transactions_started.wait()
@@ -471,7 +506,7 @@ def test_transaction_conflict(
                 updated=datetime.datetime.utcnow(), guestname='dummy-guest', eventname='another-dummy-event'
             )
 
-            with transaction(logger, session) as r:
+            with Transaction.go(logger, session) as r:
                 SafeQuery.from_session(session, GuestRequest).all()
 
                 checkpoint_transactions_started.wait()
@@ -506,7 +541,118 @@ def test_transaction_conflict(
     assert r2.failed_query is not None
     assert 'UPDATE' in r2.failed_query
 
-    with transaction(logger, session):
+    with Transaction.go(logger, session):
+        requests = SafeQuery.from_session(session, GuestRequest).all().unwrap()
+
+        assert len(requests) == 1
+        # TODO: cast shouldn't be needed, sqlalchemy should annouce .state as enum - maybe with more recent stubs?
+        assert requests[0].state == GuestState.PROVISIONING
+
+        events = SafeQuery.from_session(session, GuestEvent).all().unwrap()
+
+        assert len(events) == 1
+        assert events[0].guestname == 'dummy-guest'
+        assert events[0].eventname == 'dummy-event'
+
+
+@pytest.mark.usefixtures('skip_sqlite', '_schema_initialized_actual')
+def test_transaction_conflict_with_execute_dml(
+    caplog: _pytest.logging.LogCaptureFixture,
+    logger: gluetool.log.ContextAdapter,
+    db: DB,
+    session: sqlalchemy.orm.session.Session,
+) -> None:
+    """
+    Test whether :py:func:`transaction` intercepts and reports transaction rollback.
+    """
+
+    checkpoint_transactions_started = threading.Barrier(2)
+    checkpoint_thread1_done = threading.Barrier(2)
+
+    transaction_results: dict[int, Transaction] = {}
+
+    def thread1() -> None:
+        with db.get_session(logger) as session:
+            update = tft.artemis.tasks._guest_state_update_query(
+                'dummy-guest', GuestState.PROVISIONING, current_state=GuestState.SHELF_LOOKUP
+            ).unwrap()
+
+            insert = sqlalchemy.insert(GuestEvent).values(
+                updated=datetime.datetime.utcnow(), guestname='dummy-guest', eventname='dummy-event'
+            )
+
+            with Transaction.go(logger, session) as r:
+                SafeQuery.from_session(session, GuestRequest).all()
+
+                checkpoint_transactions_started.wait()
+
+                r_execute: DMLResult[None] = r.execute_dml(logger, update)
+
+                if r_execute.is_error:
+                    r_execute.unwrap_error().handle(logger)
+
+                r_execute = r.execute_dml(logger, insert)
+
+                if r_execute.is_error:
+                    r_execute.unwrap_error().handle(logger)
+
+                checkpoint_thread1_done.wait()
+
+        transaction_results[threading.get_ident()] = r
+
+    def thread2() -> None:
+        with db.get_session(logger) as session:
+            update = tft.artemis.tasks._guest_state_update_query(
+                'dummy-guest', GuestState.PROMISED, current_state=GuestState.SHELF_LOOKUP
+            ).unwrap()
+
+            insert = sqlalchemy.insert(GuestEvent).values(
+                updated=datetime.datetime.utcnow(), guestname='dummy-guest', eventname='another-dummy-event'
+            )
+
+            with Transaction.go(logger, session) as r:
+                SafeQuery.from_session(session, GuestRequest).all()
+
+                checkpoint_transactions_started.wait()
+                checkpoint_thread1_done.wait()
+
+                r_execute: DMLResult[None] = r.execute_dml(logger, update)
+
+                if r_execute.is_error:
+                    r_execute.unwrap_error().handle(logger)
+
+                r_execute = r.execute_dml(logger, insert)
+
+                if r_execute.is_error:
+                    r_execute.unwrap_error().handle(logger)
+
+        transaction_results[threading.get_ident()] = r
+
+    t1 = threading.Thread(target=thread1)
+    t2 = threading.Thread(target=thread2)
+
+    t1.start()
+    t2.start()
+
+    t1.join()
+    t2.join()
+
+    assert len(transaction_results) == 2
+
+    assert t1.ident is not None
+    assert t2.ident is not None
+
+    r1 = transaction_results[t1.ident]
+    r2 = transaction_results[t2.ident]
+
+    assert r1.complete is True
+
+    assert r2.complete is False
+    assert r2.failure is not None
+    assert r2.failed_query is not None
+    assert 'UPDATE' in r2.failed_query
+
+    with Transaction.go(logger, session):
         requests = SafeQuery.from_session(session, GuestRequest).all().unwrap()
 
         assert len(requests) == 1
