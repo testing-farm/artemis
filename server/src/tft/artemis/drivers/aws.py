@@ -367,6 +367,7 @@ class AWSPoolData(PoolData):
     instance_id: Optional[str] = None
     spot_instance_id: Optional[str] = None
     security_group: Optional[str] = None
+    flavor_name: Optional[str] = None
 
 
 @dataclasses.dataclass(repr=False)
@@ -2451,6 +2452,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
                     security_group=(
                         security_group_ids[0] if security_group_ids[0] not in self._pool_security_groups else None
                     ),
+                    flavor_name=instance_type.name,
                 ),
                 ssh_info=image.ssh,
             )
@@ -2562,6 +2564,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
                     security_group=(
                         security_group_ids[0] if security_group_ids[0] not in self._pool_security_groups else None
                     ),
+                    flavor_name=instance_type.name,
                 ),
                 ssh_info=image.ssh,
             )
@@ -2596,6 +2599,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
                         instance_id=spot_instance['InstanceId'],
                         spot_instance_id=pool_data.spot_instance_id,
                         security_group=pool_data.security_group,
+                        flavor_name=pool_data.flavor_name,
                     ),
                 )
             )
@@ -2700,7 +2704,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
             logger,
             session,
             guest_request,
-            extra_tags={r_flavor_tag.unwrap(): instance['InstanceType']},
+            extra_tags={r_flavor_tag.unwrap(): pool_data.flavor_name or instance['InstanceType']},
         )
 
         if r_base_tags.is_error:
