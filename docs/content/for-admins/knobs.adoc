@@ -522,16 +522,16 @@ for the requested action.
 
 5+|Number of threads to spawn in each process for servicing API requests.
 
-|`artemis.instance.tag.flavor`
+|`artemis.instance.flavor.tag`
 |`str`
-|`ARTEMIS_INSTANCE_TAG_FLAVOR`
+|`ARTEMIS_INSTANCE_FLAVOR_TAG`
 |`ArtemisFlavor`
 |no
 
 
-|`artemis.instance.tag.flavor:$entityname`
+|`artemis.instance.flavor.tag:$entityname`
 |
-|`ARTEMIS_INSTANCE_TAG_FLAVOR_$entityname`
+|`ARTEMIS_INSTANCE_FLAVOR_TAG_$entityname`
 |
 |
 

@@ -290,11 +290,11 @@ KNOB_INSTANCE_NAME_TEMPLATE: Knob[str] = Knob(
 )
 
 KNOB_INSTANCE_FLAVOR_TAG: Knob[str] = Knob(
-    'artemis.instance.tag.flavor',
+    'artemis.instance.flavor.tag',
     'Artemis tag to hold the actual instance flavor',
     has_db=False,
     per_entity=True,
-    envvar='ARTEMIS_INSTANCE_TAG_FLAVOR',
+    envvar='ARTEMIS_INSTANCE_FLAVOR_TAG',
     cast_from_str=str,
     default='ArtemisFlavor',
 )
@@ -2195,8 +2195,6 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
           over time.
         * ``ArtemisGuestLabel``: nice, human-readable label assigned to the guest, usable e.g. for naming instances.
           This label **does** change over time.
-        * ``ArtemisFlavor``: the name of the actual flavor from artemis configuration that was used for the instance.
-          The name of the tag is controlled by a knob.
         """
         extra_tags = extra_tags or {}
 
