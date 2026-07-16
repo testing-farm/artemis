@@ -2312,7 +2312,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
         instance_type: AWSFlavor,
         image: AWSPoolImageInfo,
     ) -> Result[ProvisioningProgress, Failure]:
-        r_flavor_tag = self._get_instance_flavor_tag()
+        r_flavor_tag = self._instance_flavor_tag
         if r_flavor_tag.is_error:
             return Error(r_flavor_tag.unwrap_error())
 
@@ -2466,7 +2466,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
         instance_type: AWSFlavor,
         image: AWSPoolImageInfo,
     ) -> Result[ProvisioningProgress, Failure]:
-        r_flavor_tag = self._get_instance_flavor_tag()
+        r_flavor_tag = self._instance_flavor_tag
         if r_flavor_tag.is_error:
             return Error(r_flavor_tag.unwrap_error())
 
@@ -2696,7 +2696,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
         #
         # Therefore we need to apply tags explicitly here, even for non-spot instances - those
         # are already tagged, but let's make sure their volumes are tagged as well.
-        r_flavor_tag = self._get_instance_flavor_tag()
+        r_flavor_tag = self._instance_flavor_tag
         if r_flavor_tag.is_error:
             return Error(r_flavor_tag.unwrap_error())
 

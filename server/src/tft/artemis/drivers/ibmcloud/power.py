@@ -483,7 +483,7 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
         instance_name = instance_details['serverName']
         logger.info(f'current instance status {pool_data.instance_id}:{status}')
 
-        r_flavor_tag = self._get_instance_flavor_tag()
+        r_flavor_tag = self._instance_flavor_tag
         if r_flavor_tag.is_error:
             return Error(r_flavor_tag.unwrap_error())
 
