@@ -27,7 +27,6 @@ from ..environment import Flavor, FlavorBoot, FlavorCpu, FlavorNetworks, FlavorV
 from ..knobs import Knob
 from ..metrics import PoolResourcesMetrics, PoolResourcesUsage
 from . import (
-    CanAcquire,
     CommonErrorCauses,
     ConfigImageFilter,
     ConsoleUrlData,
@@ -304,40 +303,6 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, 
         )
 
         return Ok(image_info)
-
-    def can_acquire(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
-    ) -> Result[CanAcquire, Failure]:
-        r_answer = super().can_acquire(logger, session, guest_request)
-
-        if r_answer.is_error:
-            return Error(r_answer.unwrap_error())
-
-        answer = r_answer.unwrap()
-        if answer.can_acquire is False:
-            return r_answer
-
-        r_images: Result[list[PoolImageInfo], Failure] = self._guest_request_to_image_or_none(
-            logger, session, guest_request
-        )
-        if r_images.is_error:
-            return Error(r_images.unwrap_error())
-
-        images = r_images.unwrap()
-        if not images:
-            return Ok(CanAcquire.cannot('compose not supported'))
-
-        # The driver does not support kickstart natively. Filter only images we can perform ks install on.
-        if guest_request.environment.has_ks_specification:
-            images = [image for image in images if image.supports_kickstart is True]
-
-            if not images:
-                return Ok(CanAcquire.cannot('compose does not support kickstart'))
-
-        if guest_request.environment.has_hw_constraints:
-            return Ok(CanAcquire.cannot('HW constraints are not supported by the GCP driver'))
-
-        return Ok(CanAcquire())
 
     @override
     def _query_backend_flavors(self, logger: gluetool.log.ContextAdapter) -> _Result[list[BackendFlavor], Failure]:
