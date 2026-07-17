@@ -1783,7 +1783,7 @@ def before_rollback(
 
 
 class DB:
-    instance: Optional['DB'] = None
+    instance: Optional[Self] = None
     _lock = threading.RLock()
 
     #: "Root" engine, with the setup dictated by DB configuration.

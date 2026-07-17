@@ -44,7 +44,9 @@ stackprinter = "*"
 # Bumping just one minor version of starlette seems to mess with mypy
 starlette = "*"
 typing-extensions = "*"
-pendulum = "*"
+# pendulum 3.x has an ugly bug when timezone is not specified, https://github.com/sdispater/pendulum/issues/791
+# pendulum = "^2.0"
+pendulum = "3.0"
 periodiq = "*"
 redis = "^8.0.0"
 returns = "*"
@@ -54,7 +56,8 @@ sentry-sdk = "^2.18"
 setuptools = "81.0.0"
 python-glanceclient = "*"
 python-novaclient = "*"
-# https://github.com/vllm-project/vllm/issues/45596
+# fastapi >= 0.137 drops openai API, see https://github.com/vllm-project/vllm/issues/45596
+# we don't need the API per se, it's just something we can resolve later.
 fastapi = "<0.137"
 uvicorn = "*"
 google-cloud-compute = "*"
