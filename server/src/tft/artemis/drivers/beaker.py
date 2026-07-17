@@ -1640,8 +1640,6 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
         :returns: :py:class:`result.Result` with job xml, or specification of error.
         """
 
-        pool_data = guest_request.pool_data.mine(self, BeakerPoolData)
-
         r_avoid_hostnames = self.avoid_hostnames
 
         if r_avoid_hostnames.is_error:
@@ -1653,11 +1651,7 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
             return Error(r_avoid_groups.unwrap_error())
 
         r_beaker_filter = create_beaker_filter(
-            guest_request.environment,
-            guest_request,
-            self,
-            r_avoid_groups.unwrap(),
-            r_avoid_hostnames.unwrap() + pool_data.avoid_hostnames,
+            guest_request.environment, guest_request, self, r_avoid_groups.unwrap(), r_avoid_hostnames.unwrap()
         )
 
         if r_beaker_filter.is_error:
@@ -1830,11 +1824,11 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
         self, logger: gluetool.log.ContextAdapter, job_results: bs4.BeautifulSoup
     ) -> Result[tuple[str, str, Optional[str]], Failure]:
         """
-        Parse job results and return its result, status, and beaker system.
+        Parse job results and return its result and status.
 
         :param bs4.BeautifulSoup job_results: Job results in xml format.
         :rtype: result.Result[Tuple[str, str], Failure]
-        :returns: a tuple with three items: job result, status, or specification of error, and the beaker system.
+        :returns: a tuple with two items, job result and status, or specification of error.
         """
 
         if not job_results.find('job') or len(job_results.find_all('job')) != 1:
@@ -2142,14 +2136,10 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
             self.poolname, system, guest_request.environment.os.compose, guest_request.environment.hw.arch, job_failed
         )
 
-        pool_data = guest_request.pool_data.mine(self, BeakerPoolData)
-        if system is not None and system not in pool_data.avoid_hostnames:
-            pool_data.avoid_hostnames.append(system)
-
         return Ok(
             ProvisioningProgress(
                 state=ProvisioningState.CANCEL,
-                pool_data=pool_data,
+                pool_data=guest_request.pool_data.mine(self, BeakerPoolData),
                 pool_failures=[Failure('beaker job failed', cause=job_failed.value, **failure_details)],
             )
         )
