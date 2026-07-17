@@ -1288,6 +1288,17 @@ class GuestLogBlob:
             content_hash=self.content_hash,
         )
 
+    @staticmethod
+    def sanitize_content(content: str) -> str:
+        """
+        Sanitize log content to make it safe for database storage.
+
+        :param content: raw log content string.
+        :returns: sanitized log content string.
+        """
+
+        return content.replace('\x00', '\ufffd')
+
     @classmethod
     def from_content(cls, content: str) -> 'GuestLogBlob':
         """
@@ -1295,6 +1306,8 @@ class GuestLogBlob:
 
         :param content: log content string.
         """
+
+        content = cls.sanitize_content(content)
 
         return cls(
             ctime=datetime.datetime.utcnow(),
@@ -1349,6 +1362,8 @@ class GuestLogUpdateProgress:
             logger.info('no log content received')
 
             return GuestLogUpdateProgress(state=GuestLogState.PENDING)
+
+        content = GuestLogBlob.sanitize_content(content)
 
         content_hash = hashlib.sha256(content.encode('utf-8', errors='ignore')).hexdigest()
 

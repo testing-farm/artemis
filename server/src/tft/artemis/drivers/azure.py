@@ -1350,8 +1350,6 @@ class AzureDriver(
                 )
 
             blob = cast(str, r_blob_download.unwrap())
-            # Need to get rid of all 0x00 characters to make a db-saveable string
-            blob = blob.replace('\x00', '\ufffd')
             try:
                 timestamp = datetime.datetime.strptime(
                     serial_console_log['properties']['lastModified'], AZURE_DATETIME_FORMAT
