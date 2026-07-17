@@ -1715,7 +1715,7 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
 
         return Ok(image_info)
 
-    @functools.cached_property
+    @property
     def _instance_flavor_tag(self) -> Result[str, Failure]:
         r_value = KNOB_INSTANCE_FLAVOR_TAG.get_value(entityname=self.poolname)
 

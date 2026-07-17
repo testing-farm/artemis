@@ -388,7 +388,14 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, 
 
                 return Ok(None)
 
-            instances_with_flavors = self.get_instances_with_flavor_tags_names(logger, 'tags:flavor* AND type:instance')
+            r_flavor_tag = self._instance_flavor_tag
+            if r_flavor_tag.is_error:
+                return Error(r_flavor_tag.unwrap_error())
+
+            instances_with_flavors = self.get_instances_with_flavor_tags_names(
+                logger, f'tags:{r_flavor_tag.unwrap()}* AND type:instance'
+            )
+
             r_instances_usage = self.do_fetch_pool_resources_metrics_flavor_usage(
                 logger,
                 resources.usage,
