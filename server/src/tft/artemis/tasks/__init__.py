@@ -2497,6 +2497,7 @@ class ProvisioningTailHandler(TailHandler):
 
         else:
             workspace._fail(
+                transaction,
                 Failure('unhandled new state in provisioning tail handler', new_state=self.new_state.value),
                 'unhandled new state in provisioning tail handler',
             )
