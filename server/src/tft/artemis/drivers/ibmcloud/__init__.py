@@ -261,6 +261,22 @@ class IBMCloudDriver(
             reuse_resource=self._reuse_instance,
         )
 
+    @property
+    def _instance_flavor_tag(self) -> Result[str, Failure]:
+        r_value = super()._instance_flavor_tag
+
+        if r_value.is_error:
+            return Error(Failure.from_failure('Could not get instance flavor tag name', r_value.unwrap_error()))
+
+        # IBMCloud strips certain characters and does not allow capital letters, so the default of ArtemisFlavor
+        # won't fly, need to apply that to the expected tag name from artemis config
+        # Additionally it will silently apply lower() to tags keys/values
+
+        # XXX Okay that is ugly, suggestions?
+        sanitized = [key.lower() for key, _ in _sanitize_tags({r_value.unwrap(): ''})]
+
+        return Ok(sanitized[0])
+
     @classmethod
     def timestamp_to_datetime(cls, timestamp: str) -> Result[datetime.datetime, Failure]:
         try:
@@ -363,14 +379,17 @@ class IBMCloudDriver(
         return Ok(resources[0].get('tags', []))
 
     def get_instances_with_flavor_tags_names(
-        self, logger: gluetool.log.ContextAdapter, flavor_filter: str = 'tags:flavor*'
+        self, logger: gluetool.log.ContextAdapter, flavor_filter: str
     ) -> dict[str, str]:
         """
         As IBMCloud does not allow cheap (as in number of api calls) fetching of instances with tags,
         let's make a single call for all ibmcloud resources that match required instances with flavor:* tag
         defined, then form an instance_name: flavor mapping that will come handy in flavor usage metrics collection.
         """
-        flavor_filter = 'tags:flavor* AND type:pvm-instance'
+        r_flavor_tag = self._instance_flavor_tag
+        if r_flavor_tag.is_error:
+            return Error(r_flavor_tag.unwrap_error())
+
         r_instances_with_flavors = self.get_resources_by_tags(logger, flavor_filter)
 
         if r_instances_with_flavors.is_error:
@@ -378,7 +397,8 @@ class IBMCloudDriver(
 
         return {
             instance['name']: next(
-                (tag.split(':')[-1] for tag in instance.get('tags', []) if tag.startswith('flavor')), 'unknown flavor'
+                (tag.split(':')[-1] for tag in instance.get('tags', []) if tag.startswith(r_flavor_tag.unwrap())),
+                'unknown flavor',
             )
             for instance in r_instances_with_flavors.unwrap()
         }
