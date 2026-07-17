@@ -954,7 +954,7 @@ def _spec_to_unit(
         return Error(Failure.from_failure(error_msg, r_value.unwrap_error(), details=error_details))
     raw_value = r_value.unwrap()
 
-    res = (raw_value * default_units) if (isinstance(raw_value, int) or raw_value.unitless) else raw_value
+    res = (raw_value * default_units) if (isinstance(raw_value, (int, float)) or raw_value.unitless) else raw_value
 
     return Ok(res)
 
