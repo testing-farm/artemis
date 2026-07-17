@@ -298,6 +298,7 @@ INSTALLATION_ERROR_PATTERNS = {
 class BeakerPoolData(PoolData):
     job_id: Optional[str] = None
     is_bootc: Optional[bool] = None
+    avoid_hostnames: list[str] = dataclasses.field(default_factory=list)
 
 
 @dataclasses.dataclass
