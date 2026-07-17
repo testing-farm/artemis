@@ -146,7 +146,7 @@ def db(logger: gluetool.log.ContextAdapter, db_url: str) -> Generator[tft.artemi
         sqlalchemy_utils.functions.create_database(db_url)
 
     try:
-        tft.artemis.db.DB.instance = None
+        tft.artemis.db.DB.instance = None  # type: ignore[misc]
         tft.artemis.tasks._ROOT_DB = None
 
         yield tft.artemis.db.DB(logger, db_url)
