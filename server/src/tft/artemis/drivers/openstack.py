@@ -142,7 +142,7 @@ error_cause_extractor = create_error_cause_extractor(
 )
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class OpenStackPoolData(PoolData):
     instance_id: Optional[str] = None
 

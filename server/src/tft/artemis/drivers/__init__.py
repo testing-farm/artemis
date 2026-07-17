@@ -767,7 +767,7 @@ class ConsoleUrlData:
 SerializedPoolData = dict[str, Any]
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class PoolData:
     """
     Base class for containers of pool-specific data stored in guests requests. It is up to each driver

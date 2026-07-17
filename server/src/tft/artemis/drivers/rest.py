@@ -46,7 +46,7 @@ RestErrorCauses = CommonErrorCauses
 error_cause_extractor = create_error_cause_extractor(RestErrorCauses)
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class RestPoolData(PoolData):
     guest_id: Optional[str] = None
 

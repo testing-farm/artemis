@@ -362,7 +362,7 @@ class FailedSpotRequest(Failure):
         self.spot_instance_id = spot_instance_id
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class AWSPoolData(PoolData):
     instance_id: Optional[str] = None
     spot_instance_id: Optional[str] = None

@@ -60,7 +60,7 @@ IBMCLOUD_DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S.%fZ'
 BackendInstanceT = TypeVar('BackendInstanceT')
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class IBMCloudPoolData(PoolData):
     instance_id: Optional[str] = None
     instance_name: Optional[str] = None

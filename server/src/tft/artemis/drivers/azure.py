@@ -163,7 +163,7 @@ class ResourceGroup(Resource):
         return AzurePoolResourcesIDs()
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class AzurePoolData(PoolData):
     # A long identificator '/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/providers/...'
     instance_id: Optional[str] = None
@@ -970,8 +970,6 @@ class AzureDriver(
         # Initial pool data might not have had all fields set (vm_id, creation date are not defined in a return from
         # initial vm create call), so let's update crucial bits here.
         # vm_id is necessary to figure out associated boot_log_container in later cleanup
-        pool_data = guest_request.pool_data.mine(self, AzurePoolData)
-        pool_data.vm_id = output['vmId']
 
         logger.info(f'current instance status {pool_data.instance_id}:{status}')
 
@@ -979,7 +977,7 @@ class AzureDriver(
             return Ok(
                 ProvisioningProgress(
                     state=ProvisioningState.CANCEL,
-                    pool_data=pool_data,
+                    pool_data=dataclasses.replace(pool_data, vm_id=output['vmId']),
                     pool_failures=[Failure('instance ended up in "failed" state')],
                 )
             )
@@ -990,7 +988,11 @@ class AzureDriver(
             return Error(r_ip_address.unwrap_error())
 
         return Ok(
-            ProvisioningProgress(state=ProvisioningState.COMPLETE, pool_data=pool_data, address=r_ip_address.unwrap())
+            ProvisioningProgress(
+                state=ProvisioningState.COMPLETE,
+                pool_data=dataclasses.replace(pool_data, vm_id=output['vmId']),
+                address=r_ip_address.unwrap(),
+            )
         )
 
     @override

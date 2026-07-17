@@ -8,6 +8,7 @@ import os
 import re
 import shlex
 import stat
+from collections.abc import Sequence
 from re import Pattern
 from typing import Any, Callable, Optional, cast
 
@@ -294,11 +295,11 @@ INSTALLATION_ERROR_PATTERNS = {
 }
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class BeakerPoolData(PoolData):
     job_id: Optional[str] = None
     is_bootc: Optional[bool] = None
-    avoid_hostnames: list[str] = dataclasses.field(default_factory=list)
+    avoid_hostnames: Sequence[str] = dataclasses.field(default_factory=list)
 
 
 @dataclasses.dataclass
@@ -1657,7 +1658,10 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
             guest_request,
             self,
             r_avoid_groups.unwrap(),
-            r_avoid_hostnames.unwrap() + pool_data.avoid_hostnames,
+            [
+                *r_avoid_hostnames.unwrap(),
+                *list(pool_data.avoid_hostnames),
+            ],
         )
 
         if r_beaker_filter.is_error:
@@ -2143,13 +2147,17 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
         )
 
         pool_data = guest_request.pool_data.mine(self, BeakerPoolData)
-        if system is not None and system not in pool_data.avoid_hostnames:
-            pool_data.avoid_hostnames.append(system)
 
         return Ok(
             ProvisioningProgress(
                 state=ProvisioningState.CANCEL,
-                pool_data=pool_data,
+                pool_data=dataclasses.replace(
+                    pool_data,
+                    avoid_hostnames=[
+                        *pool_data.avoid_hostnames,
+                        *([system] if system is not None and system not in pool_data.avoid_hostnames else []),
+                    ],
+                ),
                 pool_failures=[Failure('beaker job failed', cause=job_failed.value, **failure_details)],
             )
         )
