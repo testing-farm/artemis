@@ -1183,6 +1183,23 @@ def _task_core(
             # `IGNORE`.
             failure.handle(logger)
 
+        if transaction.is_error:
+            assert transaction.failure is not None  # narrow type
+
+            # Describes *when* this change was needed, i.e. what we attempted to do. Brings more context for humans.
+            failure = Failure.from_failure('failed to mark guest request as failed', transaction.failure)
+
+            # State change failed because of recoverable failure => use it as an excuse to try again. We can expect the
+            # task to fail, but we will get another chance to mark the guest as failed. This effectively drops the
+            # original `IGNORE` result, replacing it with an error.
+            if transaction.failure.recoverable is True:
+                return Error(failure)
+
+            # State change failed because of irrecoverable failure => no point to try again. Probably not very common,
+            # but still possible, in theory. At least try to log the situation before proceeding with the original
+            # `IGNORE`.
+            failure.handle(logger)
+
         # State change succeeded, and changed exactly the request we're working with. There is nothing left to do,
         # we proceed by propagating the original "ignore" result, closing the chapter.
         return doer_result

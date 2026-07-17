@@ -448,9 +448,13 @@ class Transaction:
     failure: Optional['Failure'] = None
     failed_query: Optional[str] = None
 
-    def __init__(self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session) -> None:
-        self.logger = logger
-        self.session = session
+    @property
+    def is_success(self) -> bool:
+        return self.failure is None
+
+    @property
+    def is_error(self) -> bool:
+        return self.failure is not None
 
     def _on_success(self) -> None:
         from . import Sentry, TracingOp
@@ -527,7 +531,7 @@ class Transaction:
                 session.execute(sqlalchemy.insert(...))
                 session.execute(sqlalchemy.insert(...))
 
-            if result.success is not True:
+            if result.is_error:
                 # handle transaction rollback (or DB error)
                 ...
         """
@@ -567,7 +571,7 @@ class Transaction:
 
         If the statement fails to execute, the transaction will be marked for a rollback when leaving its context.
 
-        :returns: ``None`` if the statement was executed correctly, :py:class:`Failure` otherwise.
+        :returns: result produced by DB if the statement was executed correctly, :py:class:`Failure` otherwise.
         """
 
         if self.failure is not None:

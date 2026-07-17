@@ -56,15 +56,15 @@ class Workspace(_Workspace):
             if r_enabled.is_error:
                 return self._error(transaction, r_enabled, 'failed to inspect pool')
 
-        if r_enabled.unwrap() is not True:
-            self._progress(transaction, 'pool-disabled')
+            if r_enabled.unwrap() is not True:
+                self._progress(transaction, 'pool-disabled')
 
-            return None
+                return None
 
-        r_refresh = pool.refresh_cached_pool_image_info()
+            r_refresh = pool.refresh_cached_pool_image_info()
 
-        if r_refresh.is_error:
-            return self._error(transaction, r_refresh, 'failed to refresh pool image info')
+            if r_refresh.is_error:
+                return self._error(transaction, r_refresh, 'failed to refresh pool image info')
 
     @classmethod
     def create(

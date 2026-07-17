@@ -69,8 +69,6 @@ def pytest_generate_tests(metafunc: _pytest.python.Metafunc) -> None:
     if 'db_url' not in metafunc.fixturenames:
         return
 
-    print(f'{metafunc.config.option.against_db_url=}')
-
     metafunc.parametrize('db_url', metafunc.config.option.against_db_url or DEFAULT_DB_URLS)
 
 

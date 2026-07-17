@@ -60,16 +60,16 @@ class Workspace(_Workspace):
 
             self._progress(transaction, 'scheduling pool flavor info refresh')
 
-        for pool in self.pools:
-            if self.result:
-                return
+            for pool in self.pools:
+                if self.result:
+                    return
 
-            self.dispatch_task(
-                transaction,
-                refresh_pool_image_info,
-                pool.poolname,
-                logger=get_pool_logger(Workspace.TASKNAME, self.logger, pool.poolname),
-            )
+                self.dispatch_task(
+                    transaction,
+                    refresh_pool_image_info,
+                    pool.poolname,
+                    logger=get_pool_logger(Workspace.TASKNAME, self.logger, pool.poolname),
+                )
 
     @classmethod
     def create(

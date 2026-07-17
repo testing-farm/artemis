@@ -115,7 +115,7 @@ class Workspace(_Workspace):
                 )
 
                 if r_delay.is_error:
-                    return self._error(transaction, r, 'failed to fetch pool watchdog dispatch period')
+                    return self._error(transaction, r_delay, 'failed to fetch pool watchdog dispatch period')
 
                 delay = r_delay.unwrap()
 

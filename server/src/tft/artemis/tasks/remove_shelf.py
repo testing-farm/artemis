@@ -100,7 +100,7 @@ class Workspace(_Workspace):
             r_delete: DMLResult[GuestShelf] = transaction.execute_dml(self.logger, delete_query)
 
             if r_delete.is_error:
-                return self._error(transaction, r, 'failed to remove shelf record')
+                return self._error(transaction, r_delete, 'failed to remove shelf record')
 
     @classmethod
     def create(
