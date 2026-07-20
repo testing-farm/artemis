@@ -361,7 +361,16 @@ class OpenStackDriver(
 
         instance_request.post_install_script = r_post_install_script.unwrap()
 
-        r_tags = self.get_guest_tags(logger, session, guest_request)
+        r_flavor_tag = self._instance_flavor_tag
+        if r_flavor_tag.is_error:
+            return _Error(r_flavor_tag.unwrap_error())
+
+        r_tags = self.get_guest_tags(
+            logger,
+            session,
+            guest_request,
+            extra_tags={r_flavor_tag.unwrap(): instance_request.flavor.name},
+        )
 
         if r_tags.is_error:
             return _Error(r_tags.unwrap_error())

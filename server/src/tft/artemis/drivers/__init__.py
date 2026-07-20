@@ -289,6 +289,16 @@ KNOB_INSTANCE_NAME_TEMPLATE: Knob[str] = Knob(
     default='artemis-{{ GUESTNAME }}',
 )
 
+KNOB_INSTANCE_FLAVOR_TAG: Knob[str] = Knob(
+    'artemis.instance.flavor.tag',
+    'Artemis tag to hold the actual instance flavor',
+    has_db=False,
+    per_entity=True,
+    envvar='ARTEMIS_INSTANCE_FLAVOR_TAG',
+    cast_from_str=str,
+    default='ArtemisFlavor',
+)
+
 
 KNOB_DISPATCH_RESOURCE_CLEANUP_DELAY: Knob[int] = Knob(
     'pool.dispatch-resource-cleanup',
@@ -1705,6 +1715,15 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
 
         return Ok(image_info)
 
+    @functools.cached_property
+    def _instance_flavor_tag(self) -> Result[str, Failure]:
+        r_value = KNOB_INSTANCE_FLAVOR_TAG.get_value(entityname=self.poolname)
+
+        if r_value.is_error:
+            return Error(Failure.from_failure('Could not get instance flavor tag name', r_value.unwrap_error()))
+
+        return Ok(r_value.unwrap())
+
     def _render_instance_name(self, guest_request: GuestRequest) -> _Result[str, Failure]:
         r_instance_name_template = KNOB_INSTANCE_NAME_TEMPLATE.get_value(entityname=self.poolname)
         if r_instance_name_template.is_error:
@@ -2160,7 +2179,11 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
         return Ok(r_rendered_tags.unwrap())
 
     def get_guest_tags(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        extra_tags: Optional[dict[str, str]] = None,
     ) -> Result[Tags, Failure]:
         """
         Get all tags applicable for a given guest request.
@@ -2174,6 +2197,7 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
         * ``ArtemisGuestLabel``: nice, human-readable label assigned to the guest, usable e.g. for naming instances.
           This label **does** change over time.
         """
+        extra_tags = extra_tags or {}
 
         system_tags = GuestTag.fetch_system_tags(session)
 
@@ -2188,6 +2212,7 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
         tags: Tags = {
             **{r.tag: r.value for r in system_tags.unwrap()},
             **{r.tag: r.value for r in pool_tags.unwrap()},
+            **extra_tags,
         }
 
         if guest_request.user_data:
@@ -2981,6 +3006,7 @@ class FlavorBasedPoolDriver(
         log_dict_yaml(logger.debug, 'sorted suitable flavors', sorted_suitable_flavors)
 
         log_dict_yaml(logger.debug, 'environment', environment.serialize())
+        log_dict_yaml(logger.debug, 'constraints', constraints.serialize())
 
         return Ok(sorted_suitable_flavors)
 
