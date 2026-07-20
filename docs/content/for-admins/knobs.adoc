@@ -1099,6 +1099,26 @@ deployments.
 
 5+|How old must the guest log blobs be to be removed, in seconds.
 
+|`gc.guest-logs.schedule`
+|`str`
+|`ARTEMIS_GC_GUEST_LOGS_SCHEDULE`
+|`15 */4 * * *`
+|no
+
+
+
+5+|When to run garbage collection task for guest request logs.
+
+|`gc.guest-logs.threshold`
+|`int`
+|`ARTEMIS_GC_GUEST_LOGS_THRESHOLD`
+|`2592000`
+|no
+
+
+
+5+|How old must the guest logs be to be removed, in seconds.
+
 |`gcp.mapping.environment-to-image.pattern-map.filepath`
 |`str`
 |`ARTEMIS_GCP_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH`
