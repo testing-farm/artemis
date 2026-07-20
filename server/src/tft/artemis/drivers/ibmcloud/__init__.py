@@ -388,7 +388,7 @@ class IBMCloudDriver(
         """
         r_flavor_tag = self._instance_flavor_tag
         if r_flavor_tag.is_error:
-            return Error(r_flavor_tag.unwrap_error())
+            return {}
 
         r_instances_with_flavors = self.get_resources_by_tags(logger, flavor_filter)
 
