@@ -2057,10 +2057,10 @@ class Workspace:
         gr = r.unwrap()
 
         if not gr:
-            # No guest request in expected state discovered. May be concurrent execution had changed the state already -
+            # No guest request in expected state discovered. Maybe concurrent execution had changed the state already -
             # nothing that can be done now apart from informing about a no op and moving on.
-
-            self._progress(transaction, f'no request in expected {state} state discovered, nothing to do')
+            guest_state = state.value if state else '<None>'
+            self._progress(transaction, f'guest request not found in the required state {guest_state}')
             self._complete(transaction)
             return self
 
