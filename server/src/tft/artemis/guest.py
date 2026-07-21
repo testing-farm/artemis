@@ -47,7 +47,10 @@ class GuestState(enum.Enum):
     SHELVED = 'shelved'
 
     def __str__(self) -> str:
-        """Return enum member name as string."""
+        """Return enum member name as string.
+
+        :returns: enum member name.
+        """
         return self.name
 
 
