@@ -46,6 +46,10 @@ class GuestState(enum.Enum):
     #: The guest is assigned to a shelf
     SHELVED = 'shelved'
 
+    def __str__(self) -> str:
+        """Return enum member name as string."""
+        return self.name
+
 
 class GuestLogger(gluetool.log.ContextAdapter):
     """

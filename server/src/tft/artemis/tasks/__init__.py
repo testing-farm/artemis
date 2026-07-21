@@ -2112,6 +2112,7 @@ class Workspace:
         shelf = r.unwrap()
 
         if not shelf:
+            # NOTE(ivasilev) Possible TOCTOU race / silent success? Or isn't missing shelf an actual problem?
             self.result = SUCCESS
             return
 
