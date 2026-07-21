@@ -18,6 +18,7 @@ from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from typing_extensions import override
 
 from tft.artemis.drivers import (
+    UNKNOWN_FLAVOR,
     BackendFlavorT,
     CLISessionPermanentDir,
     ConsoleUrlData,
@@ -380,7 +381,7 @@ class IBMCloudDriver(
 
     def get_instances_with_flavor_tags_names(
         self, logger: gluetool.log.ContextAdapter, flavor_filter: str
-    ) -> dict[str, str]:
+    ) -> Result[dict[str, str], Failure]:
         """
         As IBMCloud does not allow cheap (as in number of api calls) fetching of instances with tags,
         let's make a single call for all ibmcloud resources that match required instances with flavor:* tag
@@ -388,20 +389,22 @@ class IBMCloudDriver(
         """
         r_flavor_tag = self._instance_flavor_tag
         if r_flavor_tag.is_error:
-            return {}
+            return Error(r_flavor_tag.unwrap_error())
 
         r_instances_with_flavors = self.get_resources_by_tags(logger, flavor_filter)
 
         if r_instances_with_flavors.is_error:
-            return {}
+            return Error(r_instances_with_flavors.unwrap_error())
 
-        return {
-            instance['name']: next(
-                (tag.split(':')[-1] for tag in instance.get('tags', []) if tag.startswith(r_flavor_tag.unwrap())),
-                'unknown flavor',
-            )
-            for instance in r_instances_with_flavors.unwrap()
-        }
+        return Ok(
+            {
+                instance['name']: next(
+                    (tag.split(':')[-1] for tag in instance.get('tags', []) if tag.startswith(r_flavor_tag.unwrap())),
+                    UNKNOWN_FLAVOR,
+                )
+                for instance in r_instances_with_flavors.unwrap()
+            }
+        )
 
     def _create_instance_request(
         self,

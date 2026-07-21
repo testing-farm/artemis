@@ -17,7 +17,14 @@ from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
 from typing_extensions import TypeAlias, override
 
-from tft.artemis.drivers import CLISessionPermanentDir, PoolDriver, PoolImageCompatible, PoolImageInfo, create_tempfile
+from tft.artemis.drivers import (
+    UNKNOWN_FLAVOR,
+    CLISessionPermanentDir,
+    PoolDriver,
+    PoolImageCompatible,
+    PoolImageInfo,
+    create_tempfile,
+)
 from tft.artemis.drivers.ibmcloud import (
     IBMCloudDriver,
     IBMCloudFlavor,
@@ -347,14 +354,12 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
 
                 usage.instances += 1
 
-                # XXX Should we attempt to use info from the flavor first (if available)
-                # and not instance details directly?
                 usage.cores += int(raw_instance.get('virtualCores', {}).get('assigned', 0))
                 # Instance memory is in GB
                 usage.memory += UNITS.Quantity(raw_instance['memory'], UNITS.gigabytes).to('bytes').magnitude
                 # Record actual flavor used
-                if flavor:
-                    usage.record_flavor(flavor.name)
+                instance_flavor = flavor.name if flavor else UNKNOWN_FLAVOR
+                usage.record_flavor(instance_flavor)
 
                 return Ok(None)
 
@@ -362,15 +367,20 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
             if r_flavor_tag.is_error:
                 return Error(r_flavor_tag.unwrap_error())
 
-            instances_with_flavors = self.get_instances_with_flavor_tags_names(
+            r_instances_with_flavors = self.get_instances_with_flavor_tags_names(
                 logger, f'tags:{r_flavor_tag.unwrap()}* AND type:pvm-instance'
             )
+
+            if r_instances_with_flavors.is_error:
+                return Error(r_instances_with_flavors.unwrap_error())
+
+            instances_with_flavors = r_instances_with_flavors.unwrap()
 
             r_instances_usage = self.do_fetch_pool_resources_metrics_flavor_usage(
                 logger,
                 resources.usage,
                 _fetch_instances,
-                lambda raw_instance: instances_with_flavors.get(raw_instance['serverName'], 'unknown flavor'),
+                lambda raw_instance: instances_with_flavors.get(raw_instance['serverName'], UNKNOWN_FLAVOR),
                 _update_instance_usage,
             )
 

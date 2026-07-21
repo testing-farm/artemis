@@ -18,6 +18,7 @@ from tmt.hardware import UNITS
 from typing_extensions import TypeAlias, override
 
 from tft.artemis.drivers import (
+    UNKNOWN_FLAVOR,
     PoolDriver,
     PoolImageCompatible,
     PoolImageInfo,
@@ -383,8 +384,8 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, 
                 # Instance memory is in GB
                 usage.memory += UNITS.Quantity(raw_instance['memory'], UNITS.gigabytes).to('bytes').magnitude
                 # Record actual flavor used
-                if flavor:
-                    usage.record_flavor(flavor.name)
+                instance_flavor = flavor.name if flavor else UNKNOWN_FLAVOR
+                usage.record_flavor(instance_flavor)
 
                 return Ok(None)
 
@@ -392,15 +393,20 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, 
             if r_flavor_tag.is_error:
                 return Error(r_flavor_tag.unwrap_error())
 
-            instances_with_flavors = self.get_instances_with_flavor_tags_names(
+            r_instances_with_flavors = self.get_instances_with_flavor_tags_names(
                 logger, f'tags:{r_flavor_tag.unwrap()}* AND type:instance'
             )
+
+            if r_instances_with_flavors.is_error:
+                return Error(r_instances_with_flavors.unwrap_error())
+
+            instances_with_flavors = r_instances_with_flavors.unwrap()
 
             r_instances_usage = self.do_fetch_pool_resources_metrics_flavor_usage(
                 logger,
                 resources.usage,
                 _fetch_instances,
-                lambda raw_instance: instances_with_flavors.get(raw_instance['name'], 'unknown flavor'),
+                lambda raw_instance: instances_with_flavors.get(raw_instance['name'], UNKNOWN_FLAVOR),
                 _update_instance_usage,
             )
 

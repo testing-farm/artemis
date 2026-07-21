@@ -98,6 +98,7 @@ BackendFlavorT = TypeVar('BackendFlavorT')
 
 Tags = dict[str, str]
 
+UNKNOWN_FLAVOR = 'unknown flavor'
 
 # Types for configuration of custom/patched flavors
 #
@@ -3266,6 +3267,7 @@ class FlavorBasedPoolDriver(
 
                 except Exception as exc:
                     return Error(Failure.from_exc('malformed instance description', exc, raw_instance=raw_instance))
+
                 flavor = flavors.get(flavor_name)
 
                 # This may happen, with multiple pools with different flavors using the same credentials
