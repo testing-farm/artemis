@@ -1652,6 +1652,10 @@ def _update_guest_state(
     if r_execute.is_error:
         return handle_error(r_execute, 'failed to switch guest state')
 
+    # Check that there was an actual change
+    if not r_execute.unwrap().rowcount:
+        return Error(Failure('no actual change occurred, update matched 0 rows', recoverable=True))
+
     logger.warning(f'state switch: {current_state_label} => {new_state.value}: proposed')
 
     GuestRequest.log_event_by_guestname(
@@ -1718,6 +1722,10 @@ def _update_guest_state_and_request_task(
 
     if r_execute.is_error:
         return handle_error(r_execute, 'failed to switch guest state')
+
+    # Check that there was an actual change
+    if not r_execute.unwrap().rowcount:
+        return Error(Failure('no actual change occurred, update matched 0 rows', recoverable=True))
 
     logger.warning(f'state switch: {current_state_label} => {new_state.value}: proposed')
 
