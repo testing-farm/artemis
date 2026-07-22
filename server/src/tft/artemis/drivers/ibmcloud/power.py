@@ -30,7 +30,7 @@ from tft.artemis.drivers.ibmcloud import (
 )
 
 from ... import Failure, JSONType
-from ...db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
+from ...db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, Transaction
 from ...environment import Flavor, FlavorBoot
 from ...knobs import Knob
 from ...metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
@@ -640,7 +640,11 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
 
     @override
     def release_guest(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
+        guest_request: GuestRequest,
     ) -> Result[None, Failure]:
         """
         Release resources allocated for the guest back to the pool infrastructure.
@@ -654,7 +658,7 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
         # Will be focusing only on the instance from pool data, no possible leftovers cleanup is performed.
         self.dispatch_resource_cleanup(
             logger,
-            session,
+            transaction,
             IBMCloudPoolResourcesIDs(instance_id=pool_data.instance_id),
             guest_request=guest_request,
         )

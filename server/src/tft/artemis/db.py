@@ -50,6 +50,7 @@ from sqlalchemy.orm.session import sessionmaker
 from sqlalchemy.schema import ForeignKeyConstraint, Index, PrimaryKeyConstraint
 from sqlalchemy_utils import EncryptedType
 from sqlalchemy_utils.types.encrypted.encrypted_type import AesEngine
+from typing_extensions import Self
 
 from .guest import GuestState
 from .knobs import KNOB_LOGGING_DB_QUERIES, get_vault_password
@@ -321,6 +322,7 @@ def execute_dml(
 def upsert(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
+    transaction: 'Transaction',
     model: type[Base],
     primary_keys: dict[Any, Any],
     constraint: PrimaryKeyConstraint,
@@ -400,7 +402,7 @@ def upsert(
 
     from . import Failure
 
-    r: DMLResult[Base] = execute_dml(logger, session, statement)
+    r: DMLResult[Base] = transaction.execute_dml(logger, statement)
 
     if r.is_error:
         return Error(
@@ -436,95 +438,191 @@ def upsert(
 
 
 @dataclasses.dataclass
-class TransactionResult:
+class Transaction:
+    logger: gluetool.log.ContextAdapter
+    session: sqlalchemy.orm.session.Session
+
     complete: bool = False
     conflict: bool = False
 
     failure: Optional['Failure'] = None
     failed_query: Optional[str] = None
 
+    @property
+    def is_success(self) -> bool:
+        return self.failure is None
 
-@contextlib.contextmanager
-def transaction(
-    logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session
-) -> Generator[TransactionResult, None, None]:
-    """
-    Thin context manager for handling possible transation rollback when executing multiple queries.
+    @property
+    def is_error(self) -> bool:
+        return self.failure is not None
 
-    .. note::
+    def _on_success(self) -> None:
+        from . import Sentry, TracingOp
 
-       Starting a DB session is **not** the responsibility of this context manager - that is left to caller, because
-       such a session can and would be used for queries that do not necessarily need to cause transaction rollback.
+        with Sentry.start_span(TracingOp.DB_TRANSACTION, description='commit'):
+            self.session.commit()
 
-    .. code-block:: python
+        with Sentry.start_span(TracingOp.DB_TRANSACTION, description='expunge'):
+            self.session.expunge_all()
 
-       with DB.get_session(transactional=True) as session:
-           with transaction() as result:
-               session.execute(sqlalchemy.insert(...))
-               session.execute(sqlalchemy.insert(...))
-               session.execute(sqlalchemy.insert(...))
+        self.complete = True
 
-        if result.success is not True:
-            # handle transaction rollback (or DB error)
-            ...
-    """
+    def _on_failure(self) -> None:
+        from . import Sentry, TracingOp
 
-    from . import Failure, Sentry, TracingOp
+        with Sentry.start_span(TracingOp.DB_TRANSACTION, description='rollback'):
+            self.session.rollback()
 
-    result = TransactionResult()
+        with Sentry.start_span(TracingOp.DB_TRANSACTION, description='expunge'):
+            self.session.expunge_all()
 
-    def _save_error(exc: Exception) -> None:
-        result.complete = False
+        self.complete = False
 
-        if isinstance(exc, sqlalchemy.exc.StatementError):
-            result.failure = Failure.from_exc('failed to execute in transaction', exc=exc, query=exc.statement)
+    def _handle_exception(self, exc: BaseException) -> None:
+        from . import Failure, Sentry, TracingOp
+
+        self.complete = False
+
+        if (
+            isinstance(exc, sqlalchemy.exc.OperationalError)
+            and isinstance(exc.orig, psycopg2.errors.SerializationFailure)
+            and exc.orig.pgerror.strip() == 'ERROR:  could not serialize access due to concurrent update'
+        ):
+            with Sentry.start_span(TracingOp.DB_TRANSACTION, description='expunge'):
+                self.session.expunge_all()
+
+            self.conflict = True
+            self.failure = Failure.from_exc('could not serialize access due to concurrent update', exc)
+            self.failed_query = exc.statement
 
         else:
-            result.failure = Failure.from_exc('failed to execute in transaction', exc=exc)
-
-    with Sentry.start_span(TracingOp.DB_TRANSACTION):
-        try:
-            assert_not_in_transaction(logger, session, rollback=False)
-
-            with Sentry.start_span(TracingOp.DB_TRANSACTION, description='begin'):
-                session.begin()
-
-            with Sentry.start_span(TracingOp.DB_TRANSACTION, description='body'):
-                yield result
-
-            with Sentry.start_span(TracingOp.DB_TRANSACTION, description='commit'):
-                session.commit()
-
-            with Sentry.start_span(TracingOp.DB_TRANSACTION, description='expunge'):
-                session.expunge_all()
-
-            result.complete = True
-
-        except sqlalchemy.exc.OperationalError as exc:
-            with Sentry.start_span(TracingOp.DB_TRANSACTION, description='expunge'):
-                session.expunge_all()
-
-            if (
-                isinstance(exc, sqlalchemy.exc.OperationalError)
-                and isinstance(exc.orig, psycopg2.errors.SerializationFailure)
-                and exc.orig.pgerror.strip() == 'ERROR:  could not serialize access due to concurrent update'
-            ):
-                result.complete = False
-                result.conflict = True
-                result.failure = Failure.from_exc('could not serialize access due to concurrent update', exc)
-                result.failed_query = exc.statement
+            if isinstance(exc, sqlalchemy.exc.StatementError):
+                self.failure = Failure.from_exc('failed to execute in transaction', exc=exc, query=exc.statement)
+                self.failed_query = exc.statement
 
             else:
-                _save_error(exc)
+                self.failure = Failure.from_exc('failed to execute in transaction', exc=exc)
 
-        except Exception as exc:
-            with Sentry.start_span(TracingOp.DB_TRANSACTION, description='rollback'):
-                session.rollback()
+    def _handle_failure(self, failure: 'Failure') -> None:
+        if failure.exception:
+            self._handle_exception(failure.exception)
 
-            with Sentry.start_span(TracingOp.DB_TRANSACTION, description='expunge'):
-                session.expunge_all()
+        else:
+            self.failure = failure
 
-            _save_error(exc)
+    @classmethod
+    @contextlib.contextmanager
+    def go(
+        cls, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session
+    ) -> Generator[Self, None, None]:
+        """
+        Thin context manager for handling possible transation rollback when executing multiple queries.
+
+        .. note::
+
+        Starting a DB session is **not** the responsibility of this context manager - that is left to caller, because
+        such a session can and would be used for queries that do not necessarily need to cause transaction rollback.
+
+        .. code-block:: python
+
+        with DB.get_session(transactional=True) as session:
+            with transaction() as result:
+                session.execute(sqlalchemy.insert(...))
+                session.execute(sqlalchemy.insert(...))
+                session.execute(sqlalchemy.insert(...))
+
+            if result.is_error:
+                # handle transaction rollback (or DB error)
+                ...
+        """
+
+        from . import Sentry, TracingOp
+
+        result = cls(logger, session)
+
+        with Sentry.start_span(TracingOp.DB_TRANSACTION):
+            try:
+                assert_not_in_transaction(logger, session, rollback=False)
+
+                with Sentry.start_span(TracingOp.DB_TRANSACTION, description='begin'):
+                    result.session.begin()
+
+                with Sentry.start_span(TracingOp.DB_TRANSACTION, description='body'):
+                    yield result
+
+                if result.failure is None:
+                    result._on_success()
+
+                else:
+                    result._on_failure()
+
+            except Exception as exc:
+                result._handle_exception(exc)
+
+                result._on_failure()
+
+    def execute_dml(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        statement: sqlalchemy.sql.dml.UpdateBase,
+    ) -> DMLResult[T]:
+        """
+        Execute a given DML statement, ``INSERT``, ``UPDATE`` or ``DELETE``.
+
+        If the statement fails to execute, the transaction will be marked for a rollback when leaving its context.
+
+        :returns: result produced by DB if the statement was executed correctly, :py:class:`Failure` otherwise.
+        """
+
+        if self.failure is not None:
+            from . import Failure
+
+            return Error(
+                Failure(
+                    'cannot execute new statements in a broken transaction',
+                    query=stringify_query(self.session, statement),
+                )
+            )
+
+        r: DMLResult[T] = execute_dml(logger, self.session, statement)
+
+        if r.is_error:
+            self._handle_failure(r.unwrap_error())
+
+        return r
+
+    def upsert(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        model: type[Base],
+        primary_keys: dict[Any, Any],
+        constraint: PrimaryKeyConstraint,
+        *,
+        update_data: Optional[dict[Any, Any]] = None,
+        insert_data: Optional[dict[Any, Any]] = None,
+        expected_records: Union[int, tuple[int, int]] = 1,
+    ) -> Result[bool, 'Failure']:
+        if self.failure is not None:
+            from . import Failure
+
+            return Error(Failure('cannot execute new statements in a broken transaction'))
+
+        r = upsert(
+            logger,
+            self.session,
+            self,
+            model,
+            primary_keys,
+            constraint,
+            update_data=update_data,
+            insert_data=insert_data,
+            expected_records=expected_records,
+        )
+
+        if r.is_error:
+            self._handle_failure(r.unwrap_error())
+
+        return r
 
 
 class UserRoles(enum.Enum):
@@ -710,7 +808,7 @@ class TaskRequest(Base):
     def create(
         cls,
         logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
         task: 'Actor',
         *args: 'ActorArgumentType',
         delay: Optional[int] = None,
@@ -718,7 +816,7 @@ class TaskRequest(Base):
     ) -> Result[int, 'Failure']:
         stmt = cls.create_query(task, *args, delay=delay, task_sequence_request_id=task_sequence_request_id)
 
-        r: DMLResult[TaskRequest] = execute_dml(logger, session, stmt)
+        r: DMLResult[TaskRequest] = transaction.execute_dml(logger, stmt)
 
         if r.is_error:
             return Error(r.unwrap_error())
@@ -734,10 +832,8 @@ class TaskSequenceRequest(Base):
     task_requests = relationship('TaskRequest', back_populates='task_sequence_request')
 
     @classmethod
-    def create(
-        cls, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session
-    ) -> Result[int, 'Failure']:
-        r: DMLResult[TaskSequenceRequest] = execute_dml(logger, session, sqlalchemy.insert(cls))
+    def create(cls, logger: gluetool.log.ContextAdapter, transaction: Transaction) -> Result[int, 'Failure']:
+        r: DMLResult[TaskSequenceRequest] = transaction.execute_dml(logger, sqlalchemy.insert(cls))
 
         if r.is_error:
             return Error(r.unwrap_error())
@@ -1104,7 +1200,7 @@ class GuestRequest(Base):
     def log_event_by_guestname(
         cls,
         logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
         guestname: str,
         eventname: str,
         **details: Any,
@@ -1121,9 +1217,8 @@ class GuestRequest(Base):
 
         from . import log_dict_yaml
 
-        r: DMLResult[GuestEvent] = execute_dml(
+        r: DMLResult[GuestEvent] = transaction.execute_dml(
             logger,
-            session,
             sqlalchemy.insert(GuestEvent).values(guestname=guestname, eventname=eventname, _details=details),
         )
 
@@ -1148,7 +1243,7 @@ class GuestRequest(Base):
     def log_event(
         self,
         logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
         eventname: str,
         **details: Any,
     ) -> Result[None, 'Failure']:
@@ -1161,13 +1256,13 @@ class GuestRequest(Base):
         :param details: additional event details. The mapping will be stored as a JSON blob.
         """
 
-        return self.__class__.log_event_by_guestname(logger, session, self.guestname, eventname, **details)
+        return self.__class__.log_event_by_guestname(logger, transaction, self.guestname, eventname, **details)
 
     @classmethod
     def log_error_event_by_guestname(
         cls,
         logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
         guestname: str,
         message: str,
         failure: 'Failure',
@@ -1186,12 +1281,12 @@ class GuestRequest(Base):
 
         details['failure'] = failure.get_event_details()
 
-        return cls.log_event_by_guestname(logger, session, guestname, 'error', error=message, **details)
+        return cls.log_event_by_guestname(logger, transaction, guestname, 'error', error=message, **details)
 
     def log_error_event(
         self,
         logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
         message: str,
         failure: 'Failure',
         **details: Any,
@@ -1206,13 +1301,15 @@ class GuestRequest(Base):
         :param details: additional event details. The mapping will be stored as a JSON blob.
         """
 
-        return self.__class__.log_error_event_by_guestname(logger, session, self.guestname, message, failure, **details)
+        return self.__class__.log_error_event_by_guestname(
+            logger, transaction, self.guestname, message, failure, **details
+        )
 
     @classmethod
     def log_warning_event_by_guestname(
         cls,
         logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
         guestname: str,
         message: str,
         failure: Optional['Failure'] = None,
@@ -1232,12 +1329,12 @@ class GuestRequest(Base):
         if failure is not None:
             details['failure'] = failure.get_event_details()
 
-        return cls.log_event_by_guestname(logger, session, guestname, 'warning', error=message, **details)
+        return cls.log_event_by_guestname(logger, transaction, guestname, 'warning', error=message, **details)
 
     def log_warning_event(
         self,
         logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
         message: str,
         failure: Optional['Failure'] = None,
         **details: Any,
@@ -1253,7 +1350,7 @@ class GuestRequest(Base):
         """
 
         return self.__class__.log_warning_event_by_guestname(
-            logger, session, self.guestname, message, failure=failure, **details
+            logger, transaction, self.guestname, message, failure=failure, **details
         )
 
     def fetch_events(
@@ -1327,7 +1424,7 @@ class GuestLogBlob(Base):
     def update(
         self,
         logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
         content: str,
         content_hash: str,
     ) -> Result[None, 'Failure']:
@@ -1340,9 +1437,8 @@ class GuestLogBlob(Base):
         :param content_hash: the hash of the log content.
         """
 
-        r: DMLResult[GuestLogBlob] = execute_dml(
+        r: DMLResult[GuestLogBlob] = transaction.execute_dml(
             logger,
-            session,
             sqlalchemy.update(GuestLogBlob)
             .where(GuestLogBlob.guestname == self.guestname)
             .where(GuestLogBlob.logname == self.logname)
@@ -1360,7 +1456,7 @@ class GuestLogBlob(Base):
     def create(
         cls,
         logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
         guestname: str,
         logname: str,
         contenttype: GuestLogContentType,
@@ -1381,9 +1477,8 @@ class GuestLogBlob(Base):
         :param content_hash: the hash of the log content.
         """
 
-        r: DMLResult[GuestLogBlob] = execute_dml(
+        r: DMLResult[GuestLogBlob] = transaction.execute_dml(
             logger,
-            session,
             sqlalchemy.insert(GuestLogBlob).values(
                 guestname=guestname,
                 logname=logname,
@@ -1439,7 +1534,7 @@ class GuestLog(Base):
     def update(
         self,
         logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
         state: GuestLogState,
         expires: Optional[datetime.datetime] = None,
         *,
@@ -1455,9 +1550,8 @@ class GuestLog(Base):
         :param url: optional URL of the log if contenttype is URL.
         """
 
-        r: DMLResult[GuestLog] = execute_dml(
+        r: DMLResult[GuestLog] = transaction.execute_dml(
             logger,
-            session,
             sqlalchemy.update(GuestLog)
             .where(
                 GuestLog.guestname == self.guestname,
@@ -1479,7 +1573,7 @@ class GuestLog(Base):
     def create(
         cls,
         logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
         guestname: str,
         logname: str,
         contenttype: GuestLogContentType,
@@ -1501,9 +1595,8 @@ class GuestLog(Base):
         :param url: optional URL of the log if contenttype is URL.
         """
 
-        r: DMLResult[GuestLog] = execute_dml(
+        r: DMLResult[GuestLog] = transaction.execute_dml(
             logger,
-            session,
             sqlalchemy.insert(GuestLog)
             .values(
                 guestname=guestname,
@@ -1898,22 +1991,22 @@ class DB:
     @contextmanager
     def transaction(
         self, logger: gluetool.log.ContextAdapter, *, read_only: bool = False
-    ) -> Iterator[tuple[sqlalchemy.orm.session.Session, TransactionResult]]:
+    ) -> Iterator[tuple[sqlalchemy.orm.session.Session, Transaction]]:
         """
         Create new DB session & transaction.
 
         :returns: new DB session & transaction result tracker.
         """
 
-        with self.get_session(logger, read_only=read_only) as session, transaction(logger, session) as t:
-            yield (session, t)
+        with self.get_session(logger, read_only=read_only) as session, Transaction.go(logger, session) as transaction:
+            yield (session, transaction)
 
     @classmethod
     def set_application_name(
         cls, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, name: str
     ) -> None:
-        with transaction(logger, session):
-            session.execute(sqlalchemy.text(f"SET application_name TO '{name}'"))
+        with Transaction.go(logger, session) as transaction:
+            transaction.execute_dml(logger, sqlalchemy.text(f"SET application_name TO '{name}'"))  # type: ignore[arg-type]
 
 
 # Alias for alembic.op. The object is not imported in Artemis, therefore we cannot check typing properly.

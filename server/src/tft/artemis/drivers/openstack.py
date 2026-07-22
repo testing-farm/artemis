@@ -27,7 +27,7 @@ from tmt.hardware import UNITS
 from typing_extensions import override
 
 from .. import Failure, JSONType, rewrap_from_gluetool, rewrap_to_gluetool, safe_call
-from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
+from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, Transaction
 from ..environment import (
     Environment,
     Flavor,
@@ -328,6 +328,7 @@ class OpenStackDriver(
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
         guest_request: GuestRequest,
     ) -> _Result[InstanceCreationRequest, Failure]:
         r_image_flavor_pairs = self._collect_image_flavor_pairs(logger, session, guest_request)
@@ -633,10 +634,14 @@ class OpenStackDriver(
     @override
     @rewrap_to_gluetool
     def acquire_guest(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
+        guest_request: GuestRequest,
     ) -> _Result[ProvisioningProgress, Failure]:
         return (
-            self.instance_resource_manager.acquire(logger, guest_request, session)
+            self.instance_resource_manager.acquire(logger, guest_request, session, transaction)
             .bind(
                 lambda instance_outcome: _Ok(
                     ProvisioningProgress(
@@ -769,7 +774,11 @@ class OpenStackDriver(
 
     @override
     def release_guest(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
+        guest_request: GuestRequest,
     ) -> Result[None, Failure]:
         """
         Release resources allocated for the guest back to the pool infrastructure.
@@ -781,7 +790,10 @@ class OpenStackDriver(
             return Ok(None)
 
         return self.dispatch_resource_cleanup(
-            logger, session, OpenStackPoolResourcesIDs(instance_id=pool_data.instance_id), guest_request=guest_request
+            logger,
+            transaction,
+            OpenStackPoolResourcesIDs(instance_id=pool_data.instance_id),
+            guest_request=guest_request,
         )
 
     @override

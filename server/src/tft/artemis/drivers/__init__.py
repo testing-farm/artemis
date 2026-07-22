@@ -69,6 +69,7 @@ from ..db import (
     PoolTag,
     SafeQuery,
     SSHKey,
+    Transaction,
 )
 from ..environment import (
     Environment,
@@ -1279,17 +1280,17 @@ class GuestLogBlob:
     def save(
         self,
         logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
         guest_log: GuestLog,
         *,
         overwrite: bool = False,
     ) -> Result[None, Failure]:
         if guest_log.blobs and overwrite:
-            return guest_log.blobs[0].update(logger, session, content=self.content, content_hash=self.content_hash)
+            return guest_log.blobs[0].update(logger, transaction, content=self.content, content_hash=self.content_hash)
 
         return GuestLogBlobDB.create(
             logger,
-            session,
+            transaction,
             guestname=guest_log.guestname,
             logname=guest_log.logname,
             contenttype=guest_log.contenttype,
@@ -1789,7 +1790,7 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
     def dispatch_resource_cleanup(
         self,
         logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
         *resource_ids: PoolResourcesIDs,
         guest_request: Optional[GuestRequest] = None,
         delay: Optional[int] = None,
@@ -1825,7 +1826,7 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
         if len(resource_ids) == 1:
             return _request_task(
                 logger,
-                session,
+                transaction,
                 release_pool_resources,
                 self.poolname,
                 resource_id.serialize_to_json(),
@@ -1835,7 +1836,7 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
 
         return _request_task_sequence(
             logger,
-            session,
+            transaction,
             [
                 (
                     release_pool_resources,
@@ -1946,7 +1947,7 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
     def log_acquisition_attempt(
         self,
         logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
         guest_request: GuestRequest,
         flavor: Optional[Flavor] = None,
         image: Optional[PoolImageInfo] = None,
@@ -1964,13 +1965,17 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
 
         log_dict_yaml(logger.info, 'provisioning from', details)
 
-        guest_request.log_event(logger, session, 'acquisition-attempt', **scrubbed_details)
+        guest_request.log_event(logger, transaction, 'acquisition-attempt', **scrubbed_details)
 
         return Ok(None)
 
     @abc.abstractmethod
     def acquire_guest(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
+        guest_request: GuestRequest,
     ) -> Result[ProvisioningProgress, Failure]:
         """
         Acquire one guest from the pool. The guest must satisfy requirements specified by `environment`.
@@ -2010,7 +2015,11 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
         raise NotImplementedError
 
     def guest_watchdog(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
+        guest_request: GuestRequest,
     ) -> Result[WatchdogState, Failure]:
         """
         Perform any periodic tasks the driver might need to apply while the request is in use.
@@ -2023,7 +2032,11 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
 
     @abc.abstractmethod
     def release_guest(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
+        guest_request: GuestRequest,
     ) -> Result[None, Failure]:
         """
         Release resources allocated for the guest back to the pool infrastructure.
@@ -2740,9 +2753,6 @@ class FlavorBasedPoolDriver(
         ruling = r_ruling.unwrap()
 
         filtered_suitable_flavors = ruling.matched_flavors
-
-        if not filtered_suitable_flavors:
-            guest_request.log_warning_event(logger, session, 'no suitable flavors', poolname=self.poolname)
 
         return Ok((filtered_suitable_flavors[0] if filtered_suitable_flavors else None, ruling))
 
@@ -4046,6 +4056,7 @@ RMCreateResourceRequestCallback = Callable[
     [
         gluetool.log.ContextAdapter,
         sqlalchemy.orm.session.Session,
+        Transaction,
         GuestRequest,
     ],
     _Result[ResourceCreationRequestT, Failure],
@@ -4111,11 +4122,15 @@ class ResourceManager(Generic[ResourceT, ResourceCreationRequestT, ResourceCreat
         self.create_resource_request = create_resource_request
 
     def acquire(
-        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest, session: sqlalchemy.orm.session.Session
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest,
+        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
     ) -> _Result[ResourceCreationOutcomeT, Failure]:
         failure_details: dict[str, Any] = {'resource_type': self.resource_type, 'pool': self.pool.poolname}
 
-        r_resource_request = self.create_resource_request(logger, session, guest_request)
+        r_resource_request = self.create_resource_request(logger, session, transaction, guest_request)
 
         if not is_successful(r_resource_request):
             return _Error(r_resource_request.failure().update(**failure_details))
@@ -4133,7 +4148,7 @@ class ResourceManager(Generic[ResourceT, ResourceCreationRequestT, ResourceCreat
 
         log_dict_yaml(logger.info, 'acquiring resource', failure_details['resource_request'])
 
-        guest_request.log_event(logger, session, 'resource-acquisition-attempt', **failure_details)
+        guest_request.log_event(logger, transaction, 'resource-acquisition-attempt', **failure_details)
 
         r_existing_resources = self.list_resources(logger, guest_request)
         if not is_successful(r_existing_resources):
@@ -4161,7 +4176,7 @@ class ResourceManager(Generic[ResourceT, ResourceCreationRequestT, ResourceCreat
         for leftover in leftover_resources:
             self.pool.dispatch_resource_cleanup(
                 logger,
-                session,
+                transaction,
                 leftover.to_pool_resource_ids(),
                 guest_request=guest_request,
             )

@@ -21,7 +21,7 @@ import tft.artemis.drivers.gcp
 import tft.artemis.drivers.ibmcloud.power
 import tft.artemis.drivers.ibmcloud.vpc
 import tft.artemis.drivers.openstack
-from tft.artemis.db import GuestRequest
+from tft.artemis.db import GuestRequest, Transaction
 from tft.artemis.drivers import PoolDriver
 from tft.artemis.routing_policies import (
     PolicyReturnType,
@@ -94,7 +94,8 @@ def hook_ROUTE(  # noqa: N802
     *,
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
+    transaction: Transaction,
     guest_request: GuestRequest,
     pools: list[PoolDriver[Any, Any]],
 ) -> PolicyReturnType:
-    return run_routing_policies(logger, session, guest_request, pools, POLICIES)
+    return run_routing_policies(logger, session, transaction, guest_request, pools, POLICIES)

@@ -34,10 +34,10 @@ class Workspace(_Workspace):
 
     @step
     def run(self) -> None:
-        with self.transaction():
-            self.load_guest_request(self.guestname, state=GuestState.PROVISIONING)
-            self.load_gr_pool()
-            self.test_pool_enabled()
+        with self.transaction() as transaction:
+            self.load_guest_request(transaction, self.guestname, state=GuestState.PROVISIONING)
+            self.load_gr_pool(transaction)
+            self.test_pool_enabled(transaction)
 
             if self.result:
                 return None
@@ -49,23 +49,23 @@ class Workspace(_Workspace):
             r_update_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.gr.poolname)
 
             if r_update_delay.is_error:
-                return self._error(r_update_delay, 'failed to load update delay')
+                return self._error(transaction, r_update_delay, 'failed to load update delay')
 
             if self.is_pool_enabled:
                 skip_prepare_verify_ssh = self.gr.skip_prepare_verify_ssh
 
                 log_dict_yaml(self.logger.info, 'provisioning environment', self.gr._environment)
 
-                result = self.pool.acquire_guest(self.logger, self.session, self.gr)
+                result = self.pool.acquire_guest(self.logger, self.session, transaction, self.gr)
 
                 if result.is_error:
-                    return self._error(result, 'failed to provision')
+                    return self._error(transaction, result, 'failed to provision')
 
                 provisioning_progress = result.unwrap()
 
                 # not returning here - pool was able to recover and proceed
                 for failure in provisioning_progress.pool_failures:
-                    self._fail(failure, 'pool encountered failure during acquisition', no_effect=True)
+                    self._fail(transaction, failure, 'pool encountered failure during acquisition', no_effect=True)
 
                 # We have a guest, we can move the guest record to the next state. The guest may be unfinished,
                 # in that case we should schedule a task for driver's update_guest method. Otherwise, we must
@@ -91,6 +91,7 @@ class Workspace(_Workspace):
                 from .update_guest_request import update_guest_request
 
                 self.update_guest_state_and_request_task(
+                    transaction,
                     GuestState.PROMISED,
                     update_guest_request,
                     self.guestname,
@@ -107,33 +108,36 @@ class Workspace(_Workspace):
                     # be tracked.
                     return None
 
-                self._progress('pool-resources-requested', pool_data=provisioning_progress.pool_data.serialize())
+                self._progress(
+                    transaction, 'pool-resources-requested', pool_data=provisioning_progress.pool_data.serialize()
+                )
 
             elif provisioning_progress.state == ProvisioningState.CANCEL:
-                self._progress('provisioning cancelled')
+                self._progress(transaction, 'provisioning cancelled')
 
                 # This may fail, and re-running task should be correct - probably nothing was allocated.
-                r_release = self.pool.release_guest(self.logger, self.session, self.gr)
+                r_release = self.pool.release_guest(self.logger, self.session, transaction, self.gr)
 
                 if r_release.is_error:
-                    return self._error(r_release, 'failed to release after cancel')
+                    return self._error(transaction, r_release, 'failed to release after cancel')
 
                 if not ProvisioningTailHandler(GuestState.PROVISIONING, GuestState.SHELF_LOOKUP).handle_tail(
                     self.logger,
                     self.db,
                     self.session,
+                    transaction,
                     TaskCall(
                         actor=acquire_guest_request,
                         args=(self.gr.guestname, self.pool.poolname),
                         arg_names=('guestname', 'poolname'),
                     ),
                 ):
-                    self._reschedule()
+                    self._reschedule(transaction)
 
             else:
                 assert provisioning_progress.address
 
-                self._progress('address-assigned', address=provisioning_progress.address)
+                self._progress(transaction, 'address-assigned', address=provisioning_progress.address)
 
                 new_guest_values['address'] = provisioning_progress.address
 
@@ -142,6 +146,7 @@ class Workspace(_Workspace):
                     from .prepare_finalize_pre_connect import prepare_finalize_pre_connect
 
                     self.update_guest_state_and_request_task(
+                        transaction,
                         GuestState.PREPARING,
                         prepare_finalize_pre_connect,
                         self.guestname,
@@ -157,6 +162,7 @@ class Workspace(_Workspace):
                     from .prepare_verify_ssh import prepare_verify_ssh
 
                     self.update_guest_state_and_request_task(
+                        transaction,
                         GuestState.PREPARING,
                         prepare_verify_ssh,
                         self.guestname,
@@ -174,7 +180,7 @@ class Workspace(_Workspace):
                     # be tracked.
                     return None
 
-                self._progress('successfully acquired')
+                self._progress(transaction, 'successfully acquired')
 
     @classmethod
     def create(

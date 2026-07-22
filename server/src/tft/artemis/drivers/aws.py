@@ -41,7 +41,7 @@ from .. import (
     logging_filter,
     render_template,
 )
-from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
+from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, Transaction
 from ..environment import (
     Constraint,
     Flavor,
@@ -2775,7 +2775,11 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
         return self._do_update_instance(logger, session, guest_request)
 
     def guest_watchdog(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
+        guest_request: GuestRequest,
     ) -> Result[WatchdogState, Failure]:
         """
         Perform any periodic tasks the driver might need to apply while the request is in use.
@@ -2815,7 +2819,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
         msg = 'spot instance terminated prematurely'
         guest_request.log_error_event(
             logger,
-            session,
+            transaction,
             msg,
             Failure(
                 msg,
@@ -2847,7 +2851,11 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
 
     @override
     def acquire_guest(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
+        guest_request: GuestRequest,
     ) -> Result[ProvisioningProgress, Failure]:
         r_image_flavor_pairs = self._collect_image_flavor_pairs(logger, session, guest_request)
 
@@ -2872,7 +2880,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
         # is no explicit request to transition from spot instance request to instance updates - once spot request is
         # fulfilled, we're given instance ID to work with.
 
-        self.log_acquisition_attempt(logger, session, guest_request, flavor=flavor, image=image)
+        self.log_acquisition_attempt(logger, transaction, guest_request, flavor=flavor, image=image)
 
         if self._should_use_spot_request(guest_request):
             return self._request_spot_instance(logger, session, guest_request, flavor, image)
@@ -2881,7 +2889,11 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
 
     @override
     def release_guest(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
+        guest_request: GuestRequest,
     ) -> Result[None, Failure]:
         """
         Release resources allocated for the guest back to the pool infrastructure.
@@ -2905,7 +2917,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
         if pool_data.security_group is not None:
             resource_ids.append(AWSPoolResourcesIDs(security_group=pool_data.security_group))
 
-        return self.dispatch_resource_cleanup(logger, session, *resource_ids, guest_request=guest_request)
+        return self.dispatch_resource_cleanup(logger, transaction, *resource_ids, guest_request=guest_request)
 
     @override
     def fetch_pool_flavor_info(self) -> Result[list[AWSFlavor], Failure]:

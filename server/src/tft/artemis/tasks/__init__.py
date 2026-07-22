@@ -60,9 +60,7 @@ from ..db import (
     SSHKey,
     TaskRequest,
     TaskSequenceRequest,
-    TransactionResult,
-    execute_dml,
-    transaction,
+    Transaction,
 )
 from ..drivers import (
     Instance,
@@ -1154,13 +1152,14 @@ def _task_core(
 
         guestname = failure.details['guestname']
 
-        r_state_change = _update_guest_state(
-            logger,
-            session,
-            guestname,
-            GuestState.ERROR,
-            # TODO: poolname=?
-        )
+        with Transaction.go(logger, session) as transaction:
+            r_state_change = _update_guest_state(
+                logger,
+                transaction,
+                guestname,
+                GuestState.ERROR,
+                # TODO: poolname=?
+            )
 
         # If the change failed, we're left with a loose end: the task marked the failure as something that will not
         # get better over time, but here we failed to mark the request as failed because of issue that may be
@@ -1177,6 +1176,23 @@ def _task_core(
             # task to fail, but we will get another chance to mark the guest as failed. This effectively drops the
             # original `IGNORE` result, replacing it with an error.
             if state_change_failure.recoverable is True:
+                return Error(failure)
+
+            # State change failed because of irrecoverable failure => no point to try again. Probably not very common,
+            # but still possible, in theory. At least try to log the situation before proceeding with the original
+            # `IGNORE`.
+            failure.handle(logger)
+
+        if transaction.is_error:
+            assert transaction.failure is not None  # narrow type
+
+            # Describes *when* this change was needed, i.e. what we attempted to do. Brings more context for humans.
+            failure = Failure.from_failure('failed to mark guest request as failed', transaction.failure)
+
+            # State change failed because of recoverable failure => use it as an excuse to try again. We can expect the
+            # task to fail, but we will get another chance to mark the guest as failed. This effectively drops the
+            # original `IGNORE` result, replacing it with an error.
+            if transaction.failure.recoverable is True:
                 return Error(failure)
 
             # State change failed because of irrecoverable failure => no point to try again. Probably not very common,
@@ -1477,14 +1493,14 @@ def dispatch_sequence(
 
 def _request_task(
     logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
+    transaction: Transaction,
     task: Actor,
     *task_arguments: ActorArgumentType,
     delay: Optional[int] = None,
     task_sequence_request_id: Optional[int] = None,
 ) -> Result[None, Failure]:
     r = TaskRequest.create(
-        logger, session, task, *task_arguments, delay=delay, task_sequence_request_id=task_sequence_request_id
+        logger, transaction, task, *task_arguments, delay=delay, task_sequence_request_id=task_sequence_request_id
     )
 
     if r.is_error:
@@ -1519,11 +1535,11 @@ def _request_task(
 
 def _request_task_sequence(
     logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
+    transaction: Transaction,
     tasks: list[tuple[Actor, tuple[ActorArgumentType, ...]]],
     delay: Optional[int] = None,
 ) -> Result[None, Failure]:
-    r = TaskSequenceRequest.create(logger, session)
+    r = TaskSequenceRequest.create(logger, transaction)
 
     if r.is_error:
         return Error(Failure.from_failure('failed to add task sequence request', r.unwrap_error()))
@@ -1535,12 +1551,17 @@ def _request_task_sequence(
     for i, (task, task_arguments) in enumerate(tasks):
         if i == 0:
             r_task = _request_task(
-                logger, session, task, *task_arguments, delay=delay, task_sequence_request_id=task_sequence_request_id
+                logger,
+                transaction,
+                task,
+                *task_arguments,
+                delay=delay,
+                task_sequence_request_id=task_sequence_request_id,
             )
 
         else:
             r_task = _request_task(
-                logger, session, task, *task_arguments, task_sequence_request_id=task_sequence_request_id
+                logger, transaction, task, *task_arguments, task_sequence_request_id=task_sequence_request_id
             )
 
         if r_task.is_error:
@@ -1593,7 +1614,7 @@ def _guest_state_update_query(
 
 def _update_guest_state(
     logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
+    transaction: Transaction,
     guestname: str,
     new_state: GuestState,
     current_state: Optional[GuestState] = None,
@@ -1626,7 +1647,7 @@ def _update_guest_state(
     if r_query.is_error:
         return handle_error(r_query, 'failed to create state update query')
 
-    r_execute: DMLResult[GuestRequest] = execute_dml(logger, session, r_query.unwrap())
+    r_execute: DMLResult[GuestRequest] = transaction.execute_dml(logger, r_query.unwrap())
 
     if r_execute.is_error:
         return handle_error(r_execute, 'failed to switch guest state')
@@ -1635,7 +1656,7 @@ def _update_guest_state(
 
     GuestRequest.log_event_by_guestname(
         logger,
-        session,
+        transaction,
         guestname,
         'state-changed',
         new_state=new_state.value,
@@ -1652,7 +1673,7 @@ def _update_guest_state(
 
 def _update_guest_state_and_request_task(
     logger: gluetool.log.ContextAdapter,
-    session: sqlalchemy.orm.session.Session,
+    transaction: Transaction,
     guestname: str,
     new_state: GuestState,
     task: Actor,
@@ -1693,21 +1714,21 @@ def _update_guest_state_and_request_task(
     if r_state_update_query.is_error:
         return handle_error(r_state_update_query, 'failed to create state update query')
 
-    r_execute: DMLResult[GuestRequest] = execute_dml(logger, session, r_state_update_query.unwrap())
+    r_execute: DMLResult[GuestRequest] = transaction.execute_dml(logger, r_state_update_query.unwrap())
 
     if r_execute.is_error:
         return handle_error(r_execute, 'failed to switch guest state')
 
     logger.warning(f'state switch: {current_state_label} => {new_state.value}: proposed')
 
-    r_task = _request_task(logger, session, task, *task_arguments, delay=delay)
+    r_task = _request_task(logger, transaction, task, *task_arguments, delay=delay)
 
     if r_task.is_error:
         return handle_error(r_task, 'failed to add task request')
 
     GuestRequest.log_event_by_guestname(
         logger,
-        session,
+        transaction,
         guestname,
         'state-changed',
         new_state=new_state.value,
@@ -1856,27 +1877,27 @@ class Workspace:
     def _event(self, event: str, **details: Any) -> None:
         log_dict_yaml(self.logger.info, 'logged event', {'eventname': event, 'details': details})
 
-    def _guest_request_event(self, event: str, **details: Any) -> None:
+    def _guest_request_event(self, transaction: Transaction, event: str, **details: Any) -> None:
         assert self.guestname
 
         GuestRequest.log_event_by_guestname(
-            self.logger, self.session, self.guestname, event, **self.spice_details, **details
+            self.logger, transaction, self.guestname, event, **self.spice_details, **details
         )
 
     @contextlib.contextmanager
-    def transaction(self) -> Generator[TransactionResult, None, None]:
-        with transaction(self.logger, self.session) as t:
-            yield t
+    def transaction(self) -> Generator[Transaction, None, None]:
+        with Transaction.go(self.logger, self.session) as transaction:
+            yield transaction
 
-        if not t.complete:
-            assert t.failure is not None  # narrow type
+        if not transaction.complete:
+            assert transaction.failure is not None  # narrow type
 
-            self.fail(t.failure, 'failed to complete transaction')
+            self.fail(transaction.failure, 'failed to complete transaction')
 
-    def _begin(self) -> None:
+    def _begin(self, transaction: Transaction) -> None:
         if self.guestname:
             if KNOB_TRACE_TASKS_AS_EVENTS.value:
-                self._guest_request_event('entered-task')
+                self._guest_request_event(transaction, 'entered-task')
 
             else:
                 self._event('entered-task')
@@ -1885,26 +1906,26 @@ class Workspace:
             self._event('entered-task')
 
     def begin(self) -> Self:
-        if self.guestname:
-            with self.transaction():
-                self._guest_request_event('entered-task')
+        with self.transaction() as transaction:
+            if self.guestname:
+                self._guest_request_event(transaction, 'entered-task')
 
-        else:
-            self._event('entered-task')
+            else:
+                self._event('entered-task')
 
         return self
 
-    def _progress(self, eventname: str, **details: Any) -> None:
+    def _progress(self, transaction: Transaction, eventname: str, **details: Any) -> None:
         if self.guestname:
-            self._guest_request_event(eventname, **details)
+            self._guest_request_event(transaction, eventname, **details)
 
         else:
             self._event(eventname, **details)
 
-    def _complete(self) -> None:
+    def _complete(self, transaction: Transaction) -> None:
         if self.guestname:
             if KNOB_TRACE_TASKS_AS_EVENTS.value:
-                self._guest_request_event('finished-task')
+                self._guest_request_event(transaction, 'finished-task')
 
             else:
                 self._event('finished-task')
@@ -1917,8 +1938,8 @@ class Workspace:
 
     def complete(self) -> Self:
         if self.guestname:
-            with self.transaction():
-                self._guest_request_event('finished-task')
+            with self.transaction() as transaction:
+                self._guest_request_event(transaction, 'finished-task')
 
         else:
             self._event('finished-task')
@@ -1928,10 +1949,10 @@ class Workspace:
 
         return self
 
-    def _reschedule(self) -> None:
+    def _reschedule(self, transaction: Transaction) -> None:
         if self.guestname:
             if KNOB_TRACE_TASKS_AS_EVENTS.value:
-                self._guest_request_event('rescheduled')
+                self._guest_request_event(transaction, 'rescheduled')
 
             else:
                 self._event('rescheduled')
@@ -1942,11 +1963,11 @@ class Workspace:
         if not self.result:
             self.result = RESCHEDULE
 
-    def _fail(self, failure: Failure, label: str, *, no_effect: bool = False) -> None:
+    def _fail(self, transaction: Transaction, failure: Failure, label: str, *, no_effect: bool = False) -> None:
         failure.handle(self.logger, label=label, sentry=True, guestname=self.guestname, **self.spice_details)
 
         if self.guestname:
-            GuestRequest.log_error_event_by_guestname(self.logger, self.session, self.guestname, label, failure)
+            GuestRequest.log_error_event_by_guestname(self.logger, transaction, self.guestname, label, failure)
 
         else:
             self._event(label, failure=failure.get_event_details())
@@ -1959,17 +1980,22 @@ class Workspace:
                 self.result = IGNORE(Error(failure))
 
     def fail(self, failure: Failure, label: str, *, no_effect: bool = False) -> None:
-        with self.transaction():
-            self._fail(failure, label, no_effect=no_effect)
+        with self.transaction() as transaction:
+            self._fail(transaction, failure, label, no_effect=no_effect)
 
-    def _error(self, error: Result[Any, Failure], label: str, *, no_effect: bool = False) -> None:
-        self._fail(error.unwrap_error(), label, no_effect=no_effect)
+    def _error(
+        self, transaction: Transaction, error: Result[Any, Failure], label: str, *, no_effect: bool = False
+    ) -> None:
+        self._fail(transaction, error.unwrap_error(), label, no_effect=no_effect)
 
-    def _error_v2(self, error: _Result[Any, Failure], label: str, *, no_effect: bool = False) -> None:
-        self._fail(error.failure(), label, no_effect=no_effect)
+    def _error_v2(
+        self, transaction: Transaction, error: _Result[Any, Failure], label: str, *, no_effect: bool = False
+    ) -> None:
+        self._fail(transaction, error.failure(), label, no_effect=no_effect)
 
     def update_guest_state(
         self,
+        transaction: Transaction,
         new_state: GuestState,
         current_state: Optional[GuestState] = None,
         set_values: Optional[GuestFieldStates] = None,
@@ -1984,7 +2010,7 @@ class Workspace:
 
         r = _update_guest_state(
             self.logger,
-            self.session,
+            transaction,
             self.guestname,
             new_state,
             current_state=current_state,
@@ -1995,13 +2021,13 @@ class Workspace:
         )
 
         if r.is_error:
-            self._error(r, 'failed to update guest request')
+            self._error(transaction, r, 'failed to update guest request')
 
     #
     #
     #
 
-    def load_guest_request(self, guestname: str, state: Optional[GuestState] = None) -> Self:
+    def load_guest_request(self, transaction: Transaction, guestname: str, state: Optional[GuestState] = None) -> Self:
         """Load a guest request from a database, as long as it is in a given state."""
 
         if self.result:
@@ -2025,13 +2051,13 @@ class Workspace:
             )
 
         if r.is_error:
-            self._error(r, 'failed to load guest request')
+            self._error(transaction, r, 'failed to load guest request')
             return self
 
         gr = r.unwrap()
 
         if not gr:
-            self._complete()
+            self._complete(transaction)
             return self
 
         self.gr = gr
@@ -2040,25 +2066,29 @@ class Workspace:
 
         return self
 
-    def load_master_ssh_key(self) -> Self:
+    def load_master_ssh_key(self, transaction: Transaction) -> Self:
         if self.result:
             return self
 
         r = _get_ssh_key('artemis', 'master-key')
 
         if r.is_error:
-            self._error(r, 'failed to get master SSH key')
+            self._error(transaction, r, 'failed to get master SSH key')
             return self
 
         self.master_key = r.unwrap()
 
         if self.master_key is None:
-            self._fail(Failure('no such SSH key', ownername='artemis', keyname='master-key'), 'failed to find SSH key')
+            self._fail(
+                transaction,
+                Failure('no such SSH key', ownername='artemis', keyname='master-key'),
+                'failed to find SSH key',
+            )
             return self
 
         return self
 
-    def load_shelf(self, shelfname: str, state: Optional[GuestState] = None) -> None:
+    def load_shelf(self, transaction: Transaction, shelfname: str, state: Optional[GuestState] = None) -> None:
         if self.result:
             return
 
@@ -2072,7 +2102,7 @@ class Workspace:
         r = query.one_or_none()
 
         if r.is_error:
-            self._error(r, 'failed to load shelf')
+            self._error(transaction, r, 'failed to load shelf')
             return
 
         shelf = r.unwrap()
@@ -2083,7 +2113,7 @@ class Workspace:
 
         self.shelf = shelf
 
-    def load_gr_pool(self) -> Self:
+    def load_gr_pool(self, transaction: Transaction) -> Self:
         """
         Load a pool as specified by a guest request.
         """
@@ -2097,14 +2127,14 @@ class Workspace:
         r = PoolDriver.load(self.logger, self.session, self.gr.poolname)
 
         if r.is_error:
-            self._error(r, 'pool sanity failed')
+            self._error(transaction, r, 'pool sanity failed')
             return self
 
         self.pool = r.unwrap()
 
         return self
 
-    def test_pool_enabled(self) -> Self:
+    def test_pool_enabled(self, transaction: Transaction) -> Self:
         if self.result:
             return self
 
@@ -2113,14 +2143,14 @@ class Workspace:
         r = self.pool.is_enabled(self.session)
 
         if r.is_error:
-            self._error(r, 'pool enablement check failed')
+            self._error(transaction, r, 'pool enablement check failed')
             return self
 
         self.is_pool_enabled = r.unwrap()
 
         return self
 
-    def load_guest_events(self, eventname: Optional[str] = None) -> None:
+    def load_guest_events(self, transaction: Transaction, eventname: Optional[str] = None) -> None:
         if self.result:
             return None
 
@@ -2129,12 +2159,17 @@ class Workspace:
         r_events = GuestEvent.fetch(self.session, eventname=eventname, guestname=self.guestname)
 
         if r_events.is_error:
-            return self._error(r_events, 'failed to fetch events')
+            return self._error(transaction, r_events, 'failed to fetch events')
 
         self.guest_events = r_events.unwrap()
 
     def dispatch_task(
-        self, task: Actor, *args: Any, delay: Optional[int] = None, logger: Optional[gluetool.log.ContextAdapter] = None
+        self,
+        transaction: Transaction,
+        task: Actor,
+        *args: Any,
+        delay: Optional[int] = None,
+        logger: Optional[gluetool.log.ContextAdapter] = None,
     ) -> None:
         if self.result:
             return
@@ -2144,27 +2179,32 @@ class Workspace:
         r = dispatch_task(logger, task, *args, delay=delay)
 
         if r.is_error:
-            self._error(r, 'failed to dispatch task')
+            self._error(transaction, r, 'failed to dispatch task')
 
-    def request_task(self, task: Actor, *task_arguments: ActorArgumentType, delay: Optional[int] = None) -> None:
-        if self.result:
-            return
-
-        r = _request_task(self.logger, self.session, task, *task_arguments, delay=delay)
-
-        if r.is_error:
-            self._error(r, 'failed to create task request')
-
-    def request_task_sequence(
-        self, tasks: list[tuple[Actor, tuple[ActorArgumentType, ...]]], delay: Optional[int] = None
+    def request_task(
+        self, transaction: Transaction, task: Actor, *task_arguments: ActorArgumentType, delay: Optional[int] = None
     ) -> None:
         if self.result:
             return
 
-        r = _request_task_sequence(self.logger, self.session, tasks, delay=delay)
+        r = _request_task(self.logger, transaction, task, *task_arguments, delay=delay)
 
         if r.is_error:
-            self._error(r, 'failed to create task sequence request')
+            self._error(transaction, r, 'failed to create task request')
+
+    def request_task_sequence(
+        self,
+        transaction: Transaction,
+        tasks: list[tuple[Actor, tuple[ActorArgumentType, ...]]],
+        delay: Optional[int] = None,
+    ) -> None:
+        if self.result:
+            return
+
+        r = _request_task_sequence(self.logger, transaction, tasks, delay=delay)
+
+        if r.is_error:
+            self._error(transaction, r, 'failed to create task sequence request')
 
     def run_hook(self, hook_name: str, **kwargs: Any) -> Result[Any, Failure]:
         r_engine = hook_engine(hook_name)
@@ -2183,14 +2223,14 @@ class Workspace:
 
         return r
 
-    def load_pools(self) -> Self:
+    def load_pools(self, transaction: Transaction) -> Self:
         if self.result:
             return self
 
         r_pools = PoolDriver.load_all(self.logger, self.session)
 
         if r_pools.is_error:
-            self._error(r_pools, 'failed to fetch pools')
+            self._error(transaction, r_pools, 'failed to fetch pools')
             return self
 
         self.pools = r_pools.unwrap()
@@ -2214,6 +2254,7 @@ class Workspace:
 
     def update_guest_state_and_request_task(
         self,
+        transaction: Transaction,
         new_state: GuestState,
         task: Actor,
         *task_arguments: ActorArgumentType,
@@ -2235,7 +2276,7 @@ class Workspace:
 
         r = _update_guest_state_and_request_task(
             self.logger,
-            self.session,
+            transaction,
             self.guestname,
             new_state,
             task,
@@ -2249,7 +2290,7 @@ class Workspace:
         )
 
         if r.is_error:
-            self._error(r, 'failed to update guest state and dispatch task')
+            self._error(transaction, r, 'failed to update guest state and dispatch task')
 
         return self
 
@@ -2283,18 +2324,24 @@ class TailHandler:
         logger: gluetool.log.ContextAdapter,
         db: DB,
         session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
         task_call: TaskCall,
         failure_details: dict[str, str],
     ) -> DoerReturnType:
         raise NotImplementedError
 
     def handle_tail(
-        self, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session, task_call: TaskCall
+        self,
+        logger: gluetool.log.ContextAdapter,
+        db: DB,
+        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
+        task_call: TaskCall,
     ) -> bool:
         logger = self.get_logger(logger, task_call)
         failure_details = self.get_failure_details(logger, db, session, task_call)
 
-        r = self.do_handle_tail(logger, db, session, task_call, failure_details)
+        r = self.do_handle_tail(logger, db, session, transaction, task_call, failure_details)
 
         if r.is_ok:
             if r is SUCCESS:
@@ -2358,12 +2405,13 @@ class ProvisioningTailHandler(TailHandler):
         logger: gluetool.log.ContextAdapter,
         db: DB,
         session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
         task_call: TaskCall,
         failure_details: dict[str, str],
     ) -> DoerReturnType:
         workspace = Workspace(logger, session, db=db, task='provisioning-tail', **failure_details)
 
-        workspace._begin()
+        workspace._begin(transaction)
 
         # Chicken and egg problem: we need guestname for logging context, but if it's missing,
         # we need to report the failure, and that's usually done by calling `error`.
@@ -2371,7 +2419,7 @@ class ProvisioningTailHandler(TailHandler):
         if not task_call.has_args('guestname'):
             r: DoerReturnType = Error(Failure('cannot handle chain tail with undefined arguments', task_call=task_call))
 
-            workspace._error(r, 'failed to extract actor arguments')
+            workspace._error(transaction, r, 'failed to extract actor arguments')
 
             return IGNORE(r)
 
@@ -2380,7 +2428,7 @@ class ProvisioningTailHandler(TailHandler):
         # guestname can never be None
         assert isinstance(guestname, str)
 
-        workspace.load_guest_request(guestname, state=self.current_state)
+        workspace.load_guest_request(transaction, guestname, state=self.current_state)
 
         if workspace.result:
             return workspace.result
@@ -2392,7 +2440,7 @@ class ProvisioningTailHandler(TailHandler):
         if workspace.gr.poolname:
             workspace.spice_details['poolname'] = workspace.gr.poolname
 
-            workspace.load_gr_pool()
+            workspace.load_gr_pool(transaction)
 
             if workspace.result:
                 return workspace.result
@@ -2403,10 +2451,10 @@ class ProvisioningTailHandler(TailHandler):
 
             # Release guest and its resources but only if pool is not asked to keep resources allocated.
             if not pool_data.is_empty and not workspace.pool.preserve_for_investigation:
-                r_release = workspace.pool.release_guest(logger, workspace.session, workspace.gr)
+                r_release = workspace.pool.release_guest(logger, workspace.session, transaction, workspace.gr)
 
                 if r_release.is_error:
-                    workspace._error(r_release, 'failed to release guest resources')
+                    workspace._error(transaction, r_release, 'failed to release guest resources')
 
                     return RESCHEDULE
 
@@ -2416,6 +2464,7 @@ class ProvisioningTailHandler(TailHandler):
             from .guest_shelf_lookup import guest_shelf_lookup
 
             workspace.update_guest_state_and_request_task(
+                transaction,
                 self.new_state,
                 guest_shelf_lookup,
                 workspace.guestname,
@@ -2428,6 +2477,7 @@ class ProvisioningTailHandler(TailHandler):
             from .route_guest_request import route_guest_request
 
             workspace.update_guest_state_and_request_task(
+                transaction,
                 self.new_state,
                 route_guest_request,
                 workspace.guestname,
@@ -2438,6 +2488,7 @@ class ProvisioningTailHandler(TailHandler):
 
         elif self.new_state == GuestState.ERROR:
             workspace.update_guest_state(
+                transaction,
                 self.new_state,
                 current_state=self.current_state,
                 current_pool_data=workspace.gr._pool_data,
@@ -2446,6 +2497,7 @@ class ProvisioningTailHandler(TailHandler):
 
         else:
             workspace._fail(
+                transaction,
                 Failure('unhandled new state in provisioning tail handler', new_state=self.new_state.value),
                 'unhandled new state in provisioning tail handler',
             )
@@ -2455,9 +2507,9 @@ class ProvisioningTailHandler(TailHandler):
         if workspace.result:
             return workspace.result
 
-        workspace._progress(f'reverted to {self.new_state.value}')
+        workspace._progress(transaction, f'reverted to {self.new_state.value}')
 
-        workspace._complete()
+        workspace._complete(transaction)
 
         return SUCCESS
 
@@ -2487,12 +2539,13 @@ class LoggingTailHandler(TailHandler):
         logger: gluetool.log.ContextAdapter,
         db: DB,
         session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
         task_call: TaskCall,
         failure_details: dict[str, str],
     ) -> DoerReturnType:
         workspace = Workspace(logger, session, db=db, task='logging-tail', **failure_details)
 
-        workspace._begin()
+        workspace._begin(transaction)
 
         # Chicken and egg problem: we need guestname for logging context, but if it's missing,
         # we need to report the failure, and that's usually done by calling `error`.
@@ -2502,7 +2555,7 @@ class LoggingTailHandler(TailHandler):
                 Failure('cannot handle logging tail with undefined arguments', task_call=task_call)
             )
 
-            workspace._error(r, 'failed to extract actor arguments')
+            workspace._error(transaction, r, 'failed to extract actor arguments')
 
             return IGNORE(r)
 
@@ -2518,14 +2571,14 @@ class LoggingTailHandler(TailHandler):
             .values(updated=datetime.datetime.utcnow(), state=GuestLogState.ERROR)
         )
 
-        r_store: DMLResult[GuestLog] = execute_dml(logger, workspace.session, query)
+        r_store: DMLResult[GuestLog] = transaction.execute_dml(logger, query)
 
         if r_store.is_error:
-            workspace._error(r_store, 'failed to update the log')
+            workspace._error(transaction, r_store, 'failed to update the log')
 
         if workspace.result:
             return workspace.result
 
-        workspace._complete()
+        workspace._complete(transaction)
 
         return SUCCESS

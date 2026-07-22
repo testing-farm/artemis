@@ -44,9 +44,9 @@ class Workspace(_Workspace):
         Foo.
         """
 
-        with self.transaction():
-            self.load_guest_request(self.guestname, state=GuestState.ROUTING)
-            self.load_pools()
+        with self.transaction() as transaction:
+            self.load_guest_request(transaction, self.guestname, state=GuestState.ROUTING)
+            self.load_pools(transaction)
 
             if self.result:
                 return None
@@ -54,18 +54,21 @@ class Workspace(_Workspace):
             assert self.gr
 
             r_ruling = cast(
-                PolicyReturnType, self.run_hook('ROUTE', session=self.session, guest_request=self.gr, pools=self.pools)
+                PolicyReturnType,
+                self.run_hook(
+                    'ROUTE', session=self.session, transaction=transaction, guest_request=self.gr, pools=self.pools
+                ),
             )
 
             if r_ruling.is_error:
-                return self._error(r_ruling, 'routing hook failed')
+                return self._error(transaction, r_ruling, 'routing hook failed')
 
             ruling = r_ruling.unwrap()
 
             if ruling.cancel:
-                self._progress('routing-cancelled')
+                self._progress(transaction, 'routing-cancelled')
 
-                self.update_guest_state(GuestState.ERROR, current_state=GuestState.ROUTING)
+                self.update_guest_state(transaction, GuestState.ERROR, current_state=GuestState.ROUTING)
 
                 return None
 
@@ -73,13 +76,14 @@ class Workspace(_Workspace):
             if not ruling.allows_pools:
                 metrics.ProvisioningMetrics.inc_empty_routing(self.gr.last_poolname)
 
-                return self._reschedule()
+                return self._reschedule(transaction)
 
             # At this point, all pools are equally worthy: we may very well use the first one.
             current_poolname = self.gr.poolname
             new_poolname = ruling.allowed_rulings[0].pool.poolname
 
             self.update_guest_state_and_request_task(
+                transaction,
                 GuestState.PROVISIONING,
                 acquire_guest_request,
                 self.guestname,
@@ -90,7 +94,9 @@ class Workspace(_Workspace):
 
             # If new pool has been chosen, log failover.
             if new_poolname != current_poolname:
-                self._guest_request_event('routing-failover', current_pool=current_poolname, new_pool=new_poolname)
+                self._guest_request_event(
+                    transaction, 'routing-failover', current_pool=current_poolname, new_pool=new_poolname
+                )
 
                 metrics.ProvisioningMetrics.inc_failover(current_poolname, new_poolname)
 

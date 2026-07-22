@@ -57,26 +57,27 @@ class Workspace(_Workspace):
         Foo.
         """
 
-        with self.transaction():
-            self.load_pools()
+        with self.transaction() as transaction:
+            self.load_pools(transaction)
 
-        if self.result:
-            return
-
-        self._progress('scheduling pool group avoidance hostnames refresh')
-
-        for pool in self.pools:
             if self.result:
                 return
 
-            if not isinstance(pool, BeakerDriver):
-                continue
+            self._progress(transaction, 'scheduling pool group avoidance hostnames refresh')
 
-            self.dispatch_task(
-                refresh_pool_avoid_groups_hostnames,
-                pool.poolname,
-                logger=get_pool_logger(Workspace.TASKNAME, self.logger, pool.poolname),
-            )
+            for pool in self.pools:
+                if self.result:
+                    return
+
+                if not isinstance(pool, BeakerDriver):
+                    continue
+
+                self.dispatch_task(
+                    transaction,
+                    refresh_pool_avoid_groups_hostnames,
+                    pool.poolname,
+                    logger=get_pool_logger(Workspace.TASKNAME, self.logger, pool.poolname),
+                )
 
     @classmethod
     def create(

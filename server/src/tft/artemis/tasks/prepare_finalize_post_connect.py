@@ -43,9 +43,9 @@ class Workspace(_Workspace):
 
     @step
     def run(self) -> None:
-        with self.transaction():
-            self.load_guest_request(self.guestname, state=GuestState.PREPARING)
-            self.load_gr_pool()
+        with self.transaction() as transaction:
+            self.load_guest_request(transaction, self.guestname, state=GuestState.PREPARING)
+            self.load_gr_pool(transaction)
 
             if self.result:
                 return None
@@ -64,11 +64,14 @@ class Workspace(_Workspace):
                 )
 
                 if r_guest_watchdog_dispatch_delay.is_error:
-                    return self._error(r_guest_watchdog_dispatch_delay, 'failed to fetch pool watchdog dispatch delay')
+                    return self._error(
+                        transaction, r_guest_watchdog_dispatch_delay, 'failed to fetch pool watchdog dispatch delay'
+                    )
 
                 delay = r_guest_watchdog_dispatch_delay.unwrap()
 
             self.update_guest_state_and_request_task(
+                transaction,
                 GuestState.READY,
                 guest_request_watchdog,
                 self.guestname,
@@ -79,7 +82,7 @@ class Workspace(_Workspace):
             if self.result:
                 return None
 
-            self._progress('successfully provisioned')
+            self._progress(transaction, 'successfully provisioned')
 
             # calculate provisioning duration time
             provisioning_duration = (datetime.datetime.utcnow() - self.gr.ctime).total_seconds()
@@ -89,7 +92,7 @@ class Workspace(_Workspace):
             metrics.ProvisioningMetrics.inc_provisioning_durations(provisioning_duration)
 
             # check if this was a failover and mark it in metrics
-            self.load_guest_events(eventname='error')
+            self.load_guest_events(transaction, eventname='error')
 
             if self.result:
                 return None
@@ -133,9 +136,9 @@ class Workspace(_Workspace):
                 r_actor = resolve_actor(taskname)
 
                 if r_actor.is_error:
-                    return self._error(r_actor, 'failed to find task')
+                    return self._error(transaction, r_actor, 'failed to find task')
 
-                self.request_task(r_actor.unwrap(), self.guestname, *arguments)
+                self.request_task(transaction, r_actor.unwrap(), self.guestname, *arguments)
 
     @classmethod
     def create(

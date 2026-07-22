@@ -44,23 +44,23 @@ class Workspace(_Workspace):
 
     @step
     def run(self) -> None:
-        with self.transaction():
+        with self.transaction() as transaction:
             r_pool = PoolDriver.load(self.logger, self.session, self.poolname)
 
             if r_pool.is_error:
-                return self._error(r_pool, 'pool sanity failed')
+                return self._error(transaction, r_pool, 'pool sanity failed')
 
             pool = r_pool.unwrap()
 
             r_enabled = pool.is_enabled(self.session)
 
             if r_enabled.is_error:
-                return self._error(r_enabled, 'failed to inspect pool')
+                return self._error(transaction, r_enabled, 'failed to inspect pool')
 
             if r_enabled.unwrap() is not True:
-                self._guest_request_event('pool-disabled')
+                self._guest_request_event(transaction, 'pool-disabled')
 
-                return self._reschedule()
+                return self._reschedule(transaction)
 
             r_release = pool.release_pool_resources(self.logger, self.serialized_resource_ids)
 
@@ -70,15 +70,15 @@ class Workspace(_Workspace):
                 failure = r_release.unwrap_error()
                 failure.fail_guest_request = False
 
-                return self._error(r_release, 'failed to release pool resources')
+                return self._error(transaction, r_release, 'failed to release pool resources')
 
             if r_release.unwrap() is ReleasePoolResourcesState.BLOCKED:
                 # The resource cannot be released just yet because it is blocked on a prior resource.
-                self._guest_request_event('resource-blocked')
+                self._guest_request_event(transaction, 'resource-blocked')
 
-                return self._reschedule()
+                return self._reschedule(transaction)
 
-            self._progress('released')
+            self._progress(transaction, 'released')
 
     @classmethod
     def create(

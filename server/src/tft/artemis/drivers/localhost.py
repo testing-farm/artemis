@@ -10,7 +10,7 @@ from gluetool.result import Error, Ok, Result
 from typing_extensions import override
 
 from .. import Failure
-from ..db import GuestRequest
+from ..db import GuestRequest, Transaction
 from . import (
     CommonErrorCauses,
     ConfigImageFilter,
@@ -49,9 +49,13 @@ class LocalhostDriver(PoolDriver[LocalhostErrorCauses, Instance]):
 
     @override
     def acquire_guest(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
+        guest_request: GuestRequest,
     ) -> Result[ProvisioningProgress, Failure]:
-        self.log_acquisition_attempt(logger, session, guest_request)
+        self.log_acquisition_attempt(logger, transaction, guest_request)
 
         return Ok(
             ProvisioningProgress(
@@ -71,7 +75,11 @@ class LocalhostDriver(PoolDriver[LocalhostErrorCauses, Instance]):
 
     @override
     def release_guest(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
+        guest_request: GuestRequest,
     ) -> Result[None, Failure]:
         """
         Release resources allocated for the guest back to the pool infrastructure.

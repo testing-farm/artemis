@@ -17,7 +17,7 @@ import gluetool.log
 import sqlalchemy
 import sqlalchemy.orm.session
 
-from ..db import DB, DMLResult, GuestRequest, SafeQuery, execute_dml
+from ..db import DB, DMLResult, GuestRequest, SafeQuery
 from ..guest import GuestState
 from ..metrics import ShelfMetrics
 from . import (
@@ -44,8 +44,8 @@ class Workspace(_Workspace):
 
     @step
     def run(self) -> None:
-        with self.transaction():
-            self.load_guest_request(self.guestname, state=GuestState.SHELF_LOOKUP)
+        with self.transaction() as transaction:
+            self.load_guest_request(transaction, self.guestname, state=GuestState.SHELF_LOOKUP)
 
             if self.result:
                 return None
@@ -54,7 +54,11 @@ class Workspace(_Workspace):
 
             if not self.gr.shelfname or self.gr.bypass_shelf_lookup is True:
                 self.update_guest_state_and_request_task(
-                    GuestState.ROUTING, route_guest_request, self.guestname, current_state=GuestState.SHELF_LOOKUP
+                    transaction,
+                    GuestState.ROUTING,
+                    route_guest_request,
+                    self.guestname,
+                    current_state=GuestState.SHELF_LOOKUP,
                 )
 
                 return None
@@ -69,7 +73,7 @@ class Workspace(_Workspace):
             )
 
             if r_guests.is_error:
-                return self._error(r_guests, 'failed to load shelved guests')
+                return self._error(transaction, r_guests, 'failed to load shelved guests')
 
             shelved_guests: list[GuestRequest] = r_guests.unwrap()
 
@@ -92,6 +96,7 @@ class Workspace(_Workspace):
 
                     # Use this guest to serve the GR
                     self.update_guest_state_and_request_task(
+                        transaction,
                         GuestState.PREPARING,
                         prepare_finalize_pre_connect,
                         self.guestname,
@@ -102,16 +107,15 @@ class Workspace(_Workspace):
                         },
                     )
 
-                    r_delete: DMLResult[GuestRequest] = execute_dml(
+                    r_delete: DMLResult[GuestRequest] = transaction.execute_dml(
                         self.logger,
-                        self.session,
                         sqlalchemy.delete(GuestRequest)
                         .where(GuestRequest.guestname == selected_guest.guestname)
                         .where(GuestRequest.state == GuestState.SHELVED),
                     )
 
                     if r_delete.is_error:
-                        return self._error(r_delete, 'failed to remove the original guest request record')
+                        return self._error(transaction, r_delete, 'failed to remove the original guest request record')
 
                     ShelfMetrics.inc_removals(self.gr.shelfname)
 
@@ -119,7 +123,11 @@ class Workspace(_Workspace):
                 ShelfMetrics.inc_misses(self.gr.shelfname)
 
                 self.update_guest_state_and_request_task(
-                    GuestState.ROUTING, route_guest_request, self.guestname, current_state=GuestState.SHELF_LOOKUP
+                    transaction,
+                    GuestState.ROUTING,
+                    route_guest_request,
+                    self.guestname,
+                    current_state=GuestState.SHELF_LOOKUP,
                 )
 
     @classmethod

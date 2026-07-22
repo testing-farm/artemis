@@ -91,11 +91,11 @@ class Workspace(_Workspace):
 
         assert self.guestname
 
-        with self.transaction():
+        with self.transaction() as transaction:
             # Load GR, pool and SSH key
-            self.load_guest_request(self.guestname, state=GuestState.PREPARING)
-            self.load_gr_pool()
-            self.load_master_ssh_key()
+            self.load_guest_request(transaction, self.guestname, state=GuestState.PREPARING)
+            self.load_gr_pool(transaction)
+            self.load_master_ssh_key(transaction)
 
             if self.result:
                 return None
@@ -110,7 +110,7 @@ class Workspace(_Workspace):
             )
 
             if r_ssh_timeout.is_error:
-                return self._error(r_ssh_timeout, 'failed to obtain SSH timeout value')
+                return self._error(transaction, r_ssh_timeout, 'failed to obtain SSH timeout value')
 
             ssh_timeout = r_ssh_timeout.unwrap()
 
@@ -155,19 +155,23 @@ class Workspace(_Workspace):
                         )
 
                         if r_guest_log.is_error:
-                            return self._error(r_guest_log, f'failed to load the log {logname}', no_effect=True)
+                            return self._error(
+                                transaction, r_guest_log, f'failed to load the log {logname}', no_effect=True
+                            )
 
                         log = r_guest_log.unwrap()
 
                         if log is not None:
-                            r_store_log = log.update(self.logger, self.session, GuestLogState.COMPLETE)
+                            r_store_log = log.update(self.logger, transaction, GuestLogState.COMPLETE)
 
                             if r_store_log.is_error:
-                                return self._error(r_store_log, f'failed to update the log {logname}', no_effect=True)
+                                return self._error(
+                                    transaction, r_store_log, f'failed to update the log {logname}', no_effect=True
+                                )
                         else:
                             r_create_log = GuestLog.create(
                                 self.logger,
-                                self.session,
+                                transaction,
                                 self.gr.guestname,
                                 logname,
                                 GuestLogContentType.BLOB,
@@ -175,15 +179,20 @@ class Workspace(_Workspace):
                             )
 
                             if r_create_log.is_error:
-                                return self._error(r_create_log, f'failed to create the log {logname}', no_effect=True)
+                                return self._error(
+                                    transaction, r_create_log, f'failed to create the log {logname}', no_effect=True
+                                )
 
                             log = r_create_log.unwrap()
 
-                        r_store_blob = blob.save(self.logger, self.session, log, overwrite=True)
+                        r_store_blob = blob.save(self.logger, transaction, log, overwrite=True)
 
                         if r_store_blob.is_error:
                             return self._error(
-                                r_store_blob, f'failed to store the blob for the log {logname}', no_effect=True
+                                transaction,
+                                r_store_blob,
+                                f'failed to store the blob for the log {logname}',
+                                no_effect=True,
                             )
 
             def _pull_logs(*, finished: bool = False) -> Result[None, Failure]:
@@ -193,7 +202,7 @@ class Workspace(_Workspace):
                 except Exception as exc:
                     return Error(Failure.from_exc('failed getting logs from the guest', exc))
 
-                self._guest_request_event('installation-logs-downloaded')
+                self._guest_request_event(transaction, 'installation-logs-downloaded')
 
                 return Ok(None)
 
@@ -212,6 +221,7 @@ class Workspace(_Workspace):
 
             if r_ping.is_error:
                 return self._fail(
+                    transaction,
                     Failure.from_failure('failed to connect to the guest', r_ping.unwrap_error()),
                     'failed to connect to the guest',
                 )
@@ -248,23 +258,29 @@ class Workspace(_Workspace):
                     r_logs = _pull_logs(finished=False)
 
                     if r_logs.is_error:
-                        self._fail(r_logs.unwrap_error(), 'failed to fetch and store kickstart logs', no_effect=True)
+                        self._fail(
+                            transaction,
+                            r_logs.unwrap_error(),
+                            'failed to fetch and store kickstart logs',
+                            no_effect=True,
+                        )
 
                     return self._fail(
+                        transaction,
                         Failure('the installation terminated with an error', recoverable=False),
                         'the installation terminated with an error',
                     )
 
-                self._progress('install-inprogress')
+                self._progress(transaction, 'install-inprogress')
 
                 r_delay = KNOB_PREPARE_KICKSTART_WAIT_RETRY_DELAY.get_value(
                     session=self.session, entityname=self.pool.poolname
                 )
 
                 if r_delay.is_error:
-                    return self._error(r_delay, 'failed to load task retry delay')
+                    return self._error(transaction, r_delay, 'failed to load task retry delay')
 
-                self.request_task(prepare_kickstart_wait, self.guestname, delay=r_delay.unwrap())
+                self.request_task(transaction, prepare_kickstart_wait, self.guestname, delay=r_delay.unwrap())
 
                 return None
 
@@ -282,16 +298,18 @@ class Workspace(_Workspace):
             )
 
             if r_install.is_error:
-                return self._error(r_install, 'failed to verify the kickstart installation was performed')
+                return self._error(transaction, r_install, 'failed to verify the kickstart installation was performed')
 
             # Pull logs once we are done
             r_logs = _pull_logs(finished=True)
 
             if r_logs.is_error:
-                self._fail(r_logs.unwrap_error(), 'failed to fetch and store kickstart logs', no_effect=True)
+                self._fail(
+                    transaction, r_logs.unwrap_error(), 'failed to fetch and store kickstart logs', no_effect=True
+                )
 
             # Dispatch next task.
-            self.request_task(prepare_finalize_pre_connect, self.guestname)
+            self.request_task(transaction, prepare_finalize_pre_connect, self.guestname)
 
     @classmethod
     def create(

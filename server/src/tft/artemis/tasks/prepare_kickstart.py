@@ -113,11 +113,11 @@ class Workspace(_Workspace):
 
         assert self.guestname
 
-        with self.transaction():
+        with self.transaction() as transaction:
             # Load GR and associated info
-            self.load_guest_request(self.guestname, state=GuestState.PREPARING)
-            self.load_gr_pool()
-            self.load_master_ssh_key()
+            self.load_guest_request(transaction, self.guestname, state=GuestState.PREPARING)
+            self.load_gr_pool(transaction)
+            self.load_master_ssh_key(transaction)
 
             if self.result:
                 return None
@@ -132,7 +132,7 @@ class Workspace(_Workspace):
             )
 
             if r_ssh_timeout.is_error:
-                return self._error(r_ssh_timeout, 'failed to obtain SSH timeout value')
+                return self._error(transaction, r_ssh_timeout, 'failed to obtain SSH timeout value')
 
             ssh_timeout = r_ssh_timeout.unwrap()
 
@@ -152,14 +152,16 @@ class Workspace(_Workspace):
             if r_check.is_ok:
                 # If the command succeeded, the file exists on the remote host and
                 # installation must have already finished.
-                return self._guest_request_event('already-reinstalled')
+                return self._guest_request_event(transaction, 'already-reinstalled')
 
             # Verify the error is due to the file missing, which indicates the installer had not run yet
             failure = r_check.unwrap_error()
             stderr = failure.details['command_output'].stderr if 'command_output' in failure.details else None
 
             if stderr is not None and "cannot access '/.ksinstall': No such file or directory" not in stderr:
-                return self._fail(failure, 'could not verify whether kickstart installation was already started')
+                return self._fail(
+                    transaction, failure, 'could not verify whether kickstart installation was already started'
+                )
 
             # Fetch preserved files from the guest
             files_tmp_dir = TemporaryDirectory()
@@ -170,6 +172,7 @@ class Workspace(_Workspace):
                     os.makedirs(dst_dir, mode=0o700, exist_ok=True)
                 except Exception as exc:
                     return self._fail(
+                        transaction,
                         Failure.from_exc('failed to create a local destination directory', exc),
                         'failed to create a local destination directory',
                     )
@@ -190,7 +193,7 @@ class Workspace(_Workspace):
                 if r_copy.is_error:
                     # Error out if we fail to copy the file
                     # TODO: Should we error out or continue if the file is missing?
-                    return self._error(r_copy, 'failed to fetch a file from remote')
+                    return self._error(transaction, r_copy, 'failed to fetch a file from remote')
 
             files = {}
 
@@ -215,7 +218,7 @@ class Workspace(_Workspace):
                 }
             except Exception as exc:
                 return self._fail(
-                    Failure.from_exc('failed to parse enabled repos', exc), 'failed to parse enabled repos'
+                    transaction, Failure.from_exc('failed to parse enabled repos', exc), 'failed to parse enabled repos'
                 )
 
             # Fetch the list of installed packages
@@ -232,7 +235,7 @@ class Workspace(_Workspace):
             )
 
             if r_pkg_list.is_error:
-                return self._error(r_pkg_list, 'failed to fetch the list of installed packages')
+                return self._error(transaction, r_pkg_list, 'failed to fetch the list of installed packages')
 
             packages = r_pkg_list.unwrap().stdout.split()
 
@@ -240,7 +243,9 @@ class Workspace(_Workspace):
             r_cache_enabled = KNOB_CACHE_PATTERN_MAPS.get_value(entityname=self.pool.poolname)
 
             if r_cache_enabled.is_error:
-                return self._error(r_cache_enabled, 'could not determine whether to use cache for repo mapping')
+                return self._error(
+                    transaction, r_cache_enabled, 'could not determine whether to use cache for repo mapping'
+                )
 
             r_pattern_map = get_pattern_map(
                 self.logger,
@@ -249,14 +254,16 @@ class Workspace(_Workspace):
             )
 
             if r_pattern_map.is_error:
-                return self._error(r_pattern_map, 'could not load compose installer repo name mapping')
+                return self._error(transaction, r_pattern_map, 'could not load compose installer repo name mapping')
 
             try:
                 repo_name = r_pattern_map.unwrap().match(self.gr.environment.os.compose)
             except gluetool.glue.GlueError as exc:
                 # TODO: Switch guest to error as there is nothing else we can do
                 return self._fail(
-                    Failure.from_exc('failed to match the compose', exc, recoverable=False), 'failed to match compose'
+                    transaction,
+                    Failure.from_exc('failed to match the compose', exc, recoverable=False),
+                    'failed to match compose',
                 )
 
             repo = None
@@ -266,6 +273,7 @@ class Workspace(_Workspace):
 
             if not repo:
                 return self._fail(
+                    transaction,
                     Failure(
                         f'the guest does not contain a repo named {repo_name} that would provide base url for the installer',  # noqa: E501
                         recoverable=False,
@@ -295,12 +303,13 @@ class Workspace(_Workspace):
                     )
             except OSError as exc:
                 return self._fail(
+                    transaction,
                     Failure.from_exc('failed to read the kickstart template', exc),
                     'failed to read the kickstart template',
                 )
 
             if not is_successful(r_kickstart):
-                return self._error(Error(r_kickstart.failure()), 'failed to render kickstart script')
+                return self._error(transaction, Error(r_kickstart.failure()), 'failed to render kickstart script')
 
             kickstart_script = r_kickstart.unwrap()
             blob = GuestLogBlob.from_content(kickstart_script)
@@ -316,19 +325,24 @@ class Workspace(_Workspace):
             if r_guest_log.is_error:
                 # Failing to log the generated kickstart is not a critical error but may make debugging installation
                 # issues more difficult.
-                self._error(r_guest_log, f'failed to load the log {KS_LOGNAME}', no_effect=True)
+                self._error(transaction, r_guest_log, f'failed to load the log {KS_LOGNAME}', no_effect=True)
 
             log = r_guest_log.unwrap()
 
             if log is not None:
-                r_store_log = log.update(self.logger, self.session, GuestLogState.COMPLETE)
+                r_store_log = log.update(self.logger, transaction, GuestLogState.COMPLETE)
 
                 if r_store_log.is_error:
-                    self._fail(r_store_log.unwrap_error(), 'failed to update the kickstart script log', no_effect=True)
+                    self._fail(
+                        transaction,
+                        r_store_log.unwrap_error(),
+                        'failed to update the kickstart script log',
+                        no_effect=True,
+                    )
             else:
                 r_create_log = GuestLog.create(
                     self.logger,
-                    self.session,
+                    transaction,
                     self.gr.guestname,
                     KS_LOGNAME,
                     GuestLogContentType.BLOB,
@@ -336,14 +350,16 @@ class Workspace(_Workspace):
                 )
 
                 if r_create_log.is_error:
-                    self._error(r_create_log, 'failed to create log entry for the kickstart script', no_effect=True)
+                    self._error(
+                        transaction, r_create_log, 'failed to create log entry for the kickstart script', no_effect=True
+                    )
 
                 log = r_create_log.unwrap()
 
-            r_store_blob = blob.save(self.logger, self.session, log, overwrite=True)
+            r_store_blob = blob.save(self.logger, transaction, log, overwrite=True)
 
             if r_store_blob.is_error:
-                self._error(r_store_blob, 'failed to store the kickstart script log blob', no_effect=True)
+                self._error(transaction, r_store_blob, 'failed to store the kickstart script log blob', no_effect=True)
 
             # Copy the templated kickstart script to guest
             with create_tempfile(file_contents=kickstart_script) as kickstart_filepath:
@@ -359,7 +375,7 @@ class Workspace(_Workspace):
 
                 if r_validator.is_error:
                     # Maybe turn into warning for now?
-                    return self._error(r_validator, 'rendered kickstart validation failed')
+                    return self._error(transaction, r_validator, 'rendered kickstart validation failed')
 
                 r_ks_upload = copy_to_remote(
                     self.logger,
@@ -375,7 +391,7 @@ class Workspace(_Workspace):
                 )
 
                 if r_ks_upload.is_error:
-                    return self._error(r_ks_upload, 'failed to copy the kickstart script to the guest')
+                    return self._error(transaction, r_ks_upload, 'failed to copy the kickstart script to the guest')
 
             self.logger.debug('copied rendered kickstart template to the guest')
 
@@ -394,7 +410,9 @@ class Workspace(_Workspace):
             )
 
             if r_script_upload.is_error:
-                return self._error(r_script_upload, 'failed to copy the kickstart install initiation script')
+                return self._error(
+                    transaction, r_script_upload, 'failed to copy the kickstart install initiation script'
+                )
 
             self.logger.debug('copied installer initiation script to the guest')
 
@@ -412,7 +430,7 @@ class Workspace(_Workspace):
             )
 
             if r_kexec.is_error:
-                return self._error(r_kexec, 'failed to run the installer')
+                return self._error(transaction, r_kexec, 'failed to run the installer')
 
             self.logger.debug('successfuly executed the installer')
 
@@ -421,9 +439,9 @@ class Workspace(_Workspace):
             )
 
             if r_delay.is_error:
-                return self._error(r_delay, 'failed to load the delay for installation check task')
+                return self._error(transaction, r_delay, 'failed to load the delay for installation check task')
 
-            self.request_task(prepare_kickstart_wait, self.guestname, delay=r_delay.unwrap())
+            self.request_task(transaction, prepare_kickstart_wait, self.guestname, delay=r_delay.unwrap())
 
     @classmethod
     def create(

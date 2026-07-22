@@ -51,10 +51,10 @@ class Workspace(_Workspace):
         provisioning_progress: ProvisioningProgress
         new_guest_data: GuestFieldStates
 
-        with self.transaction():
-            self.load_guest_request(self.guestname, state=GuestState.PROMISED)
-            self.load_gr_pool()
-            self.test_pool_enabled()
+        with self.transaction() as transaction:
+            self.load_guest_request(transaction, self.guestname, state=GuestState.PROMISED)
+            self.load_gr_pool(transaction)
+            self.test_pool_enabled(transaction)
 
             if self.result:
                 return None
@@ -66,7 +66,7 @@ class Workspace(_Workspace):
             r_update_delay = KNOB_UPDATE_GUEST_REQUEST_TICK.get_value(entityname=self.gr.poolname)
 
             if r_update_delay.is_error:
-                return self._error(r_update_delay, 'failed to load update delay')
+                return self._error(transaction, r_update_delay, 'failed to load update delay')
 
             if self.is_pool_enabled:
                 skip_prepare_verify_ssh = self.gr.skip_prepare_verify_ssh
@@ -75,7 +75,7 @@ class Workspace(_Workspace):
                 r_progress = self.pool.update_guest(self.logger, self.session, self.gr)
 
                 if r_progress.is_error:
-                    return self._error(r_progress, 'failed to update guest')
+                    return self._error(transaction, r_progress, 'failed to update guest')
 
                 provisioning_progress = r_progress.unwrap()
 
@@ -103,12 +103,13 @@ class Workspace(_Workspace):
 
             # not returning here - pool was able to recover and proceed
             for failure in provisioning_progress.pool_failures:
-                self._fail(failure, 'pool encountered failure during update', no_effect=True)
+                self._fail(transaction, failure, 'pool encountered failure during update', no_effect=True)
 
             if provisioning_progress.state == ProvisioningState.PENDING:
-                self._progress('pending')
+                self._progress(transaction, 'pending')
 
                 self.update_guest_state_and_request_task(
+                    transaction,
                     GuestState.PROMISED,
                     update_guest_request,
                     self.guestname,
@@ -122,37 +123,40 @@ class Workspace(_Workspace):
             elif provisioning_progress.state == ProvisioningState.CANCEL:
                 assert self.db
 
-                self._progress('canceled-by-pool')
+                self._progress(transaction, 'canceled-by-pool')
 
                 if not ProvisioningTailHandler(GuestState.PROMISED, GuestState.ROUTING).handle_tail(
                     self.logger,
                     self.db,
                     self.session,
+                    transaction,
                     TaskCall(actor=update_guest_request, args=(self.guestname,), arg_names=('guestname',)),
                 ):
-                    self._reschedule()
+                    self._reschedule(transaction)
 
             elif provisioning_progress.state == ProvisioningState.FAILED:
                 assert self.db
 
-                self._progress('provisioning-failed')
+                self._progress(transaction, 'provisioning-failed')
 
                 if not ProvisioningTailHandler(GuestState.PROMISED, GuestState.ERROR).handle_tail(
                     self.logger,
                     self.db,
                     self.session,
+                    transaction,
                     TaskCall(actor=update_guest_request, args=(self.guestname,), arg_names=('guestname',)),
                 ):
-                    self._reschedule()
+                    self._reschedule(transaction)
 
             elif provisioning_progress.state == ProvisioningState.COMPLETE:
-                self._progress('address-assigned', address=provisioning_progress.address)
+                self._progress(transaction, 'address-assigned', address=provisioning_progress.address)
 
                 # Running verify-ssh step is optional - user might have requested us to skip the step.
                 if skip_prepare_verify_ssh:
                     from .prepare_finalize_pre_connect import prepare_finalize_pre_connect
 
                     self.update_guest_state_and_request_task(
+                        transaction,
                         GuestState.PREPARING,
                         prepare_finalize_pre_connect,
                         self.guestname,
@@ -167,6 +171,7 @@ class Workspace(_Workspace):
                     from .prepare_verify_ssh import prepare_verify_ssh
 
                     self.update_guest_state_and_request_task(
+                        transaction,
                         GuestState.PREPARING,
                         prepare_verify_ssh,
                         self.guestname,

@@ -10,7 +10,7 @@ import sqlalchemy.orm.session
 
 from . import Failure, Sentry, TracingOp, get_db, get_logger, get_worker_name, log_dict_yaml
 from .context import DATABASE, LOGGER, SESSION
-from .db import DMLResult, SafeQuery, TaskRequest, TaskSequenceRequest, execute_dml, transaction
+from .db import DMLResult, SafeQuery, TaskRequest, TaskSequenceRequest, Transaction
 from .knobs import Knob
 from .metrics import DispatcherMetrics
 from .tasks import TaskCall, TaskLogger, dispatch_sequence, dispatch_task
@@ -34,7 +34,7 @@ KNOB_DISPATCHER_USE_LOWER_ISOLATION_LEVEL: Knob[bool] = Knob(
 
 
 def handle_task_request(
-    root_logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, task_request: TaskRequest
+    root_logger: gluetool.log.ContextAdapter, transaction: Transaction, task_request: TaskRequest
 ) -> None:
     with Sentry.start_span(TracingOp.FUNCTION, description='dispatch_task_request') as tracing_span:
         logger = TaskLogger(root_logger, f'task-request#{task_request.id}')
@@ -78,8 +78,8 @@ def handle_task_request(
         if r_dispatch.is_error:
             return _log_failure(r_dispatch.unwrap_error(), 'failed to dispatch task')
 
-        r_delete: DMLResult[TaskRequest] = execute_dml(
-            logger, session, sqlalchemy.delete(TaskRequest).where(TaskRequest.id == task_request.id)
+        r_delete: DMLResult[TaskRequest] = transaction.execute_dml(
+            logger, sqlalchemy.delete(TaskRequest).where(TaskRequest.id == task_request.id)
         )
 
         if r_delete.is_error:
@@ -93,6 +93,7 @@ def handle_task_request(
 def handle_task_sequence_request(
     root_logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
+    transaction: Transaction,
     task_sequence_request: TaskSequenceRequest,
 ) -> None:
     with Sentry.start_span(TracingOp.FUNCTION, description='dispatch_task_sequence_request') as tracing_span:
@@ -150,16 +151,15 @@ def handle_task_sequence_request(
             return _log_failure(r_dispatch.unwrap_error(), 'failed to dispatch task sequence')
 
         for task_call in task_calls:
-            r_delete: DMLResult[TaskRequest] = execute_dml(
-                logger, session, sqlalchemy.delete(TaskRequest).where(TaskRequest.id == task_call.task_request_id)
+            r_delete: DMLResult[TaskRequest] = transaction.execute_dml(
+                logger, sqlalchemy.delete(TaskRequest).where(TaskRequest.id == task_call.task_request_id)
             )
 
             if r_delete.is_error:
                 return _log_failure(r_delete.unwrap_error(), 'failed to remove task request')
 
-        r_sequence_delete: DMLResult[TaskSequenceRequest] = execute_dml(
+        r_sequence_delete: DMLResult[TaskSequenceRequest] = transaction.execute_dml(
             logger,
-            session,
             sqlalchemy.delete(TaskSequenceRequest).where(TaskSequenceRequest.id == task_sequence_request.id),
         )
 
@@ -184,7 +184,7 @@ def pick_task_request(
     with Sentry.start_transaction(TracingOp.FUNCTION, 'dispatcher') as tracing_transaction:
         with (
             Sentry.start_span(TracingOp.FUNCTION, 'handle_task_request'),
-            transaction(logger, session) as transaction_result,
+            Transaction.go(logger, session) as t,
         ):
             r_pending_task = (
                 SafeQuery.from_session(session, TaskRequest)
@@ -207,16 +207,16 @@ def pick_task_request(
 
             tracing_transaction.set_tag('taskname', task_request.taskname)
 
-            handle_task_request(logger, session, task_request)
+            handle_task_request(logger, t, task_request)
 
             LOGGER.set(logger)
 
-        if not transaction_result.complete:
-            assert transaction_result.failure is not None
+        if not t.complete:
+            assert t.failure is not None
 
-            transaction_result.failure.handle(logger)
+            t.failure.handle(logger)
 
-        return transaction_result.complete
+        return t.complete
 
 
 def pick_task_sequence_request(
@@ -230,7 +230,7 @@ def pick_task_sequence_request(
     with Sentry.start_transaction(TracingOp.FUNCTION, 'dispatcher'):
         with (
             Sentry.start_span(TracingOp.FUNCTION, 'handle_task_sequence_request'),
-            transaction(logger, session) as transaction_result,
+            Transaction.go(logger, session) as t,
         ):
             r_pending_task_sequence = (
                 SafeQuery.from_session(session, TaskSequenceRequest)
@@ -252,16 +252,16 @@ def pick_task_sequence_request(
             if task_sequence_request is None:
                 return False
 
-            handle_task_sequence_request(logger, session, task_sequence_request)
+            handle_task_sequence_request(logger, session, t, task_sequence_request)
 
             LOGGER.set(logger)
 
-        if not transaction_result.complete:
-            assert transaction_result.failure is not None
+        if not t.complete:
+            assert t.failure is not None
 
-            transaction_result.failure.handle(logger)
+            t.failure.handle(logger)
 
-        return transaction_result.complete
+        return t.complete
 
 
 def main() -> None:

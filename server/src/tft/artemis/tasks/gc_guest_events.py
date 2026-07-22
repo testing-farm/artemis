@@ -10,7 +10,7 @@ import sqlalchemy.dialects
 import sqlalchemy.dialects.postgresql
 import sqlalchemy.orm.session
 
-from ..db import DB, DMLResult, GuestEvent, GuestRequest, execute_dml
+from ..db import DB, DMLResult, GuestEvent, GuestRequest
 from ..knobs import Knob
 from . import (
     _ROOT_LOGGER,
@@ -58,7 +58,7 @@ class Workspace(_Workspace):
 
         self.logger.info(f'removing events older than {deadline}')
 
-        with self.transaction():
+        with self.transaction() as transaction:
             # TODO: INTERVAL is PostgreSQL-specific. We don't plan to use another DB, but, if we chose to,
             # this would have to be rewritten.
             guest_count_subquery = self.session.query(GuestRequest.guestname)
@@ -75,10 +75,10 @@ class Workspace(_Workspace):
                 )
             )
 
-            r_execute: DMLResult[GuestEvent] = execute_dml(self.logger, self.session, query)
+            r_execute: DMLResult[GuestEvent] = transaction.execute_dml(self.logger, query)
 
             if r_execute.is_error:
-                return self._error(r_execute, 'failed to select')
+                return self._error(transaction, r_execute, 'failed to select')
 
             self.logger.info(f'removed {r_execute.unwrap().rowcount} events')
 

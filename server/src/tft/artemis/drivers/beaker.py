@@ -36,7 +36,7 @@ from .. import (
 )
 from ..cache import get_cached_mapping, refresh_cached_mapping
 from ..context import CACHE
-from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
+from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, Transaction
 from ..environment import (
     And,
     CompoundConstraint,
@@ -1630,7 +1630,11 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
             )
 
     def _create_job_xml(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
+        guest_request: GuestRequest,
     ) -> Result[tuple[bs4.BeautifulSoup, bool], Failure]:
         """
         Create job xml with bkr workflow-simple and environment variables
@@ -1687,7 +1691,7 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
         if r_wow_options.is_error:
             return Error(r_wow_options.unwrap_error())
 
-        self.log_acquisition_attempt(logger, session, guest_request, image=distro)
+        self.log_acquisition_attempt(logger, transaction, guest_request, image=distro)
 
         r_workflow_simple = self._run_bkr(logger, r_wow_options.unwrap(), commandname='bkr.workflow-simple')
         if r_workflow_simple.is_error:
@@ -1762,9 +1766,13 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
         return Ok(job_id)
 
     def _create_job(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
+        guest_request: GuestRequest,
     ) -> Result[tuple[str, bool], Failure]:
-        r_job_xml = self._create_job_xml(logger, session, guest_request)
+        r_job_xml = self._create_job_xml(logger, session, transaction, guest_request)
 
         if r_job_xml.is_error:
             return Error(r_job_xml.unwrap_error())
@@ -2297,7 +2305,11 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
         return Error(Failure('unknown status', **failure_details))
 
     def guest_watchdog(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
+        guest_request: GuestRequest,
     ) -> Result[WatchdogState, Failure]:
         """
         Perform any periodic tasks the driver might need to apply while the request is in use.
@@ -2457,9 +2469,13 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
 
     @override
     def acquire_guest(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
+        guest_request: GuestRequest,
     ) -> Result[ProvisioningProgress, Failure]:
-        r_create_job = self._create_job(logger, session, guest_request)
+        r_create_job = self._create_job(logger, session, transaction, guest_request)
 
         if r_create_job.is_error:
             failure = r_create_job.unwrap_error()
@@ -2488,7 +2504,11 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
 
     @override
     def release_guest(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
+        guest_request: GuestRequest,
     ) -> Result[None, Failure]:
         """
         Release resources allocated for the guest back to the pool infrastructure.
@@ -2500,7 +2520,7 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
             return Ok(None)
 
         return self.dispatch_resource_cleanup(
-            logger, session, BeakerPoolResourcesIDs(job_id=pool_data.job_id), guest_request=guest_request
+            logger, transaction, BeakerPoolResourcesIDs(job_id=pool_data.job_id), guest_request=guest_request
         )
 
     def fetch_pool_resources_metrics(

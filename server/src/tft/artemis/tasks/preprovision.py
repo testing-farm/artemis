@@ -21,7 +21,7 @@ import sqlalchemy.orm.session
 from .. import Failure
 from ..api.environment import DEFAULT_SSH_PORT, DEFAULT_SSH_USERNAME
 from ..api.models import GuestRequest as GuestRequestSchema
-from ..db import DB, DMLResult, GuestLogContentType, GuestRequest, execute_dml
+from ..db import DB, DMLResult, GuestLogContentType, GuestRequest
 from ..environment import Environment
 from ..guest import GuestState
 from . import _ROOT_LOGGER, DoerReturnType, DoerType, Workspace as _Workspace, get_shelf_logger, step, task, task_core
@@ -68,20 +68,20 @@ class Workspace(_Workspace):
                 ]
 
             except Exception as exc:
-                return self._fail(Failure.from_exc('failed to parse log types', exc), 'failed to parse log types')
+                return self.fail(Failure.from_exc('failed to parse log types', exc), 'failed to parse log types')
 
         try:
             environment = Environment.unserialize(self.guest_template.environment)
 
         except Exception as exc:
-            return self._fail(
+            return self.fail(
                 Failure.from_exc('failed to parse environment', exc), 'failed to parse guest template environment'
             )
 
-        with self.transaction():
+        with self.transaction() as transaction:
             assert self.shelfname
 
-            self.load_shelf(self.shelfname, state=GuestState.READY)
+            self.load_shelf(transaction, self.shelfname, state=GuestState.READY)
 
             if self.result:
                 return None
@@ -117,21 +117,21 @@ class Workspace(_Workspace):
                     security_group_rules_egress=None,
                 )
 
-                r_create: DMLResult[GuestRequest] = execute_dml(self.logger, self.session, stmt)
+                r_create: DMLResult[GuestRequest] = transaction.execute_dml(self.logger, stmt)
 
                 if r_create.is_error:
-                    return self._error(r_create, 'failed to create new guest')
+                    return self._error(transaction, r_create, 'failed to create new guest')
 
                 GuestRequest.log_event_by_guestname(
                     self.logger,  # shelf logger, does not contain guestname
-                    self.session,
+                    transaction,
                     guestname,
                     'created',
                     environment=environment.serialize(),
                     user_data=self.guest_template.user_data,
                 )
 
-                self.request_task(guest_shelf_lookup, guestname)
+                self.request_task(transaction, guest_shelf_lookup, guestname)
 
     @classmethod
     def create(

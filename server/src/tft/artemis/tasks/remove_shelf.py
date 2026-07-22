@@ -16,7 +16,7 @@ import gluetool.log
 import sqlalchemy
 import sqlalchemy.orm.session
 
-from ..db import DB, DMLResult, GuestRequest, GuestShelf, SafeQuery, execute_dml
+from ..db import DB, DMLResult, GuestRequest, GuestShelf, SafeQuery
 from ..guest import GuestState
 from . import (
     _ROOT_LOGGER,
@@ -42,10 +42,10 @@ class Workspace(_Workspace):
 
     @step
     def run(self) -> None:
-        with self.transaction():
+        with self.transaction() as transaction:
             assert self.shelfname
 
-            self.load_shelf(self.shelfname, state=GuestState.CONDEMNED)
+            self.load_shelf(transaction, self.shelfname, state=GuestState.CONDEMNED)
 
             if self.result:
                 return None
@@ -58,7 +58,7 @@ class Workspace(_Workspace):
             )
 
             if r_guests.is_error:
-                return self._error(r_guests, 'failed to load shelved guests')
+                return self._error(transaction, r_guests, 'failed to load shelved guests')
 
             shelved_guests: list[GuestRequest] = r_guests.unwrap()
 
@@ -67,7 +67,7 @@ class Workspace(_Workspace):
             for guest in shelved_guests:
                 r = _update_guest_state_and_request_task(
                     get_guest_logger(Workspace.TASKNAME, self.logger, guest.guestname),
-                    self.session,
+                    transaction,
                     guest.guestname,
                     GuestState.CONDEMNED,
                     release_guest_request,
@@ -78,16 +78,18 @@ class Workspace(_Workspace):
                 )
 
                 if r.is_error:
-                    return self._error(r, f'failed to update guest {guest.guestname} and schedule its release')
+                    return self._error(
+                        transaction, r, f'failed to update guest {guest.guestname} and schedule its release'
+                    )
 
             update_query = (
                 sqlalchemy.update(GuestRequest).where(GuestRequest.shelfname == self.shelfname).values(shelfname=None)
             )
 
-            r_update: DMLResult[GuestRequest] = execute_dml(self.logger, self.session, update_query)
+            r_update: DMLResult[GuestRequest] = transaction.execute_dml(self.logger, update_query)
 
             if r_update.is_error:
-                return self._error(r_update, 'failed to remove shelf from active guest requests')
+                return self._error(transaction, r_update, 'failed to remove shelf from active guest requests')
 
             delete_query = (
                 sqlalchemy.delete(GuestShelf)
@@ -95,10 +97,10 @@ class Workspace(_Workspace):
                 .where(GuestShelf.state == GuestState.CONDEMNED)
             )
 
-            r_delete: DMLResult[GuestShelf] = execute_dml(self.logger, self.session, delete_query)
+            r_delete: DMLResult[GuestShelf] = transaction.execute_dml(self.logger, delete_query)
 
             if r_delete.is_error:
-                return self._error(r, 'failed to remove shelf record')
+                return self._error(transaction, r_delete, 'failed to remove shelf record')
 
     @classmethod
     def create(

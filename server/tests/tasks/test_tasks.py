@@ -286,12 +286,14 @@ def test_update_guest_state_and_request_task(
     logger: gluetool.log.ContextAdapter,
     db: tft.artemis.db.DB,
     session: sqlalchemy.orm.session.Session,
+    transaction: tft.artemis.db.Transaction,
     workspace: tft.artemis.tasks.Workspace,
     caplog: _pytest.logging.LogCaptureFixture,
     mockpatch: MockPatcher,
 ) -> None:
     assert (
         workspace.update_guest_state_and_request_task(
+            transaction,
             tft.artemis.guest.GuestState.ROUTING,
             tft.artemis.tasks.route_guest_request.route_guest_request,
             'dummy-guest',
@@ -357,6 +359,7 @@ def test_update_guest_state_and_request_task_no_such_guest(
     logger: gluetool.log.ContextAdapter,
     db: tft.artemis.db.DB,
     session: sqlalchemy.orm.session.Session,
+    transaction: tft.artemis.db.Transaction,
     workspace: tft.artemis.tasks.Workspace,
     caplog: _pytest.logging.LogCaptureFixture,
     mockpatch: MockPatcher,
@@ -365,6 +368,7 @@ def test_update_guest_state_and_request_task_no_such_guest(
 
     assert (
         workspace.update_guest_state_and_request_task(
+            transaction,
             tft.artemis.guest.GuestState.PROVISIONING,
             tft.artemis.tasks.acquire_guest_request.acquire_guest_request,
             'not-so-dummy-guest',

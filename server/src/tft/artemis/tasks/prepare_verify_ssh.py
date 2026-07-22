@@ -53,10 +53,10 @@ class Workspace(_Workspace):
 
     @step
     def run(self) -> None:
-        with self.transaction():
-            self.load_guest_request(self.guestname, state=GuestState.PREPARING)
-            self.load_gr_pool()
-            self.load_master_ssh_key()
+        with self.transaction() as transaction:
+            self.load_guest_request(transaction, self.guestname, state=GuestState.PREPARING)
+            self.load_gr_pool(transaction)
+            self.load_master_ssh_key(transaction)
 
             if self.result:
                 return None
@@ -68,7 +68,7 @@ class Workspace(_Workspace):
             r = KNOB_PREPARE_VERIFY_SSH_CONNECT_TIMEOUT.get_value(session=self.session, entityname=self.pool.poolname)
 
             if r.is_error:
-                return self._error(r, 'failed to obtain SSH timeout value')
+                return self._error(transaction, r, 'failed to obtain SSH timeout value')
 
             ssh_connect_timeout = r.unwrap()
 
@@ -87,7 +87,9 @@ class Workspace(_Workspace):
             if r_ping.is_error:
                 # We do not want the generic "failed CLI" error here, to make SSH verification issues stand out more.
                 return self._fail(
-                    Failure.from_failure('failed to verify SSH', r_ping.unwrap_error()), 'failed to verify SSH'
+                    transaction,
+                    Failure.from_failure('failed to verify SSH', r_ping.unwrap_error()),
+                    'failed to verify SSH',
                 )
 
             next_task = prepare_finalize_pre_connect
@@ -96,12 +98,12 @@ class Workspace(_Workspace):
             r_capabilities = self.pool.capabilities()
 
             if not is_successful(r_capabilities):
-                return self._error_v2(r_capabilities, 'could not get pool capabilities')
+                return self._error_v2(transaction, r_capabilities, 'could not get pool capabilities')
 
             if self.gr.environment.has_ks_specification and not r_capabilities.unwrap().supports_native_kickstart:
                 next_task = prepare_kickstart
 
-            self.request_task(next_task, self.guestname)
+            self.request_task(transaction, next_task, self.guestname)
 
     @classmethod
     def create(

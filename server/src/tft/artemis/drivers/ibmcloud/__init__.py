@@ -37,7 +37,7 @@ from tft.artemis.drivers import (
 )
 
 from ... import Failure, rewrap_to_gluetool
-from ...db import GuestRequest
+from ...db import GuestRequest, Transaction
 from ...environment import Flavor
 
 # Limits imposed on tags in IBM cloud.
@@ -351,6 +351,7 @@ class IBMCloudDriver(
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
         guest_request: GuestRequest,
     ) -> _Result[InstanceCreationRequest, Failure]:
         r_image_flavor_pairs = self._collect_image_flavor_pairs(logger, session, guest_request)
@@ -409,10 +410,14 @@ class IBMCloudDriver(
     @override
     @rewrap_to_gluetool
     def acquire_guest(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
+        guest_request: GuestRequest,
     ) -> _Result[ProvisioningProgress, Failure]:
         return (
-            self.instance_resource_manager.acquire(logger, guest_request, session)
+            self.instance_resource_manager.acquire(logger, guest_request, session, transaction)
             .bind(
                 lambda instance_outcome: _Ok(
                     ProvisioningProgress(

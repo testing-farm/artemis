@@ -16,7 +16,7 @@ from returns.result import Result as _Result, Success as _Ok
 from typing_extensions import override
 
 from .. import Failure
-from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest
+from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, Transaction
 from ..knobs import KNOB_DISABLE_CERT_VERIFICATION, KNOB_HTTP_TIMEOUT
 from ..metrics import PoolResourcesMetrics
 from . import (
@@ -161,7 +161,11 @@ class RestDriver(PoolDriver[RestErrorCauses, Instance]):
 
     @override
     def acquire_guest(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
+        guest_request: GuestRequest,
     ) -> Result[ProvisioningProgress, Failure]:
         '''
         Request
@@ -188,7 +192,7 @@ class RestDriver(PoolDriver[RestErrorCauses, Instance]):
         '''
         self.log_acquisition_attempt(
             logger,
-            session,
+            transaction,
             guest_request,
         )
 
@@ -282,7 +286,11 @@ class RestDriver(PoolDriver[RestErrorCauses, Instance]):
 
     @override
     def release_guest(
-        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
+        guest_request: GuestRequest,
     ) -> Result[None, Failure]:
         """
         Release resources allocated for the guest back to the pool infrastructure.
@@ -295,7 +303,7 @@ class RestDriver(PoolDriver[RestErrorCauses, Instance]):
 
         return self.dispatch_resource_cleanup(
             logger,
-            session,
+            transaction,
             RestPoolResourcesIDs(guest_id=pool_data.guest_id, guestname=guest_request.guestname),
             guest_request=guest_request,
         )

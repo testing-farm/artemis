@@ -16,7 +16,7 @@ from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from typing_extensions import Protocol, TypedDict
 
 from . import Failure, Sentry, SerializableContainer, TracingOp, partition
-from .db import GuestRequest
+from .db import GuestRequest, Transaction
 from .drivers import CanAcquire, PoolCapabilities, PoolDriver, PoolLogger, Tags
 from .knobs import Knob
 from .metrics import PoolMetrics
@@ -969,6 +969,7 @@ def policy_one_shot_only(
 def run_routing_policies(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
+    transaction: Transaction,
     guest_request: GuestRequest,
     pools: list[PoolDriver[Any, Any]],
     policies: list[PolicyType],
@@ -1000,7 +1001,7 @@ def run_routing_policies(
 
     # Just a tiny helper, to avoid repeating the parameters...
     def _log_history() -> None:
-        guest_request.log_event(logger, session, 'routing-report', history=_serialize_history())
+        guest_request.log_event(logger, transaction, 'routing-report', history=_serialize_history())
 
     # A container for pools and result, we slowly remove pools from this container to reflect
     # changes made by various policies. Eventually, this ruling is the one we return.

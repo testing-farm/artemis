@@ -164,6 +164,14 @@ def session(
 
 
 @pytest.fixture
+def transaction(
+    logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session
+) -> Generator[tft.artemis.db.Transaction, None, None]:
+    with tft.artemis.db.Transaction.go(logger, session) as transaction:
+        yield transaction
+
+
+@pytest.fixture
 def skip_sqlite(session: sqlalchemy.orm.session.Session) -> None:
     assert session.bind is not None  # narrow type
 
