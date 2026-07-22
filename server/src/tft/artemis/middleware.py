@@ -172,13 +172,15 @@ def _handle_tails(
     db = get_root_db(tail_logger)
 
     with db.transaction(tail_logger) as (session, transaction):
-        if tail_handler.handle_tail(tail_logger, db, session, transaction, task_call):
-            return True
+        tail_result = tail_handler.handle_tail(tail_logger, db, session, transaction, task_call)
 
     if transaction.complete is not True:
         assert transaction.failure is not None  # narrow type
 
         transaction.failure.handle(tail_logger, 'failed to handle the chain tail')
+
+    elif tail_result is True:
+        return True
 
     else:
         tail_logger.error('failed to handle the chain tail')
