@@ -2,12 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Schedule and execute a dummy task serving as an end-to-end check of worker stability.
-
-.. note::
-
-   Task MUST be aware of the possibility of another task performing the same job at the same time. All changes
-   MUST preserve consistent and restartable state.
+Remove old guest log blobs.
 """
 
 import datetime
@@ -15,6 +10,7 @@ from typing import cast
 
 import gluetool.log
 import periodiq
+import sqlalchemy.dialects.postgresql
 import sqlalchemy.orm.session
 
 from ..db import DB, DMLResult, GuestLogBlob, GuestRequest

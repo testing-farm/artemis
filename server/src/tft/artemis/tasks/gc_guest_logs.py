@@ -17,7 +17,7 @@ import gluetool.log
 import periodiq
 import sqlalchemy.orm.session
 
-from ..db import DB, DMLResult, GuestLog, execute_dml
+from ..db import DB, DMLResult, GuestLog, GuestRequest
 from ..knobs import Knob
 from . import (
     _ROOT_LOGGER,
@@ -65,11 +65,14 @@ class Workspace(_Workspace):
 
         self.logger.info(f'removing guest logs older than {deadline}')
 
-        with self.transaction():
+        with self.transaction() as transaction:
             # TODO: INTERVAL is PostgreSQL-specific. We don't plan to use another DB, but, if we chose to,
             # this would have to be rewritten.
+            guest_count_subquery = self.session.query(GuestRequest.guestname).subquery('t')
 
-            query = sqlalchemy.delete(GuestLog).where(
+            query = sqlalchemy.delete(GuestLog)
+            query = query.where(GuestLog.guestname.not_in(guest_count_subquery))  # type: ignore[arg-type]
+            query = query.where(
                 sqlalchemy.func.age(GuestLog.updated)
                 >= sqlalchemy.func.cast(
                     f'{KNOB_GC_GUEST_LOGS_THRESHOLD.value} SECONDS',  # type: ignore[arg-type]
@@ -77,10 +80,10 @@ class Workspace(_Workspace):
                 )
             )
 
-            r: DMLResult[GuestLog] = execute_dml(self.logger, self.session, query)
+            r: DMLResult[GuestLog] = transaction.execute_dml(self.logger, query)
 
             if r.is_error:
-                return self._error(r, 'failed to remove guest logs')
+                return self._error(transaction, r, 'failed to remove guest logs')
 
             self.logger.info(f'removed {r.unwrap().rowcount} guest logs')
 
