@@ -171,6 +171,8 @@ def _handle_tails(
 
     db = get_root_db(tail_logger)
 
+    tail_result = False
+
     with db.transaction(tail_logger) as (session, transaction):
         tail_result = tail_handler.handle_tail(tail_logger, db, session, transaction, task_call)
 
