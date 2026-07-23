@@ -1942,7 +1942,7 @@ class DB:
 
             _log_db_statement('BEGIN SESSION')
 
-        if read_only:
+        elif read_only:
             session_factory = sqlalchemy.orm.scoped_session(self.sessionmaker_repeatable_read_only)
 
             _log_db_statement('BEGIN SESSION READ ONLY')
