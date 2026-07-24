@@ -2059,7 +2059,6 @@ class Workspace:
         if not gr:
             # No guest request in expected state discovered. Maybe concurrent execution had changed the state already -
             # nothing that can be done now apart from informing about a no op and moving on.
-            guest_state = state.value if state else '<None>'
             self._progress(
                 transaction,
                 f'guest request not found in the required state {state.name}' if state else 'guest request not found'
