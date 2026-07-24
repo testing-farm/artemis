@@ -2061,7 +2061,7 @@ class Workspace:
             # nothing that can be done now apart from informing about a no op and moving on.
             self._progress(
                 transaction,
-                f'guest request not found in the required state {state.name}' if state else 'guest request not found'
+                f'guest request not found in the required state {state.name}' if state else 'guest request not found',
             )
             self._complete(transaction)
             return self
