@@ -2057,6 +2057,12 @@ class Workspace:
         gr = r.unwrap()
 
         if not gr:
+            # No guest request in expected state discovered. Maybe concurrent execution had changed the state already -
+            # nothing that can be done now apart from informing about a no op and moving on.
+            self._progress(
+                transaction,
+                f'guest request not found in the required state {state.name}' if state else 'guest request not found',
+            )
             self._complete(transaction)
             return self
 
@@ -2108,6 +2114,7 @@ class Workspace:
         shelf = r.unwrap()
 
         if not shelf:
+            # NOTE(ivasilev) Possible TOCTOU race / silent success? Or isn't missing shelf an actual problem?
             self.result = SUCCESS
             return
 
