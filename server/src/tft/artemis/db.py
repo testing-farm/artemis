@@ -1931,23 +1931,34 @@ class DB:
         """
         Create new DB session.
 
-        :param transactional: if set, session will support transactions rather than auto-commit isolation level.
+        :param lower_isolation: if True a lower read committed isolation level will be used.
+        :param read_only: if True a higher isolation repeatable read only level will be used. Incompatible with
+         lower_isolation parameter, if both selected - lower isolation wins.
         :returns: new DB session.
         """
 
         from . import Sentry, TracingOp
 
+        if lower_isolation and read_only:
+            logger.warning('Incompatible transaction isolation configuration, lower isolation level will be used')
+
         if lower_isolation:
+            logger.debug('READ COMMITTED isolation level')
+
             session_factory = sqlalchemy.orm.scoped_session(self.sessionmaker_committed)
 
             _log_db_statement('BEGIN SESSION')
 
         elif read_only:
+            logger.debug('REPEATABLE READ ONLY isolation level')
+
             session_factory = sqlalchemy.orm.scoped_session(self.sessionmaker_repeatable_read_only)
 
             _log_db_statement('BEGIN SESSION READ ONLY')
 
         else:
+            logger.debug('REPEATABLE READ isolation level')
+
             session_factory = sqlalchemy.orm.scoped_session(self.sessionmaker_repeatable)
 
             _log_db_statement('BEGIN SESSION')
