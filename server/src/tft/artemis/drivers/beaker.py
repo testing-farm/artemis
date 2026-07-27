@@ -1950,6 +1950,9 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
         if job_result != 'new':
             return Ok(None)
 
+        # A cancelled or aborted job while still queued keeps result='new' — defer to _handle_job_update_failed
+        # which records PoolMetrics.inc_aborts. This skips console-log pattern analysis, so abort cause details
+        # (kernel panic, storage error, ...) won't appear in pool_failures, only the generic job_failed cause.
         if job_failed is not None:
             return Ok(None)
 
