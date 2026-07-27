@@ -1654,7 +1654,7 @@ def _update_guest_state(
 
     # Check that there was an actual change
     if not r_execute.unwrap().rowcount:
-        return handle_error(Error(Failure('failed to switch guest state')))
+        return handle_error(Error(Failure('update statement matched no rows')), 'failed to switch guest state')
 
     logger.warning(f'state switch: {current_state_label} => {new_state.value}: proposed')
 
@@ -1725,7 +1725,7 @@ def _update_guest_state_and_request_task(
 
     # Check that there was an actual change
     if not r_execute.unwrap().rowcount:
-        return handle_error(Error(Failure('failed to switch guest state')))
+        return handle_error(Error(Failure('update statement matched no rows')), 'failed to switch guest state')
 
     logger.warning(f'state switch: {current_state_label} => {new_state.value}: proposed')
 
