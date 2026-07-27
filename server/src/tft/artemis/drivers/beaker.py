@@ -1950,6 +1950,9 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
         if job_result != 'new':
             return Ok(None)
 
+        if job_failed is not None:
+            return Ok(None)
+
         r_console_log = self._get_beaker_machine_log_url(logger, guest_request, 'console.log')
 
         if r_console_log.is_error:
