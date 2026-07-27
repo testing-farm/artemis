@@ -1790,20 +1790,26 @@ class DB:
 
     #: Engine derived from :py:attr:`engine`, configured to transactions with ``READ COMMITTED`` isolation level.
     engine_committed: sqlalchemy.engine.Engine
-    #: Session factory on top of auto-commit :py:attr:`engine_treansactional` engine: every session spawns
-    #: a transaction with ``REPEATABLE READ`` isolation level.
+    #: Session factory on top of :py:attr:`engine_committed` engine: every session spawns
+    #: a transaction with ``READ COMMITTED`` isolation level.
     sessionmaker_committed: sessionmaker[sqlalchemy.orm.session.Session]
+
+    #: Engine derived from :py:attr:`engine`, configured to transactions with ``READ COMMITTED`` isolation level.
+    engine_committed_read_only: sqlalchemy.engine.Engine
+    #: Session factory on top of :py:attr:`engine_committed_read_only` engine: every session spawns
+    #: a read-only transaction with ``READ COMMITTED`` isolation level.
+    sessionmaker_committed_read_only: sessionmaker[sqlalchemy.orm.session.Session]
 
     #: Engine derived from :py:attr:`engine`, configured to transactions with ``REPEATABLE READ`` isolation level.
     engine_repeatable: sqlalchemy.engine.Engine
-    #: Session factory on top of auto-commit :py:attr:`engine_treansactional` engine: every session spawns
+    #: Session factory on top of :py:attr:`engine_repeatable` engine: every session spawns
     #: a transaction with ``REPEATABLE READ`` isolation level.
     sessionmaker_repeatable: sessionmaker[sqlalchemy.orm.session.Session]
 
     #: Engine derived from :py:attr:`engine`, configured to transactions with ``REPEATABLE READ`` isolation level
     #: in read-only mode.
     engine_repeatable_read_only: sqlalchemy.engine.Engine
-    #: Session factory on top of auto-commit :py:attr:`engine_treansactional_read_only` engine: every session spawns
+    #: Session factory on top of :py:attr:`engine_repeatable_read_only` engine: every session spawns
     #: a read-only transaction with ``REPEATABLE READ`` isolation level.
     sessionmaker_repeatable_read_only: sessionmaker[sqlalchemy.orm.session.Session]
 
@@ -1882,6 +1888,10 @@ class DB:
                 isolation_level='READ COMMITTED', autobegin=False, autocommit=False
             )
 
+            self.engine_committed_read_only = _engine_execution_options(
+                isolation_level='READ COMMITTED', autobegin=False, autocommit=False, postgresql_readonly=True
+            )
+
             self.engine_repeatable = _engine_execution_options(
                 isolation_level='REPEATABLE READ', autobegin=False, autocommit=False
             )
@@ -1895,6 +1905,11 @@ class DB:
                 isolation_level='SERIALIZABLE', autobegin=False, autocommit=False
             )
 
+            # No read-only support for SQLite at this point.
+            self.engine_committed_read_only = _engine_execution_options(
+                isolation_level='SERIALIZABLE', autobegin=False, autocommit=False
+            )
+
             self.engine_repeatable = _engine_execution_options(
                 isolation_level='SERIALIZABLE', autobegin=False, autocommit=False
             )
@@ -1905,6 +1920,7 @@ class DB:
             )
 
         self.sessionmaker_committed = sqlalchemy.orm.sessionmaker(bind=self.engine_committed)
+        self.sessionmaker_committed_read_only = sqlalchemy.orm.sessionmaker(bind=self.engine_committed_read_only)
         self.sessionmaker_repeatable = sqlalchemy.orm.sessionmaker(bind=self.engine_repeatable)
         self.sessionmaker_repeatable_read_only = sqlalchemy.orm.sessionmaker(bind=self.engine_repeatable_read_only)
 
@@ -1931,31 +1947,34 @@ class DB:
         """
         Create new DB session.
 
-        :param lower_isolation: if True a lower read committed isolation level will be used.
-        :param read_only: if True a higher isolation repeatable read only level will be used. Mutually exclusive with
-         lower_isolation parameter.
+        :param lower_isolation: if True, the session runs at the lower ``READ COMMITTED`` isolation level
+            instead of the default ``REPEATABLE READ``.
+        :param read_only: if True, the session runs at the isolation level set by lower_isolation in read-only mode.
+            Note: on non-PostgreSQL backends all modes fall back to ``SERIALIZABLE``.
         :returns: new DB session.
         """
 
         from . import Sentry, TracingOp
 
-        if lower_isolation and read_only:
-            raise ValueError('lower_isolation and read_only are mutually exclusive')
-
         if lower_isolation:
-            session_factory = sqlalchemy.orm.scoped_session(self.sessionmaker_committed)
+            if read_only:
+                session_factory = sqlalchemy.orm.scoped_session(self.sessionmaker_committed_read_only)
 
-            _log_db_statement('BEGIN SESSION READ COMMITTED')
+                _log_db_statement('BEGIN SESSION READ COMMITTED READ ONLY')
+            else:
+                session_factory = sqlalchemy.orm.scoped_session(self.sessionmaker_committed)
 
-        elif read_only:
-            session_factory = sqlalchemy.orm.scoped_session(self.sessionmaker_repeatable_read_only)
-
-            _log_db_statement('BEGIN SESSION READ ONLY')
+                _log_db_statement('BEGIN SESSION READ COMMITTED')
 
         else:
-            session_factory = sqlalchemy.orm.scoped_session(self.sessionmaker_repeatable)
+            if read_only:
+                session_factory = sqlalchemy.orm.scoped_session(self.sessionmaker_repeatable_read_only)
 
-            _log_db_statement('BEGIN SESSION')
+                _log_db_statement('BEGIN SESSION READ ONLY')
+            else:
+                session_factory = sqlalchemy.orm.scoped_session(self.sessionmaker_repeatable)
+
+                _log_db_statement('BEGIN SESSION')
 
         with Sentry.start_span(TracingOp.DB_SESSION):
             session = session_factory(
