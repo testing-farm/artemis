@@ -1153,14 +1153,11 @@ def _task_core(
         guestname = failure.details['guestname']
 
         with Transaction.go(logger, session) as transaction:
-            r_state_change = _update_guest_state(
+            r_state_change = _force_guest_state(
                 logger,
                 transaction,
                 guestname,
-                # TODO:
-                GuestState.CONDEMNED,
                 GuestState.ERROR,
-                {},
             )
 
         # If the change failed, we're left with a loose end: the task marked the failure as something that will not
@@ -1612,6 +1609,60 @@ def _guest_state_update_query(
     query = query.values(**values)
 
     return Ok(query)
+
+
+def _force_guest_state(
+    logger: gluetool.log.ContextAdapter,
+    transaction: Transaction,
+    guestname: str,
+    new_state: GuestState,
+    failure_details: Optional[dict[str, Any]] = None,
+) -> Result[None, Failure]:
+    failure_details = failure_details or {}
+    failure_details.update(
+        {
+            'new_state': new_state.value,
+        }
+    )
+
+    def handle_error(r: Result[Any, Failure], message: str) -> Result[None, Failure]:
+        assert r.is_error
+
+        return Error(
+            Failure.from_failure(
+                message,
+                r.unwrap_error(),
+                **failure_details,
+            )
+        )
+
+    logger.info(f'state switch: {new_state.value}')
+
+    r_query = _guest_state_update_query(
+        guestname=guestname,
+        new_state=new_state,
+    )
+
+    if r_query.is_error:
+        return handle_error(r_query, 'failed to create state update query')
+
+    r_execute: DMLResult[GuestRequest] = transaction.execute_dml(logger, r_query.unwrap())
+
+    if r_execute.is_error:
+        return handle_error(r_execute, 'failed to switch guest state')
+
+    GuestRequest.log_event_by_guestname(
+        logger,
+        transaction,
+        guestname,
+        'state-changed',
+        **failure_details,
+    )
+
+    # TODO: needs its own metric
+    # metrics.ProvisioningMetrics.inc_guest_state_transition(poolname, current_state, new_state)
+
+    return Ok(None)
 
 
 def _update_guest_state(
