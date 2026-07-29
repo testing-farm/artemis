@@ -1660,7 +1660,6 @@ def _force_guest_state(
     )
 
     # TODO: needs its own metric
-    # metrics.ProvisioningMetrics.inc_guest_state_transition(poolname, current_state, new_state)
 
     return Ok(None)
 
