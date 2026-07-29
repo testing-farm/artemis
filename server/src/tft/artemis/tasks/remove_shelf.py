@@ -69,10 +69,11 @@ class Workspace(_Workspace):
                     get_guest_logger(Workspace.TASKNAME, self.logger, guest.guestname),
                     transaction,
                     guest.guestname,
+                    GuestState.SHELVED,
                     GuestState.CONDEMNED,
+                    guest._pool_data,
                     release_guest_request,
                     guest.guestname,
-                    current_state=GuestState.SHELVED,
                     set_values={'shelfname': None},
                     poolname=guest.poolname,
                 )

@@ -55,10 +55,10 @@ class Workspace(_Workspace):
             if not self.gr.shelfname or self.gr.bypass_shelf_lookup is True:
                 self.update_guest_state_and_request_task(
                     transaction,
+                    GuestState.SHELF_LOOKUP,
                     GuestState.ROUTING,
                     route_guest_request,
                     self.guestname,
-                    current_state=GuestState.SHELF_LOOKUP,
                 )
 
                 return None
@@ -97,10 +97,10 @@ class Workspace(_Workspace):
                     # Use this guest to serve the GR
                     self.update_guest_state_and_request_task(
                         transaction,
+                        GuestState.SHELF_LOOKUP,
                         GuestState.PREPARING,
                         prepare_finalize_pre_connect,
                         self.guestname,
-                        current_state=GuestState.SHELF_LOOKUP,
                         set_values={
                             attr: getattr(selected_guest, attr)
                             for attr in ['poolname', 'address', 'ssh_port', 'ssh_username', '_pool_data']
@@ -143,10 +143,10 @@ class Workspace(_Workspace):
 
                 self.update_guest_state_and_request_task(
                     transaction,
+                    GuestState.SHELF_LOOKUP,
                     GuestState.ROUTING,
                     route_guest_request,
                     self.guestname,
-                    current_state=GuestState.SHELF_LOOKUP,
                 )
 
     @classmethod

@@ -112,10 +112,10 @@ class Workspace(_Workspace):
 
                 self.update_guest_state_and_request_task(
                     transaction,
+                    GuestState.SHELVED,
                     GuestState.CONDEMNED,
                     release_guest_request,
                     self.guestname,
-                    current_state=GuestState.SHELVED,
                 )
 
                 ShelfMetrics.inc_removals(self.gr.shelfname)

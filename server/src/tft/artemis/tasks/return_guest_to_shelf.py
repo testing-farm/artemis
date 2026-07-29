@@ -69,12 +69,14 @@ class Workspace(_Workspace):
                     self.request_task(transaction, release_guest_request, self.guestname)
 
                 else:
+                    assert self.gr
+
                     self.update_guest_state_and_request_task(
                         transaction,
+                        self.current_state,
                         GuestState.CONDEMNED,
                         release_guest_request,
                         self.guestname,
-                        current_state=self.current_state,
                     )
 
             shelf: Optional[GuestShelf] = r_shelf.unwrap()
@@ -121,10 +123,10 @@ class Workspace(_Workspace):
 
             self.update_guest_state_and_request_task(
                 transaction,
+                self.current_state,
                 GuestState.SHELVED,
                 shelved_guest_watchdog,
                 self.guestname,
-                current_state=self.current_state,
             )
 
     @classmethod

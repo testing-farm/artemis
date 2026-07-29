@@ -52,11 +52,11 @@ class Workspace(_Workspace):
             self.update_guest_state(
                 transaction,
                 GuestState(self.gr.state),
+                GuestState(self.gr.state),
                 set_values={
                     'console_url': console_url_data.url,
                     'console_url_expires': console_url_data.expires,
                 },
-                current_pool_data=self.gr._pool_data,
             )
 
     @classmethod

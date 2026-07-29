@@ -294,11 +294,11 @@ def test_update_guest_state_and_request_task(
     assert (
         workspace.update_guest_state_and_request_task(
             transaction,
+            tft.artemis.guest.GuestState.SHELF_LOOKUP,
             tft.artemis.guest.GuestState.ROUTING,
             tft.artemis.tasks.route_guest_request.route_guest_request,
             'dummy-guest',
             delay=79,
-            current_state=tft.artemis.guest.GuestState.SHELF_LOOKUP,
         )
         is workspace
     )
@@ -369,12 +369,12 @@ def test_update_guest_state_and_request_task_no_such_guest(
     assert (
         workspace.update_guest_state_and_request_task(
             transaction,
+            tft.artemis.guest.GuestState.ROUTING,
             tft.artemis.guest.GuestState.PROVISIONING,
             tft.artemis.tasks.acquire_guest_request.acquire_guest_request,
             'not-so-dummy-guest',
             # 'dummy-pool',
             delay=79,
-            current_state=tft.artemis.guest.GuestState.ROUTING,
             set_values={'poolname': 'dummy-pool'},
         )
         is workspace

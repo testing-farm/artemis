@@ -16,7 +16,7 @@ import gluetool.log
 import sqlalchemy.orm.session
 
 from .. import Failure
-from ..db import DB, SerializedPoolDataMapping
+from ..db import DB
 from ..drivers import KNOB_UPDATE_GUEST_REQUEST_TICK, ProvisioningProgress, ProvisioningState
 from ..guest import GuestState
 from . import (
@@ -47,7 +47,6 @@ class Workspace(_Workspace):
 
         skip_prepare_verify_ssh: bool
 
-        current_pool_data: SerializedPoolDataMapping
         provisioning_progress: ProvisioningProgress
         new_guest_data: GuestFieldStates
 
@@ -70,7 +69,6 @@ class Workspace(_Workspace):
 
             if self.is_pool_enabled:
                 skip_prepare_verify_ssh = self.gr.skip_prepare_verify_ssh
-                current_pool_data = self.gr._pool_data.copy()
 
                 r_progress = self.pool.update_guest(self.logger, self.session, self.gr)
 
@@ -111,12 +109,10 @@ class Workspace(_Workspace):
                 self.update_guest_state_and_request_task(
                     transaction,
                     GuestState.PROMISED,
+                    GuestState.PROMISED,
                     update_guest_request,
                     self.guestname,
-                    current_state=GuestState.PROMISED,
                     set_values=new_guest_data,
-                    # UNBOUND
-                    current_pool_data=current_pool_data,
                     delay=provisioning_progress.delay_update or r_update_delay.unwrap(),
                 )
 
@@ -157,13 +153,11 @@ class Workspace(_Workspace):
 
                     self.update_guest_state_and_request_task(
                         transaction,
+                        GuestState.PROMISED,
                         GuestState.PREPARING,
                         prepare_finalize_pre_connect,
                         self.guestname,
-                        current_state=GuestState.PROMISED,
                         set_values=new_guest_data,
-                        # UNBOUND
-                        current_pool_data=current_pool_data,
                     )
 
                 else:
@@ -172,13 +166,11 @@ class Workspace(_Workspace):
 
                     self.update_guest_state_and_request_task(
                         transaction,
+                        GuestState.PROMISED,
                         GuestState.PREPARING,
                         prepare_verify_ssh,
                         self.guestname,
-                        current_state=GuestState.PROMISED,
                         set_values=new_guest_data,
-                        # UNBOUND
-                        current_pool_data=current_pool_data,
                         delay=KNOB_DISPATCH_PREPARE_DELAY.value,
                     )
 
