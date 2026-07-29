@@ -1149,3 +1149,58 @@ def test_bkr_wow_options_bootc_merges_user_kickstart_metadata(
         and 'autopart_type=plain ignoredisk=--only-use=nvme0n1' in value
         for value in ks_meta_values
     ), ks_meta_values
+
+
+@pytest.mark.parametrize(
+    ('pool_config', 'expected_command'),
+    [
+        (
+            {},
+            ['bkr', 'job-results', 'J:123'],
+        ),
+        (
+            {'hub': 'https://beaker.example.com'},
+            ['bkr', 'job-results', '--hub', 'https://beaker.example.com', 'J:123'],
+        ),
+        (
+            {'username': 'a-username', 'password': 'a-password'},
+            ['bkr', 'job-results', '--username', 'a-username', '--password', 'a-password', 'J:123'],
+        ),
+        (
+            {'hub': 'https://beaker.example.com', 'username': 'a-username', 'password': 'a-password'},
+            [
+                'bkr',
+                'job-results',
+                '--hub',
+                'https://beaker.example.com',
+                '--username',
+                'a-username',
+                '--password',
+                'a-password',
+                'J:123',
+            ],
+        ),
+    ],
+    ids=[
+        'no-hub-no-credentials',
+        'hub',
+        'credentials',
+        'hub-and-credentials',
+    ],
+)
+def test_run_bkr(
+    logger: ContextAdapter,
+    mockpatch: MockPatcher,
+    pool_config: dict[str, Any],
+    expected_command: list[str],
+) -> None:
+    pool = tft.artemis.drivers.beaker.BeakerDriver(logger, 'beaker', pool_config)
+
+    mock_run_cli_tool = mockpatch(tft.artemis.drivers.beaker, 'run_cli_tool')
+    mock_run_cli_tool.return_value = Ok(MagicMock())
+
+    r_output = pool._run_bkr(logger, ['job-results', 'J:123'])
+
+    assert r_output.is_ok
+
+    assert mock_run_cli_tool.call_args.args[1] == expected_command
