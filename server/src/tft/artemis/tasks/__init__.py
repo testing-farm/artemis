@@ -1622,10 +1622,10 @@ def _update_guest_state(
     poolname: Optional[str] = None,
     current_pool_data: Optional[SerializedPoolDataMapping] = None,
     **details: Any,
-) -> Result[None, Failure]:
+) -> Result[bool, Failure]:
     current_state_label = current_state.value if current_state is not None else '<ignored>'
 
-    def handle_error(r: Result[Any, Failure], message: str) -> Result[None, Failure]:
+    def handle_error(r: Result[Any, Failure], message: str) -> Result[bool, Failure]:
         assert r.is_error
 
         return Error(
@@ -1652,9 +1652,9 @@ def _update_guest_state(
     if r_execute.is_error:
         return handle_error(r_execute, 'failed to switch guest state')
 
-    # Check that there was an actual change
     if not r_execute.unwrap().rowcount:
-        return handle_error(Error(Failure('update statement matched no rows')), 'failed to switch guest state')
+        logger.warning(f'state switch: {current_state_label} => {new_state.value}: lost race, no rows matched')
+        return Ok(False)
 
     logger.warning(f'state switch: {current_state_label} => {new_state.value}: proposed')
 
@@ -1672,7 +1672,7 @@ def _update_guest_state(
     # TODO: dubious without immediate commit
     metrics.ProvisioningMetrics.inc_guest_state_transition(poolname, current_state, new_state)
 
-    return Ok(None)
+    return Ok(True)
 
 
 def _update_guest_state_and_request_task(
@@ -1688,10 +1688,10 @@ def _update_guest_state_and_request_task(
     current_pool_data: Optional[SerializedPoolDataMapping] = None,
     delay: Optional[int] = None,
     **details: Any,
-) -> Result[None, Failure]:
+) -> Result[bool, Failure]:
     current_state_label = current_state.value if current_state is not None else '<ignored>'
 
-    def handle_error(r: Result[Any, Any], message: str) -> Result[None, Failure]:
+    def handle_error(r: Result[Any, Any], message: str) -> Result[bool, Failure]:
         assert r.is_error
 
         return Error(
@@ -1723,9 +1723,9 @@ def _update_guest_state_and_request_task(
     if r_execute.is_error:
         return handle_error(r_execute, 'failed to switch guest state')
 
-    # Check that there was an actual change
     if not r_execute.unwrap().rowcount:
-        return handle_error(Error(Failure('update statement matched no rows')), 'failed to switch guest state')
+        logger.warning(f'state switch: {current_state_label} => {new_state.value}: lost race, no rows matched')
+        return Ok(False)
 
     logger.warning(f'state switch: {current_state_label} => {new_state.value}: proposed')
 
@@ -1748,7 +1748,7 @@ def _update_guest_state_and_request_task(
     # TODO: without immediate commit, these two are dubious...
     metrics.ProvisioningMetrics.inc_guest_state_transition(poolname, current_state, new_state)
 
-    return Ok(None)
+    return Ok(True)
 
 
 @with_context
@@ -2031,6 +2031,10 @@ class Workspace:
         if r.is_error:
             self._error(transaction, r, 'failed to update guest request')
 
+        elif not r.unwrap():
+            self._progress(transaction, 'state update lost race, no rows matched')
+            self._complete(transaction)
+
     #
     #
     #
@@ -2306,6 +2310,10 @@ class Workspace:
 
         if r.is_error:
             self._error(transaction, r, 'failed to update guest state and dispatch task')
+
+        elif not r.unwrap():
+            self._progress(transaction, 'state update lost race, no rows matched')
+            self._complete(transaction)
 
         return self
 
