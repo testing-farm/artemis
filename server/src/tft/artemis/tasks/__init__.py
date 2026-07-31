@@ -1653,11 +1653,12 @@ def _update_guest_state(
         return handle_error(r_execute, 'failed to switch guest state')
 
     if not r_execute.unwrap().rowcount:
+        # TOCTOU race lost. On the next retry the situation will be reevaluated (guest request reloaded) and processing
+        # will gracefully end with no op.
         return Error(
             Failure(
                 f'state switch: {current_state_label} => {new_state.value}: lost race, no rows matched',
-                recoverable=False,
-                fail_guest_request=False,
+                recoverable=True,
             )
         )
 
@@ -1729,11 +1730,12 @@ def _update_guest_state_and_request_task(
         return handle_error(r_execute, 'failed to switch guest state')
 
     if not r_execute.unwrap().rowcount:
+        # TOCTOU race lost. On the next retry the situation will be reevaluated (guest request reloaded) and processing
+        # will gracefully end with no op.
         return Error(
             Failure(
                 f'state switch: {current_state_label} => {new_state.value}: lost race, no rows matched',
-                recoverable=False,
-                fail_guest_request=False,
+                recoverable=True,
             )
         )
 
