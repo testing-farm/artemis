@@ -1656,10 +1656,7 @@ def _update_guest_state(
         # TOCTOU race lost. On the next retry the situation will be reevaluated (guest request reloaded) and processing
         # will gracefully end with no op.
         return Error(
-            Failure(
-                f'state switch: {current_state_label} => {new_state.value}: lost race, no rows matched',
-                recoverable=True,
-            )
+            Failure('failed to switch guest state', current_state=current_state_label, new_state=new_state.value)
         )
 
     logger.warning(f'state switch: {current_state_label} => {new_state.value}: proposed')
@@ -1733,10 +1730,7 @@ def _update_guest_state_and_request_task(
         # TOCTOU race lost. On the next retry the situation will be reevaluated (guest request reloaded) and processing
         # will gracefully end with no op.
         return Error(
-            Failure(
-                f'state switch: {current_state_label} => {new_state.value}: lost race, no rows matched',
-                recoverable=True,
-            )
+            Failure('failed to switch guest state', current_state=current_state_label, new_state=new_state.value)
         )
 
     logger.warning(f'state switch: {current_state_label} => {new_state.value}: proposed')
