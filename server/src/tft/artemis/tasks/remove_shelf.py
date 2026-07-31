@@ -78,6 +78,13 @@ class Workspace(_Workspace):
                 )
 
                 if r.is_error:
+                    # fail_guest_request=False means the error does not affect the guest
+                    # (e.g. lost TOCTOU race, guest already left SHELVED). Skip it and
+                    # continue with remaining guests instead of aborting the entire
+                    # shelf removal.
+                    if not r.unwrap_error().fail_guest_request:
+                        continue
+
                     return self._error(
                         transaction, r, f'failed to update guest {guest.guestname} and schedule its release'
                     )
