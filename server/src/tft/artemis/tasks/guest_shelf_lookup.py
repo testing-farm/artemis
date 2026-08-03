@@ -107,6 +107,10 @@ class Workspace(_Workspace):
                         },
                     )
 
+                    if self.result:
+                        # Something set the result already, not your guest request to remove now
+                        return None
+
                     r_delete: DMLResult[GuestRequest] = transaction.execute_dml(
                         self.logger,
                         sqlalchemy.delete(GuestRequest)
@@ -118,6 +122,8 @@ class Workspace(_Workspace):
                         return self._error(transaction, r_delete, 'failed to remove the original guest request record')
 
                     ShelfMetrics.inc_removals(self.gr.shelfname)
+
+                    break
 
             else:
                 ShelfMetrics.inc_misses(self.gr.shelfname)
