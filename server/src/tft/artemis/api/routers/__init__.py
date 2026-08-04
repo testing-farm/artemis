@@ -268,7 +268,11 @@ class GuestRequestManager:
             return response_model.from_db(guest_request_record)
 
     def delete_by_guestname(
-        self, guestname: str, logger: gluetool.log.ContextAdapter, state: Optional[GuestState] = None
+        self,
+        guestname: str,
+        logger: gluetool.log.ContextAdapter,
+        state: Optional[GuestState] = None,
+        exclude_state: Optional[GuestState] = None,
     ) -> None:
         from ...tasks import get_guest_logger
         from ...tasks.release_guest_request import release_guest_request
@@ -285,6 +289,9 @@ class GuestRequestManager:
 
             if state is not None:
                 gr_query = gr_query.filter(artemis_db.GuestRequest.state == state)
+
+            if exclude_state is not None:
+                gr_query = gr_query.filter(artemis_db.GuestRequest.state != exclude_state)
 
             r_guest_request = gr_query.one_or_none()
 
@@ -308,11 +315,18 @@ class GuestRequestManager:
                 extra_actor_args = [GuestState.CONDEMNED.value]
 
             if guest_request.state != GuestState.CONDEMNED:
-                r_state: artemis_db.DMLResult[artemis_db.GuestRequest] = transaction.execute_dml(
-                    guest_logger,
+                condemn_query = (
                     sqlalchemy.update(artemis_db.GuestRequest)
                     .where(artemis_db.GuestRequest.guestname == guestname)
-                    .values(state=GuestState.CONDEMNED),
+                    .values(state=GuestState.CONDEMNED)
+                )
+
+                if exclude_state is not None:
+                    condemn_query = condemn_query.where(artemis_db.GuestRequest.state != exclude_state)
+
+                r_state: artemis_db.DMLResult[artemis_db.GuestRequest] = transaction.execute_dml(
+                    guest_logger,
+                    condemn_query,
                 )
 
                 if r_state.is_error:
@@ -326,6 +340,9 @@ class GuestRequestManager:
                     raise errors.InternalServerError(
                         logger=guest_logger, caused_by=failure, failure_details=failure_details
                     )
+
+                if exclude_state is not None and not r_state.unwrap().rowcount:
+                    raise errors.ConflictError(logger=guest_logger, failure_details=failure_details)
 
                 artemis_db.GuestRequest.log_event_by_guestname(guest_logger, transaction, guestname, 'condemned')
 
@@ -613,7 +630,7 @@ def delete_guest(
     if guest.state == GuestState.SHELVED:
         raise errors.ConflictError(request=request)
 
-    manager.delete_by_guestname(guestname, logger)
+    manager.delete_by_guestname(guestname, logger, exclude_state=GuestState.SHELVED)
 
     return
 
