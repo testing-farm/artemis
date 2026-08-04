@@ -57,6 +57,15 @@ FILES_TO_FETCH = ['/' + REPOS_GLOB, '/etc/cloud/cloud.cfg', '/root/.ssh/*']
 
 KS_LOGNAME = 'ks.cfg:dump'
 
+#: Stored as the kickstart script log when the script itself could not be preserved. Better than an empty
+#: log with no explanation of why it is empty.
+KS_LOST_CONTENT = """# The kickstart script used for this installation was not preserved.
+#
+# The installation had already been started by another invocation of the `prepare-kickstart` task, and that
+# invocation did not store the rendered script. The script cannot be recovered from the guest either: it lived
+# in the root that `kexec` replaced when the installer took over.
+"""
+
 KNOB_PREPARE_KICKSTART_SSH_TIMEOUT: Knob[int] = Knob(
     'actor.kickstart.ssh-timeout',
     'Kickstart installation SSH connection timeout.',
@@ -102,6 +111,63 @@ class Workspace(_Workspace):
     """
     Workspace for executing kickstart using kexec.
     """
+
+    def _preserve_kickstart_log(self, transaction: Transaction) -> None:
+        """
+        Make sure the kickstart script log explains itself, even when its content is gone.
+
+        Only the invocation that renders the kickstart script stores it. When another invocation finds the
+        installation already started, the script may never have been committed, leaving a permanently empty
+        log behind. Record why the content is missing, and mark the log as failed, rather than leaving the
+        gap silent.
+        """
+
+        assert self.gr
+
+        r_guest_log = (
+            SafeQuery.from_session(self.session, GuestLog)
+            .filter(GuestLog.guestname == self.gr.guestname)
+            .filter(GuestLog.logname == KS_LOGNAME)
+            .filter(GuestLog.contenttype == GuestLogContentType.BLOB)
+            .one_or_none()
+        )
+
+        if r_guest_log.is_error:
+            return self._error(transaction, r_guest_log, f'failed to load the log {KS_LOGNAME}', no_effect=True)
+
+        log = r_guest_log.unwrap()
+
+        if log is not None and log.blobs:
+            # An earlier invocation did store the script, there is nothing to explain.
+            return None
+
+        if log is None:
+            r_create_log = GuestLog.create(
+                self.logger,
+                transaction,
+                self.gr.guestname,
+                KS_LOGNAME,
+                GuestLogContentType.BLOB,
+                GuestLogState.ERROR,
+            )
+
+            if r_create_log.is_error:
+                return self._error(transaction, r_create_log, f'failed to create the log {KS_LOGNAME}', no_effect=True)
+
+            log = r_create_log.unwrap()
+
+        else:
+            r_update_log = log.update(self.logger, transaction, GuestLogState.ERROR)
+
+            if r_update_log.is_error:
+                return self._error(transaction, r_update_log, f'failed to update the log {KS_LOGNAME}', no_effect=True)
+
+        r_store_blob = GuestLogBlob.from_content(KS_LOST_CONTENT).save(self.logger, transaction, log, overwrite=True)
+
+        if r_store_blob.is_error:
+            return self._error(
+                transaction, r_store_blob, f'failed to store the blob for the log {KS_LOGNAME}', no_effect=True
+            )
 
     def _request_installation_check(self, transaction: Transaction) -> None:
         """
@@ -175,6 +241,8 @@ class Workspace(_Workspace):
                 # task would strand the guest in `PREPARING` with an empty chain, since no watchdog is dispatched
                 # before the guest becomes `READY`.
                 self._guest_request_event(transaction, 'already-reinstalled')
+
+                self._preserve_kickstart_log(transaction)
 
                 return self._request_installation_check(transaction)
 
