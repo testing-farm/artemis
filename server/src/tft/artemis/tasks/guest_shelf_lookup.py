@@ -111,6 +111,14 @@ class Workspace(_Workspace):
                         # Something set the result already, not your guest request to remove now
                         return None
 
+                    GuestRequest.log_event_by_guestname(
+                        self.logger,
+                        transaction,
+                        selected_guest.guestname,
+                        'shelved-guest-used-to-serve-gr',
+                        served_guestname=self.guestname,
+                    )
+
                     r_delete: DMLResult[GuestRequest] = transaction.execute_dml(
                         self.logger,
                         sqlalchemy.delete(GuestRequest)
