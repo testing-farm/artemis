@@ -1659,7 +1659,10 @@ def _force_guest_state(
         **failure_details,
     )
 
-    # TODO: needs its own metric
+    # TODO: better detection of current state and current pool would be nice. It would provide a more complete picture
+    # of guest request state transitions, namely which pools/states, at this point of provisioning, end up in the
+    # `ERROR` state.
+    metrics.ProvisioningMetrics.inc_guest_state_transition(None, None, new_state)
 
     return Ok(None)
 
@@ -1752,7 +1755,7 @@ def _update_guest_state_and_request_task(
             'current_state': current_state.value,
             'new_state': new_state.value,
             'task_name': task.actor_name,
-            'task_args': task_arguments,
+            'task_args': [str(task_argument) for task_argument in task_arguments],
             'poolname': poolname,
         }
     )
@@ -2083,7 +2086,7 @@ class Workspace:
             new_state,
             self.gr._pool_data,
             set_values=set_values,
-            poolname=poolname or (self.gr.poolname if self.gr else None),
+            poolname=poolname or self.gr.poolname,
             failure_details=failure_details,
         )
 
@@ -2358,7 +2361,7 @@ class Workspace:
             task,
             *task_arguments,
             set_values=set_values,
-            poolname=poolname or (self.gr.poolname if self.gr else None),
+            poolname=poolname or self.gr.poolname,
             delay=delay,
             failure_details=failure_details,
         )
