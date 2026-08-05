@@ -123,6 +123,11 @@ class Workspace(_Workspace):
 
                     ShelfMetrics.inc_removals(self.gr.shelfname)
 
+                    self._progress(
+                        transaction,
+                        'a shelved guest has been chosen',
+                        shelved_guestname=selected_guest.guestname,
+                    )
                     break
 
             else:
