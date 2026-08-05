@@ -1655,9 +1655,7 @@ def _update_guest_state(
     if not r_execute.unwrap().rowcount:
         # TOCTOU race lost. On the next retry the situation will be reevaluated (guest request reloaded) and processing
         # will gracefully end with no op.
-        return Error(
-            Failure('failed to switch guest state', current_state=current_state_label, new_state=new_state.value)
-        )
+        return handle_error(Error(Failure('update statement matched no rows')), 'failed to switch guest state')
 
     logger.warning(f'state switch: {current_state_label} => {new_state.value}: proposed')
 
@@ -1729,9 +1727,7 @@ def _update_guest_state_and_request_task(
     if not r_execute.unwrap().rowcount:
         # TOCTOU race lost. On the next retry the situation will be reevaluated (guest request reloaded) and processing
         # will gracefully end with no op.
-        return Error(
-            Failure('failed to switch guest state', current_state=current_state_label, new_state=new_state.value)
-        )
+        return handle_error(Error(Failure('update statement matched no rows')), 'failed to switch guest state')
 
     logger.warning(f'state switch: {current_state_label} => {new_state.value}: proposed')
 
