@@ -115,7 +115,7 @@ class Workspace(_Workspace):
                         self.logger,
                         transaction,
                         selected_guest.guestname,
-                        'shelved-guest-used-to-serve-gr',
+                        'selected-from-shelf',
                         served_guestname=self.guestname,
                     )
 
@@ -133,7 +133,7 @@ class Workspace(_Workspace):
 
                     self._progress(
                         transaction,
-                        'a shelved guest has been chosen',
+                        'served-by-shelf',
                         shelved_guestname=selected_guest.guestname,
                     )
                     break
