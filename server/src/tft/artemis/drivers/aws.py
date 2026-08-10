@@ -2117,12 +2117,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
         return r_post_install_script.unwrap()
 
     def _assign_security_group_rules(
-        self,
-        logger: ContextAdapter,
-        guest_request: GuestRequest,
-        guest_security_group_id: str,
-        *,
-        bulk_apply: Optional[bool] = False,
+        self, logger: ContextAdapter, guest_request: GuestRequest, guest_security_group_id: str
     ) -> Result[list[str], Failure]:
         """
         Ideally there should be a dedicated stage in the artemis lifecycle, when upon startup the artemis config's
@@ -2179,56 +2174,41 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
                 )
             return json.dumps(ip_permissions)
 
-        def _apply_sg_rules(rule_type: str, rules: list[SecurityGroupRule]) -> Result[bool, Failure]:
+        def _apply_sg_rule(rule_type: str, rule: SecurityGroupRule) -> Result[None, Failure]:
             # NOTE(ivasilev) As we have to support both ipv4 and ipv6 can't use the comfort of --cidr passing as this
             # argument supports only ipv4 addresses, need to form --ip-permissions payload manually.
-            r_apply_rules = self._aws_command(
+            r_apply_rule = self._aws_command(
                 [
                     'ec2',
                     f'authorize-security-group-{rule_type}',
                     '--group-id',
                     guest_security_group_id,
                     '--ip-permissions',
-                    _create_ip_permissions_payload(rules),
+                    _create_ip_permissions_payload([rule]),
                 ]
             )
-            if r_apply_rules.is_error:
-                return Error(Failure.from_failure('failed to update security group', r_apply_rules.unwrap_error()))
+            if r_apply_rule.is_error:
+                return Error(Failure.from_failure('failed to update security group', r_apply_rule.unwrap_error()))
 
-            res = r_apply_rules.unwrap()
+            if not r_apply_rule.unwrap():
+                # A duplicate rule was passed - aws was instructed to silently ignore it (see _aws_command)
+                logger.info(f'{rule} is a duplicate rule, skipping')
 
-            if not res:
-                # This can happen only if a duplicate rule has been passed -> we instruct aws to silently ignore it
-                logger.info(f'{rules} contain duplicate rules, skipping altogether')
-                return Ok(False)
+            return Ok(None)
 
-            return Ok(True)
-
-        # Update new security group with a proper set of rules
+        # Apply the rules one-by-one so that a single duplicate does not abort application of the remaining rules
+        # (aws authorize-security-group-* is atomic - a duplicate in a bulk payload rejects the whole batch).
         rules_map = {'ingress': guest_secgroup_rules.ingress, 'egress': guest_secgroup_rules.egress}
 
         for rule_type, rules in rules_map.items():
-            if not rules:
-                # No rules to apply, skipping
-                continue
-
-            if bulk_apply:
-                r_apply_rules = _apply_sg_rules(rule_type, rules)
-                if r_apply_rules.is_error:
+            for rule in rules:
+                r_apply_rule = _apply_sg_rule(rule_type, rule)
+                if r_apply_rule.is_error:
                     return Error(
                         Failure.from_failure(
-                            'security group rules bulk update failed', r_apply_rules.unwrap_error(), rules=rules
+                            'security group rules update failed', r_apply_rule.unwrap_error(), rule=rule
                         )
                     )
-            else:
-                for rule in rules:
-                    r_apply_rule = _apply_sg_rules(rule_type, [rule])
-                    if r_apply_rule.is_error:
-                        return Error(
-                            Failure.from_failure(
-                                'security group rules update failed', r_apply_rule.unwrap_error(), rule=rule
-                            )
-                        )
 
         return Ok(res_security_groups)
 
@@ -2301,7 +2281,6 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
 
         subnet_details = cast(list[dict[str, str]], r_subnet_details.unwrap())
         vpc_id = subnet_details[0]['VpcId']
-        is_sg_new = False
 
         r_security_group_id = self._find_security_group_id(logger, security_group_name, vpc_id)
 
@@ -2314,8 +2293,6 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
             assert security_group_id is not None
 
         else:
-            is_sg_new = True
-
             command = [
                 'ec2',
                 'create-security-group',
@@ -2338,9 +2315,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
 
             security_group_id = cast(str, r_create_sg.unwrap())
 
-        r_get_secgroups = self._assign_security_group_rules(
-            logger, guest_request, security_group_id, bulk_apply=is_sg_new
-        )
+        r_get_secgroups = self._assign_security_group_rules(logger, guest_request, security_group_id)
         if r_get_secgroups.is_error:
             return Error(
                 Failure.from_failure(
