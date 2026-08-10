@@ -22,7 +22,7 @@ from gluetool.result import Error
 from returns.pipeline import is_successful
 
 from .. import Failure, render_template
-from ..db import DB, GuestLog, GuestLogContentType, GuestLogState, SafeQuery
+from ..db import DB, GuestLog, GuestLogContentType, GuestLogState, SafeQuery, Transaction
 from ..drivers import (
     GuestLogBlob,
     copy_from_remote,
@@ -103,13 +103,30 @@ class Workspace(_Workspace):
     Workspace for executing kickstart using kexec.
     """
 
+    def _request_installation_check(self, transaction: Transaction) -> None:
+        """
+        Hand the guest over to ``prepare-kickstart-wait``, which owns the rest of the chain.
+        """
+
+        from .prepare_kickstart_wait import KNOB_PREPARE_KICKSTART_WAIT_INITIAL_DELAY, prepare_kickstart_wait
+
+        assert self.guestname
+        assert self.pool
+
+        r_delay = KNOB_PREPARE_KICKSTART_WAIT_INITIAL_DELAY.get_value(
+            session=self.session, entityname=self.pool.poolname
+        )
+
+        if r_delay.is_error:
+            return self._error(transaction, r_delay, 'failed to load the delay for installation check task')
+
+        self.request_task(transaction, prepare_kickstart_wait, self.guestname, delay=r_delay.unwrap())
+
     @step
     def run(self, ks_dst: str = KS_DST, script_dst: str = SCRIPT_DST) -> None:
         """
         Execute the task in a transaction.
         """
-
-        from .prepare_kickstart_wait import KNOB_PREPARE_KICKSTART_WAIT_INITIAL_DELAY, prepare_kickstart_wait
 
         assert self.guestname
 
@@ -150,9 +167,16 @@ class Workspace(_Workspace):
             )
 
             if r_check.is_ok:
-                # If the command succeeded, the file exists on the remote host and
-                # installation must have already finished.
-                return self._guest_request_event(transaction, 'already-reinstalled')
+                # The file exists on the remote host, therefore the installation has already been started by another
+                # invocation of this task. It may still be running, though: `/.ksinstall` is created by the kickstart
+                # `%pre` section, in the installer environment, and again by `%post`, in the installed system, and this
+                # check cannot tell the two apart. Hand over to `prepare-kickstart-wait`, which does distinguish them,
+                # via `/.ksinprogress`, and which owns the rest of the chain. Returning without requesting a follow-up
+                # task would strand the guest in `PREPARING` with an empty chain, since no watchdog is dispatched
+                # before the guest becomes `READY`.
+                self._guest_request_event(transaction, 'already-reinstalled')
+
+                return self._request_installation_check(transaction)
 
             # Verify the error is due to the file missing, which indicates the installer had not run yet
             failure = r_check.unwrap_error()
@@ -434,14 +458,7 @@ class Workspace(_Workspace):
 
             self.logger.debug('successfuly executed the installer')
 
-            r_delay = KNOB_PREPARE_KICKSTART_WAIT_INITIAL_DELAY.get_value(
-                session=self.session, entityname=self.pool.poolname
-            )
-
-            if r_delay.is_error:
-                return self._error(transaction, r_delay, 'failed to load the delay for installation check task')
-
-            self.request_task(transaction, prepare_kickstart_wait, self.guestname, delay=r_delay.unwrap())
+            self._request_installation_check(transaction)
 
     @classmethod
     def create(
