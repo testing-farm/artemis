@@ -294,19 +294,18 @@ def test_update_guest_state_and_request_task(
     assert (
         workspace.update_guest_state_and_request_task(
             transaction,
+            tft.artemis.guest.GuestState.SHELF_LOOKUP,
             tft.artemis.guest.GuestState.ROUTING,
             tft.artemis.tasks.route_guest_request.route_guest_request,
             'dummy-guest',
             delay=79,
-            current_state=tft.artemis.guest.GuestState.SHELF_LOOKUP,
         )
         is workspace
     )
 
     assert workspace.result is None
 
-    assert_log(caplog, message=SEARCH(r'state switch: shelf-lookup => routing'), levelno=logging.WARN)
-    assert_log(caplog, message=SEARCH(r'state switch: shelf-lookup => routing: succeeded'), levelno=logging.WARN)
+    assert_log(caplog, message=SEARCH(r'state switch: shelf-lookup => routing'), levelno=logging.INFO)
     assert_log(
         caplog,
         message="""requested task #1:
@@ -369,12 +368,12 @@ def test_update_guest_state_and_request_task_no_such_guest(
     assert (
         workspace.update_guest_state_and_request_task(
             transaction,
+            tft.artemis.guest.GuestState.ROUTING,
             tft.artemis.guest.GuestState.PROVISIONING,
             tft.artemis.tasks.acquire_guest_request.acquire_guest_request,
             'not-so-dummy-guest',
-            # 'dummy-pool',
+            poolname='dummy-pool',
             delay=79,
-            current_state=tft.artemis.guest.GuestState.ROUTING,
             set_values={'poolname': 'dummy-pool'},
         )
         is workspace
@@ -400,7 +399,7 @@ def test_update_guest_state_and_request_task_no_such_guest(
     assert failure.caused_by.details['expected_affected_rows'] == 1
     assert failure.caused_by.details['statement'].startswith('UPDATE')
 
-    assert_log(caplog, message=SEARCH(r'state switch: routing => provisioning'), levelno=logging.WARN)
+    assert_log(caplog, message=SEARCH(r'state switch: routing => provisioning'), levelno=logging.INFO)
 
     with db.get_session(logger) as new_session:
         r_tasks = tft.artemis.db.SafeQuery.from_session(new_session, tft.artemis.db.TaskRequest).all()

@@ -1153,12 +1153,11 @@ def _task_core(
         guestname = failure.details['guestname']
 
         with Transaction.go(logger, session) as transaction:
-            r_state_change = _update_guest_state(
+            r_state_change = _force_guest_state(
                 logger,
                 transaction,
                 guestname,
                 GuestState.ERROR,
-                # TODO: poolname=?
             )
 
         # If the change failed, we're left with a loose end: the task marked the failure as something that will not
@@ -1612,29 +1611,94 @@ def _guest_state_update_query(
     return Ok(query)
 
 
-def _update_guest_state(
+def _force_guest_state(
     logger: gluetool.log.ContextAdapter,
     transaction: Transaction,
     guestname: str,
     new_state: GuestState,
-    current_state: Optional[GuestState] = None,
-    set_values: Optional[GuestFieldStates] = None,
-    poolname: Optional[str] = None,
-    current_pool_data: Optional[SerializedPoolDataMapping] = None,
-    **details: Any,
+    failure_details: Optional[dict[str, Any]] = None,
 ) -> Result[None, Failure]:
-    current_state_label = current_state.value if current_state is not None else '<ignored>'
+    failure_details = failure_details or {}
+    failure_details.update(
+        {
+            'new_state': new_state.value,
+        }
+    )
 
     def handle_error(r: Result[Any, Failure], message: str) -> Result[None, Failure]:
         assert r.is_error
 
         return Error(
             Failure.from_failure(
-                message, r.unwrap_error(), current_state=current_state_label, new_state=new_state.value
-            ).update(poolname=poolname, **details)
+                message,
+                r.unwrap_error(),
+                **failure_details,
+            )
         )
 
-    logger.warning(f'state switch: {current_state_label} => {new_state.value}')
+    logger.info(f'state switch: {new_state.value}')
+
+    r_query = _guest_state_update_query(
+        guestname=guestname,
+        new_state=new_state,
+    )
+
+    if r_query.is_error:
+        return handle_error(r_query, 'failed to create state update query')
+
+    r_execute: DMLResult[GuestRequest] = transaction.execute_dml(logger, r_query.unwrap())
+
+    if r_execute.is_error:
+        return handle_error(r_execute, 'failed to switch guest state')
+
+    GuestRequest.log_event_by_guestname(
+        logger,
+        transaction,
+        guestname,
+        'state-changed',
+        **failure_details,
+    )
+
+    # TODO: better detection of current state and current pool would be nice. It would provide a more complete picture
+    # of guest request state transitions, namely which pools/states, at this point of provisioning, end up in the
+    # `ERROR` state.
+    metrics.ProvisioningMetrics.inc_guest_state_transition(None, None, new_state)
+
+    return Ok(None)
+
+
+def _update_guest_state(
+    logger: gluetool.log.ContextAdapter,
+    transaction: Transaction,
+    guestname: str,
+    current_state: GuestState,
+    new_state: GuestState,
+    current_pool_data: SerializedPoolDataMapping,
+    set_values: Optional[GuestFieldStates] = None,
+    poolname: Optional[str] = None,
+    failure_details: Optional[dict[str, Any]] = None,
+) -> Result[None, Failure]:
+    failure_details = failure_details or {}
+    failure_details.update(
+        {
+            'current_state': current_state.value,
+            'new_state': new_state.value,
+            'poolname': poolname,
+        }
+    )
+
+    def handle_error(r: Result[Any, Failure], message: str) -> Result[None, Failure]:
+        assert r.is_error
+
+        return Error(
+            Failure.from_failure(
+                message,
+                r.unwrap_error(),
+                **failure_details,
+            )
+        )
+
+    logger.info(f'state switch: {current_state.value} => {new_state.value}')
 
     r_query = _guest_state_update_query(
         guestname=guestname,
@@ -1657,17 +1721,12 @@ def _update_guest_state(
         # will gracefully end with no op.
         return handle_error(Error(Failure('update statement matched no rows')), 'failed to switch guest state')
 
-    logger.warning(f'state switch: {current_state_label} => {new_state.value}: proposed')
-
     GuestRequest.log_event_by_guestname(
         logger,
         transaction,
         guestname,
         'state-changed',
-        new_state=new_state.value,
-        current_state=current_state_label,
-        poolname=poolname,
-        **details,
+        **failure_details,
     )
 
     # TODO: dubious without immediate commit
@@ -1680,17 +1739,26 @@ def _update_guest_state_and_request_task(
     logger: gluetool.log.ContextAdapter,
     transaction: Transaction,
     guestname: str,
+    current_state: GuestState,
     new_state: GuestState,
+    current_pool_data: SerializedPoolDataMapping,
     task: Actor,
     *task_arguments: ActorArgumentType,
-    current_state: Optional[GuestState] = None,
     set_values: Optional[GuestFieldStates] = None,
     poolname: Optional[str] = None,
-    current_pool_data: Optional[SerializedPoolDataMapping] = None,
     delay: Optional[int] = None,
-    **details: Any,
+    failure_details: Optional[dict[str, Any]] = None,
 ) -> Result[None, Failure]:
-    current_state_label = current_state.value if current_state is not None else '<ignored>'
+    failure_details = failure_details or {}
+    failure_details.update(
+        {
+            'current_state': current_state.value,
+            'new_state': new_state.value,
+            'task_name': task.actor_name,
+            'task_args': [str(task_argument) for task_argument in task_arguments],
+            'poolname': poolname,
+        }
+    )
 
     def handle_error(r: Result[Any, Any], message: str) -> Result[None, Failure]:
         assert r.is_error
@@ -1699,14 +1767,11 @@ def _update_guest_state_and_request_task(
             Failure.from_failure(
                 message,
                 r.unwrap_error(),
-                current_state=current_state_label,
-                new_state=new_state.value,
-                task_name=task.actor_name,
-                task_args=task_arguments,
-            ).update(poolname=poolname, **details)
+                **failure_details,
+            )
         )
 
-    logger.warning(f'state switch: {current_state_label} => {new_state.value}')
+    logger.info(f'state switch: {current_state.value} => {new_state.value}')
 
     r_state_update_query = _guest_state_update_query(
         guestname=guestname,
@@ -1729,8 +1794,6 @@ def _update_guest_state_and_request_task(
         # will gracefully end with no op.
         return handle_error(Error(Failure('update statement matched no rows')), 'failed to switch guest state')
 
-    logger.warning(f'state switch: {current_state_label} => {new_state.value}: proposed')
-
     r_task = _request_task(logger, transaction, task, *task_arguments, delay=delay)
 
     if r_task.is_error:
@@ -1741,10 +1804,7 @@ def _update_guest_state_and_request_task(
         transaction,
         guestname,
         'state-changed',
-        new_state=new_state.value,
-        current_state=current_state_label,
-        poolname=poolname,
-        **details,
+        **failure_details,
     )
 
     # TODO: without immediate commit, these two are dubious...
@@ -2006,28 +2066,28 @@ class Workspace:
     def update_guest_state(
         self,
         transaction: Transaction,
+        current_state: GuestState,
         new_state: GuestState,
-        current_state: Optional[GuestState] = None,
         set_values: Optional[GuestFieldStates] = None,
         poolname: Optional[str] = None,
-        current_pool_data: Optional[SerializedPoolDataMapping] = None,
-        **details: Any,
+        failure_details: Optional[dict[str, Any]] = None,
     ) -> None:
         if self.result:
             return
 
         assert self.guestname
+        assert self.gr
 
         r = _update_guest_state(
             self.logger,
             transaction,
             self.guestname,
+            current_state,
             new_state,
-            current_state=current_state,
+            self.gr._pool_data,
             set_values=set_values,
-            poolname=poolname or (self.gr.poolname if self.gr else None),
-            current_pool_data=current_pool_data,
-            **details,
+            poolname=poolname or self.gr.poolname,
+            failure_details=failure_details,
         )
 
         if r.is_error:
@@ -2272,15 +2332,14 @@ class Workspace:
     def update_guest_state_and_request_task(
         self,
         transaction: Transaction,
+        current_state: GuestState,
         new_state: GuestState,
         task: Actor,
         *task_arguments: ActorArgumentType,
-        current_state: Optional[GuestState] = None,
         set_values: Optional[GuestFieldStates] = None,
         poolname: Optional[str] = None,
-        current_pool_data: Optional[SerializedPoolDataMapping] = None,
         delay: Optional[int] = None,
-        **details: Any,
+        failure_details: Optional[dict[str, Any]] = None,
     ) -> Self:
         """
         Update guest request state and plan a follow-up task.
@@ -2290,20 +2349,21 @@ class Workspace:
             return self
 
         assert self.guestname
+        assert self.gr
 
         r = _update_guest_state_and_request_task(
             self.logger,
             transaction,
             self.guestname,
+            current_state,
             new_state,
+            self.gr._pool_data,
             task,
             *task_arguments,
-            current_state=current_state,
             set_values=set_values,
-            poolname=poolname or (self.gr.poolname if self.gr else None),
-            current_pool_data=current_pool_data,
+            poolname=poolname or self.gr.poolname,
             delay=delay,
-            **details,
+            failure_details=failure_details,
         )
 
         if r.is_error:
@@ -2482,11 +2542,10 @@ class ProvisioningTailHandler(TailHandler):
 
             workspace.update_guest_state_and_request_task(
                 transaction,
+                self.current_state,
                 self.new_state,
                 guest_shelf_lookup,
                 workspace.guestname,
-                current_state=self.current_state,
-                current_pool_data=workspace.gr._pool_data,
                 set_values=set_values,
             )
 
@@ -2495,20 +2554,18 @@ class ProvisioningTailHandler(TailHandler):
 
             workspace.update_guest_state_and_request_task(
                 transaction,
+                self.current_state,
                 self.new_state,
                 route_guest_request,
                 workspace.guestname,
-                current_state=self.current_state,
-                current_pool_data=workspace.gr._pool_data,
                 set_values=set_values,
             )
 
         elif self.new_state == GuestState.ERROR:
             workspace.update_guest_state(
                 transaction,
+                self.current_state,
                 self.new_state,
-                current_state=self.current_state,
-                current_pool_data=workspace.gr._pool_data,
                 set_values=set_values,
             )
 

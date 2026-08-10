@@ -68,7 +68,11 @@ class Workspace(_Workspace):
             if ruling.cancel:
                 self._progress(transaction, 'routing-cancelled')
 
-                self.update_guest_state(transaction, GuestState.ERROR, current_state=GuestState.ROUTING)
+                self.update_guest_state(
+                    transaction,
+                    GuestState.ROUTING,
+                    GuestState.ERROR,
+                )
 
                 return None
 
@@ -84,10 +88,10 @@ class Workspace(_Workspace):
 
             self.update_guest_state_and_request_task(
                 transaction,
+                GuestState.ROUTING,
                 GuestState.PROVISIONING,
                 acquire_guest_request,
                 self.guestname,
-                current_state=GuestState.ROUTING,
                 set_values={'poolname': new_poolname},
                 poolname=new_poolname,
             )

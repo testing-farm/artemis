@@ -92,13 +92,11 @@ class Workspace(_Workspace):
 
                 self.update_guest_state_and_request_task(
                     transaction,
+                    GuestState.PROVISIONING,
                     GuestState.PROMISED,
                     update_guest_request,
                     self.guestname,
-                    current_state=GuestState.PROVISIONING,
                     set_values=new_guest_values,
-                    pool=self.gr.poolname,
-                    pool_data=self.gr.pool_data.update(self.gr.poolname, provisioning_progress.pool_data),
                     delay=provisioning_progress.delay_update or r_update_delay.unwrap(),
                 )
 
@@ -147,14 +145,14 @@ class Workspace(_Workspace):
 
                     self.update_guest_state_and_request_task(
                         transaction,
+                        GuestState.PROVISIONING,
                         GuestState.PREPARING,
                         prepare_finalize_pre_connect,
                         self.guestname,
-                        current_state=GuestState.PROVISIONING,
-                        address=provisioning_progress.address,
                         set_values=new_guest_values,
-                        pool=self.gr.poolname,
-                        pool_data=self.gr.pool_data.update(self.gr.poolname, provisioning_progress.pool_data),
+                        failure_details={
+                            'address': provisioning_progress.address,
+                        },
                     )
 
                 else:
@@ -163,15 +161,15 @@ class Workspace(_Workspace):
 
                     self.update_guest_state_and_request_task(
                         transaction,
+                        GuestState.PROVISIONING,
                         GuestState.PREPARING,
                         prepare_verify_ssh,
                         self.guestname,
-                        current_state=GuestState.PROVISIONING,
-                        address=provisioning_progress.address,
                         set_values=new_guest_values,
-                        pool=self.gr.poolname,
-                        current_pool_data=self.gr.pool_data.update(self.gr.poolname, provisioning_progress.pool_data),
                         delay=KNOB_DISPATCH_PREPARE_DELAY.value,
+                        failure_details={
+                            'address': provisioning_progress.address,
+                        },
                     )
 
                 if self.result:

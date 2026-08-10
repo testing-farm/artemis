@@ -72,10 +72,10 @@ class Workspace(_Workspace):
 
             self.update_guest_state_and_request_task(
                 transaction,
+                GuestState.PREPARING,
                 GuestState.READY,
                 guest_request_watchdog,
                 self.guestname,
-                current_state=GuestState.PREPARING,
                 delay=delay,
             )
 
