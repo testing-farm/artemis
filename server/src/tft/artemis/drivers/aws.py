@@ -1980,11 +1980,6 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
             if failure.command_output:
                 cause = self.error_cause_extractor(output=failure.command_output)
 
-                # Do not fail if a duplicate secgroup rule is applied
-                if cause == AWSErrorCauses.DUPLICATE_SECURITY_GROUP_RULE:
-                    self.logger.warning('Attempted to apply a duplicate security group - silently ignoring')
-                    return Ok(None)
-
                 if cause in (
                     AWSErrorCauses.MISSING_INSTANCE,
                     AWSErrorCauses.MISSING_SPOT_INSTANCE_REQUEST,
@@ -2185,14 +2180,24 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
                     guest_security_group_id,
                     '--ip-permissions',
                     _create_ip_permissions_payload([rule]),
-                ]
+                ],
+                guestname=guest_request.guestname,
+                commandname=f'aws.ec2-authorize-security-group-{rule_type}',
             )
             if r_apply_rule.is_error:
-                return Error(Failure.from_failure('failed to update security group', r_apply_rule.unwrap_error()))
+                failure = r_apply_rule.unwrap_error()
 
-            if not r_apply_rule.unwrap():
-                # A duplicate rule was passed - aws was instructed to silently ignore it (see _aws_command)
-                logger.info(f'{rule} is a duplicate rule, skipping')
+                if (
+                    failure.command_output
+                    and self.error_cause_extractor(output=failure.command_output)
+                    == AWSErrorCauses.DUPLICATE_SECURITY_GROUP_RULE
+                ):
+                    logger.info(f'security group rule already exists, skipping: {rule.serialize()}')
+                    PoolMetrics.inc_error(self.poolname, AWSErrorCauses.DUPLICATE_SECURITY_GROUP_RULE)
+
+                    return Ok(None)
+
+                return Error(Failure.from_failure('failed to update security group', failure))
 
             return Ok(None)
 
@@ -2206,7 +2211,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
                 if r_apply_rule.is_error:
                     return Error(
                         Failure.from_failure(
-                            'security group rules update failed', r_apply_rule.unwrap_error(), rule=rule
+                            'security group rules update failed', r_apply_rule.unwrap_error(), rule=rule.serialize()
                         )
                     )
 
