@@ -290,9 +290,6 @@ class GuestRequestManager:
             if state is not None:
                 gr_query = gr_query.filter(artemis_db.GuestRequest.state == state)
 
-            if exclude_state is not None:
-                gr_query = gr_query.filter(artemis_db.GuestRequest.state != exclude_state)
-
             r_guest_request = gr_query.one_or_none()
 
             if r_guest_request.is_error:
@@ -305,6 +302,9 @@ class GuestRequestManager:
 
             if guest_request is None:
                 raise errors.NoSuchEntityError(logger=guest_logger, failure_details=failure_details)
+
+            if exclude_state is not None and guest_request.state == exclude_state:
+                raise errors.ConflictError(logger=guest_logger, failure_details=failure_details)
 
             current_state = guest_request.state
             guest_delete_task = release_guest_request
@@ -321,28 +321,13 @@ class GuestRequestManager:
                     .values(state=GuestState.CONDEMNED)
                 )
 
+                if state is not None:
+                    condemn_query = condemn_query.where(artemis_db.GuestRequest.state == state)
+
                 if exclude_state is not None:
                     condemn_query = condemn_query.where(artemis_db.GuestRequest.state != exclude_state)
 
-                r_state: artemis_db.DMLResult[artemis_db.GuestRequest] = transaction.execute_dml(
-                    guest_logger,
-                    condemn_query,
-                )
-
-                if r_state.is_error:
-                    failure = r_state.unwrap_error()
-
-                    # TODO: distinguish between "not found" and "crashed" errors. If we have to, of course.
-                    raise errors.NoSuchEntityError(
-                        logger=guest_logger, caused_by=failure, failure_details=failure_details
-                    )
-
-                    raise errors.InternalServerError(
-                        logger=guest_logger, caused_by=failure, failure_details=failure_details
-                    )
-
-                if exclude_state is not None and not r_state.unwrap().rowcount:
-                    raise errors.ConflictError(logger=guest_logger, failure_details=failure_details)
+                execute_dml(guest_logger, transaction, condemn_query, failure_details=failure_details)
 
                 artemis_db.GuestRequest.log_event_by_guestname(guest_logger, transaction, guestname, 'condemned')
 
