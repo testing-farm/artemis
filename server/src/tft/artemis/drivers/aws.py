@@ -2169,51 +2169,85 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
                 )
             return json.dumps(ip_permissions)
 
-        def _apply_sg_rule(rule_type: str, rule: SecurityGroupRule) -> Result[None, Failure]:
+        def _apply_sg_rules(rule_type: str, rules: list[SecurityGroupRule]) -> Result[bool, Failure]:
+            """Apply rules in one call. True if applied, False if AWS rejected the batch as duplicate."""
             # NOTE(ivasilev) As we have to support both ipv4 and ipv6 can't use the comfort of --cidr passing as this
             # argument supports only ipv4 addresses, need to form --ip-permissions payload manually.
-            r_apply_rule = self._aws_command(
+            r_apply = self._aws_command(
                 [
                     'ec2',
                     f'authorize-security-group-{rule_type}',
                     '--group-id',
                     guest_security_group_id,
                     '--ip-permissions',
-                    _create_ip_permissions_payload([rule]),
+                    _create_ip_permissions_payload(rules),
                 ],
                 guestname=guest_request.guestname,
                 commandname=f'aws.ec2-authorize-security-group-{rule_type}',
             )
-            if r_apply_rule.is_error:
-                failure = r_apply_rule.unwrap_error()
+
+            if r_apply.is_error:
+                failure = r_apply.unwrap_error()
 
                 if (
                     failure.command_output
                     and self.error_cause_extractor(output=failure.command_output)
                     == AWSErrorCauses.DUPLICATE_SECURITY_GROUP_RULE
                 ):
-                    logger.info(f'security group rule already exists, skipping: {rule.serialize()}')
-                    PoolMetrics.inc_error(self.poolname, AWSErrorCauses.DUPLICATE_SECURITY_GROUP_RULE)
-
-                    return Ok(None)
+                    return Ok(False)
 
                 return Error(Failure.from_failure('failed to update security group', failure))
 
-            return Ok(None)
+            return Ok(True)
 
-        # Apply the rules one-by-one so that a single duplicate does not abort application of the remaining rules
-        # (aws authorize-security-group-* is atomic - a duplicate in a bulk payload rejects the whole batch).
-        rules_map = {'ingress': guest_secgroup_rules.ingress, 'egress': guest_secgroup_rules.egress}
+        def _dedup(rules: list[SecurityGroupRule]) -> list[SecurityGroupRule]:
+            # AWS rejects a payload that lists the same permission twice ("The same permission must not appear multiple
+            # times"), so drop duplicates before applying while preserving order.
+            seen: set[tuple[str, int, int, str]] = set()
+            deduped = []
+            for rule in rules:
+                key = (rule.protocol, rule.port_min, rule.port_max, rule.cidr)
+                if key in seen:
+                    continue
+                seen.add(key)
+                deduped.append(rule)
+            return deduped
+
+        # Apply the rules in bulk (two calls, one per direction). AWS authorize-security-group-* is atomic, so a single
+        # duplicate rejects the whole batch - in that case reapply the batch rule by rule, skipping the duplicates.
+        rules_map = {
+            'ingress': _dedup(guest_secgroup_rules.ingress),
+            'egress': _dedup(guest_secgroup_rules.egress),
+        }
 
         for rule_type, rules in rules_map.items():
+            if not rules:
+                continue
+
+            r_bulk = _apply_sg_rules(rule_type, rules)
+
+            if r_bulk.is_error:
+                return Error(Failure.from_failure('security group rules update failed', r_bulk.unwrap_error()))
+
+            if r_bulk.unwrap():
+                continue
+
+            # Something in the batch already exists - reapply rule by rule, skipping duplicates.
             for rule in rules:
-                r_apply_rule = _apply_sg_rule(rule_type, rule)
-                if r_apply_rule.is_error:
+                r_rule = _apply_sg_rules(rule_type, [rule])
+
+                if r_rule.is_error:
                     return Error(
                         Failure.from_failure(
-                            'security group rules update failed', r_apply_rule.unwrap_error(), rule=rule.serialize()
+                            'security group rules update failed', r_rule.unwrap_error(), rule=rule.serialize()
                         )
                     )
+
+                if not r_rule.unwrap():
+                    logger.info(f'security group rule already exists, skipping: {rule.serialize()}')
+                    # NOTE(ivasilev) Not an eyebrow raising error, but we'd still like to track that event and there is
+                    # no separate metric for harmless-yet-worth-keeping-track-of occasions, so inc_error it is.
+                    PoolMetrics.inc_error(self.poolname, AWSErrorCauses.DUPLICATE_SECURITY_GROUP_RULE)
 
         return Ok(res_security_groups)
 
