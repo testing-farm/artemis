@@ -203,6 +203,7 @@ class AWSErrorCauses(enum.Enum):
     MISSING_INSTANCE = 'missing-instance'
     MISSING_SPOT_INSTANCE_REQUEST = 'missing-spot-instance-request'
     MISSING_SECURITY_GROUP = 'missing-security-group'
+    DUPLICATE_SECURITY_GROUP_RULE = 'duplicate-security-group-rule'
     REQUEST_LIMIT_EXCEEDED = 'request-limit-exceeded'
     SPOT_PRICE_NOT_DETECTED = 'spot-price-not-detected'
     INSTANCE_BUILDING_TOO_LONG = 'instance-building-too-long'
@@ -225,6 +226,9 @@ error_cause_extractor = create_error_cause_extractor(
             r'.+\(InvalidGroup\.NotFound\).+The security group \'.+\' does not exist'
         ),
         AWSErrorCauses.REQUEST_LIMIT_EXCEEDED: re.compile(r'.+\(RequestLimitExceeded\).+Request limit exceeded'),
+        AWSErrorCauses.DUPLICATE_SECURITY_GROUP_RULE: re.compile(
+            r'.+\(InvalidPermission\.Duplicate\).+specified rule ["\'].+["\']\s*already exists'
+        ),
     },
 )
 
@@ -2165,17 +2169,11 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
                 )
             return json.dumps(ip_permissions)
 
-        # Update new security group with a proper set of rules
-        rules_map = {'ingress': guest_secgroup_rules.ingress, 'egress': guest_secgroup_rules.egress}
-
-        # NOTE(ivasilev) As we have to support both ipv4 and ipv6 can't use the comfort of --cidr passing as this
-        # argument supports only ipv4 addresses, need to form --ip-permissions payload manually.
-        for rule_type, rules in rules_map.items():
-            if not rules:
-                # No rules to apply, skipping
-                continue
-
-            r_update_sg_bulk = self._aws_command(
+        def _apply_sg_rules(rule_type: str, rules: list[SecurityGroupRule]) -> Result[bool, Failure]:
+            """Apply rules in one call. True if applied, False if AWS rejected the batch as duplicate."""
+            # NOTE(ivasilev) As we have to support both ipv4 and ipv6 can't use the comfort of --cidr passing as this
+            # argument supports only ipv4 addresses, need to form --ip-permissions payload manually.
+            r_apply = self._aws_command(
                 [
                     'ec2',
                     f'authorize-security-group-{rule_type}',
@@ -2183,10 +2181,73 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
                     guest_security_group_id,
                     '--ip-permissions',
                     _create_ip_permissions_payload(rules),
-                ]
+                ],
+                guestname=guest_request.guestname,
+                commandname=f'aws.ec2-authorize-security-group-{rule_type}',
             )
-            if r_update_sg_bulk.is_error:
-                return Error(Failure.from_failure('failed to update security group', r_update_sg_bulk.unwrap_error()))
+
+            if r_apply.is_error:
+                failure = r_apply.unwrap_error()
+
+                if (
+                    failure.command_output
+                    and self.error_cause_extractor(output=failure.command_output)
+                    == AWSErrorCauses.DUPLICATE_SECURITY_GROUP_RULE
+                ):
+                    return Ok(False)
+
+                return Error(Failure.from_failure('failed to update security group', failure))
+
+            return Ok(True)
+
+        def _dedup(rules: list[SecurityGroupRule]) -> list[SecurityGroupRule]:
+            # AWS rejects a payload that lists the same permission twice ("The same permission must not appear multiple
+            # times"), so drop duplicates before applying while preserving order.
+            seen: set[tuple[str, int, int, str]] = set()
+            deduped = []
+            for rule in rules:
+                key = (rule.protocol, rule.port_min, rule.port_max, rule.cidr)
+                if key in seen:
+                    continue
+                seen.add(key)
+                deduped.append(rule)
+            return deduped
+
+        # Apply the rules in bulk (two calls, one per direction). AWS authorize-security-group-* is atomic, so a single
+        # duplicate rejects the whole batch - in that case reapply the batch rule by rule, skipping the duplicates.
+        rules_map = {
+            'ingress': _dedup(guest_secgroup_rules.ingress),
+            'egress': _dedup(guest_secgroup_rules.egress),
+        }
+
+        for rule_type, rules in rules_map.items():
+            if not rules:
+                continue
+
+            r_bulk = _apply_sg_rules(rule_type, rules)
+
+            if r_bulk.is_error:
+                return Error(Failure.from_failure('security group rules update failed', r_bulk.unwrap_error()))
+
+            if r_bulk.unwrap():
+                continue
+
+            # Something in the batch already exists - reapply rule by rule, skipping duplicates.
+            for rule in rules:
+                r_rule = _apply_sg_rules(rule_type, [rule])
+
+                if r_rule.is_error:
+                    return Error(
+                        Failure.from_failure(
+                            'security group rules update failed', r_rule.unwrap_error(), rule=rule.serialize()
+                        )
+                    )
+
+                if not r_rule.unwrap():
+                    logger.info(f'security group rule already exists, skipping: {rule.serialize()}')
+                    # NOTE(ivasilev) Not an eyebrow raising error, but we'd still like to track that event and there is
+                    # no separate metric for harmless-yet-worth-keeping-track-of occasions, so inc_error it is.
+                    PoolMetrics.inc_error(self.poolname, AWSErrorCauses.DUPLICATE_SECURITY_GROUP_RULE)
 
         return Ok(res_security_groups)
 
