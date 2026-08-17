@@ -5,6 +5,7 @@ import base64
 import dataclasses
 import datetime
 import enum
+import functools
 import ipaddress
 import json
 import operator
@@ -40,6 +41,7 @@ from .. import (
     log_dict_yaml,
     logging_filter,
     render_template,
+    rewrap_to_gluetool,
 )
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, Transaction
 from ..environment import (
@@ -72,6 +74,10 @@ from . import (
     ProvisioningProgress,
     ProvisioningState,
     ReleasePoolResourcesState,
+    Resource,
+    ResourceCreationOutcome,
+    ResourceCreationRequest,
+    ResourceManager,
     SerializedPoolResourcesIDs,
     Tags,
     WatchdogState,
@@ -409,6 +415,144 @@ class AWSPoolResourcesIDs(PoolResourcesIDs):
     instance_id: Optional[str] = None
     spot_instance_id: Optional[str] = None
     security_group: Optional[str] = None
+
+
+@dataclasses.dataclass
+class AWSInstance(Instance):
+    """
+    Represents an AWS backend instance.
+
+    A single resource covers both on-demand instances and spot instances: for a spot instance,
+    ``spot_instance_id`` is set, and ``id`` may be empty until the spot request gets fulfilled.
+    """
+
+    #: EC2 instance state (``pending``, ``running``, ``terminated``, ...) or spot request state.
+    status: str
+    created_at: datetime.datetime
+    spot_instance_id: Optional[str] = None
+    #: Per-guest security group id, if one was created for this instance.
+    security_group: Optional[str] = None
+    flavor_name: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        self.status = self.status.lower()
+
+    @property
+    def is_spot(self) -> bool:
+        return self.spot_instance_id is not None
+
+    @override
+    @functools.cached_property
+    def is_ready(self) -> bool:
+        # A spot request is never "ready" on its own - once fulfilled it transitions to its instance in
+        # :py:meth:`update_guest`. An on-demand instance is ready in the ``running`` state.
+        return not self.is_spot and self.status == 'running'
+
+    @override
+    @functools.cached_property
+    def is_error(self) -> bool:
+        # Match the states the update code treats as a terminal error: for a spot request
+        # (:py:meth:`_do_update_spot_instance`) ``cancelled``/``failed``/``closed``/``disabled``, for an on-demand
+        # instance (:py:meth:`_do_update_instance`) ``terminated``/``shutting-down``.
+        if self.is_spot:
+            return self.status in (
+                'cancelled',
+                'failed',
+                'closed',
+                'disabled',
+            )
+
+        return self.status in (
+            'terminated',
+            'shutting-down',
+        )
+
+    @override
+    @functools.cached_property
+    def is_pending(self) -> bool:
+        # States the update code keeps waiting on: for a spot request ``open``/``active`` (an ``active`` spot request
+        # is fulfilled but still transitions to its instance in :py:meth:`update_guest`), for an on-demand instance
+        # ``pending``.
+        if self.is_spot:
+            return self.status in (
+                'open',
+                'active',
+            )
+
+        return self.status == 'pending'
+
+    @override
+    def to_pool_resource_ids(self) -> AWSPoolResourcesIDs:
+        return AWSPoolResourcesIDs(
+            instance_id=self.id or None,
+            spot_instance_id=self.spot_instance_id,
+            security_group=self.security_group,
+        )
+
+    def serialize(self) -> dict[str, Any]:
+        serialized = super().serialize()
+
+        if self.created_at:
+            serialized['created_at'] = self.created_at.strftime(AWS_DATETIME_FORMAT)
+
+        return serialized
+
+    @classmethod
+    def unserialize(cls, serialized: dict[str, Any]) -> 'AWSInstance':
+        instance = super().unserialize(serialized)
+
+        if serialized['created_at']:
+            instance.created_at = datetime.datetime.strptime(serialized['created_at'], AWS_DATETIME_FORMAT)
+
+        return instance
+
+
+@dataclasses.dataclass
+class SecurityGroup(Resource):
+    """
+    Represents a per-guest security group.
+    """
+
+    id: str
+    #: Security groups defined in the pool config are shared and must not be cleaned up on guest cancellation.
+    is_shared: bool = False
+
+    @override
+    def to_pool_resource_ids(self) -> AWSPoolResourcesIDs:
+        if self.is_shared:
+            return AWSPoolResourcesIDs()
+
+        return AWSPoolResourcesIDs(security_group=self.id)
+
+
+@dataclasses.dataclass
+class InstanceCreationRequest(ResourceCreationRequest):
+    image: AWSPoolImageInfo
+    flavor: AWSFlavor
+    tags: Tags
+    use_spot: bool
+    #: All security group ids to attach to the instance (per-guest one first, if any, plus pool groups).
+    security_group_ids: list[str]
+    #: Id of the per-guest security group to clean up on cancellation, or ``None`` when only shared pool
+    #: groups are used.
+    guest_security_group: Optional[str] = None
+
+
+@dataclasses.dataclass
+class InstanceCreationOutcome(ResourceCreationOutcome[AWSInstance]):
+    image: AWSPoolImageInfo
+    flavor: AWSFlavor
+
+
+@dataclasses.dataclass
+class SecurityGroupCreationRequest(ResourceCreationRequest):
+    vpc_id: str
+    tags: Tags
+
+
+@dataclasses.dataclass
+class SecurityGroupCreationOutcome(ResourceCreationOutcome[SecurityGroup]):
+    pass
 
 
 def _base64_encode(data: str) -> str:
@@ -1667,6 +1811,32 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
             'AWS_DEFAULT_OUTPUT': 'json',
         }
 
+        self.instance_resource_manager: ResourceManager[
+            AWSInstance, InstanceCreationRequest, InstanceCreationOutcome
+        ] = ResourceManager(
+            logger=logger,
+            pool=self,
+            resource_type='instance',
+            list_resources=self._query_instances_by_guest_request,
+            resource_name=self._render_instance_name,
+            create_resource_request=self._create_instance_request,
+            create_resource=self._create_instance,
+            reuse_resource=self._reuse_instance,
+        )
+
+        self.security_group_resource_manager: ResourceManager[
+            SecurityGroup, SecurityGroupCreationRequest, SecurityGroupCreationOutcome
+        ] = ResourceManager(
+            logger=logger,
+            pool=self,
+            resource_type='security_group',
+            list_resources=self._query_security_groups_by_guest_request,
+            resource_name=self._render_security_group_name,
+            create_resource_request=self._create_security_group_request,
+            create_resource=self._create_security_group,
+            reuse_resource=self._reuse_security_group,
+        )
+
     @property
     def _image_owners(self) -> list[str]:
         return cast(list[str], self.pool_config.get('image-owners', ['self']))
@@ -2275,36 +2445,9 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
 
         return Ok(security_group_ids[0])
 
-    def _acquire_guest_security_group(
-        self,
-        logger: ContextAdapter,
-        guest_request: GuestRequest,
-        tags: dict[str, str],
-    ) -> Result[list[str], Failure]:
-        # Get the name of the new group from the template
-        r_security_group_template = KNOB_GUEST_SECURITY_GROUP_NAME_TEMPLATE.get_value(entityname=self.poolname)
-        if r_security_group_template.is_error:
-            return Error(
-                Failure.from_failure(
-                    'Could not get guest security group name template', r_security_group_template.unwrap_error()
-                )
-            )
-
-        r_rendered = render_template(
-            r_security_group_template.unwrap(),
-            GUESTNAME=guest_request.guestname,
-            ENVIRONMENT=guest_request.environment,
-            TAGS=tags,
-        )
-        if not is_successful(r_rendered):
-            return Error(
-                Failure.from_failure('Could not render guest security group name template', r_rendered.failure())
-            )
-
-        security_group_name = r_rendered.unwrap()
-
-        # Get the VPC id from the subnet-id, otherwise subsequent instance creation may fail with SG and subnet
-        # not belonging to the same network
+    def _get_vpc_id(self, logger: ContextAdapter) -> Result[str, Failure]:
+        # Get the VPC id from the subnet-id, otherwise subsequent instance/security group creation may fail with
+        # SG and subnet not belonging to the same network.
         r_subnet_details = self._aws_command(
             ['ec2', 'describe-subnets', '--filters', f'Name=subnet-id,Values={self.pool_config["subnet-id"]}'],
             key='Subnets',
@@ -2319,91 +2462,379 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
             )
 
         subnet_details = cast(list[dict[str, str]], r_subnet_details.unwrap())
-        vpc_id = subnet_details[0]['VpcId']
 
-        r_security_group_id = self._find_security_group_id(logger, security_group_name, vpc_id)
+        return Ok(subnet_details[0]['VpcId'])
 
-        if r_security_group_id.is_error:
-            return Error(r_security_group_id.unwrap_error())
-
-        if r_security_group_id.unwrap():
-            security_group_id = r_security_group_id.unwrap()
-
-            assert security_group_id is not None
-
-        else:
-            command = [
-                'ec2',
-                'create-security-group',
-                '--group-name',
-                security_group_name,
-                '--description',
-                'Autocreated artemis guest security group',
-                '--vpc-id',
-                vpc_id,
-            ]
-
-            if tags:
-                command += ['--tag-specifications', *_tags_to_tag_specifications(tags, 'security-group')]
-
-            # Create a new security group and retrieve it's id
-            r_create_sg = self._aws_command(command, key='GroupId', commandname='aws.ec2-create-security-group')
-
-            if r_create_sg.is_error:
-                return Error(Failure.from_failure('failed to create a security group', r_create_sg.unwrap_error()))
-
-            security_group_id = cast(str, r_create_sg.unwrap())
-
-        r_get_secgroups = self._assign_security_group_rules(logger, guest_request, security_group_id)
-        if r_get_secgroups.is_error:
-            return Error(
+    def _render_security_group_name(self, guest_request: GuestRequest) -> _Result[str, Failure]:
+        r_security_group_template = KNOB_GUEST_SECURITY_GROUP_NAME_TEMPLATE.get_value(entityname=self.poolname)
+        if r_security_group_template.is_error:
+            return _Error(
                 Failure.from_failure(
-                    'failed to setup guest security group rules properly', r_get_secgroups.unwrap_error()
+                    'Could not get guest security group name template', r_security_group_template.unwrap_error()
                 )
             )
 
-        # Finally return the ids of the future instance secgroups
-        return Ok(r_get_secgroups.unwrap())
+        return render_template(
+            r_security_group_template.unwrap(),
+            GUESTNAME=guest_request.guestname,
+            ENVIRONMENT=guest_request.environment,
+        ).alt(lambda failure: Failure.from_failure('Could not render guest security group name template', failure))
 
-    def _request_instance(
+    def _query_security_groups_by_guest_request(
+        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
+    ) -> _Result[list[SecurityGroup], Failure]:
+        r_expected_name = self._render_security_group_name(guest_request)
+        if not is_successful(r_expected_name):
+            return _Error(Failure.from_failure('failed to get expected security group name', r_expected_name.failure()))
+        expected_name = r_expected_name.unwrap()
+
+        r_vpc_id = self._get_vpc_id(logger)
+        if r_vpc_id.is_error:
+            return _Error(r_vpc_id.unwrap_error())
+
+        r_security_groups = self._aws_command(
+            [
+                'ec2',
+                'describe-security-groups',
+                '--filters',
+                f'Name=group-name,Values={expected_name}*',
+                f'Name=vpc-id,Values={r_vpc_id.unwrap()}',
+            ],
+            key='SecurityGroups',
+            commandname='aws.ec2-describe-security-groups',
+        )
+        if r_security_groups.is_error:
+            return _Error(Failure.from_failure('failed to list security groups', r_security_groups.unwrap_error()))
+
+        return _Ok(
+            [
+                SecurityGroup(name=sg['GroupName'], id=sg['GroupId'], is_shared=False)
+                for sg in cast(list[dict[str, str]], r_security_groups.unwrap())
+                if sg['GroupName'].startswith(expected_name)
+            ]
+        )
+
+    def _create_security_group_request(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
+        guest_request: GuestRequest,
+    ) -> _Result[SecurityGroupCreationRequest, Failure]:
+        r_base_tags = self.get_guest_tags(logger, session, guest_request)
+        if r_base_tags.is_error:
+            return _Error(r_base_tags.unwrap_error())
+
+        r_vpc_id = self._get_vpc_id(logger)
+        if r_vpc_id.is_error:
+            return _Error(r_vpc_id.unwrap_error())
+
+        return _Ok(SecurityGroupCreationRequest(vpc_id=r_vpc_id.unwrap(), tags=r_base_tags.unwrap()))
+
+    def _create_security_group(
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
-        instance_type: AWSFlavor,
-        image: AWSPoolImageInfo,
-    ) -> Result[ProvisioningProgress, Failure]:
+        security_group_name: str,
+        security_group_request: SecurityGroupCreationRequest,
+    ) -> _Result[SecurityGroupCreationOutcome, Failure]:
+        command = [
+            'ec2',
+            'create-security-group',
+            '--group-name',
+            security_group_name,
+            '--description',
+            'Autocreated artemis guest security group',
+            '--vpc-id',
+            security_group_request.vpc_id,
+        ]
+
+        if security_group_request.tags:
+            command += [
+                '--tag-specifications',
+                *_tags_to_tag_specifications(security_group_request.tags, 'security-group'),
+            ]
+
+        r_create_sg = self._aws_command(command, key='GroupId', commandname='aws.ec2-create-security-group')
+        if r_create_sg.is_error:
+            return _Error(Failure.from_failure('failed to create a security group', r_create_sg.unwrap_error()))
+
+        return _Ok(
+            SecurityGroupCreationOutcome(
+                resource=SecurityGroup(name=security_group_name, id=cast(str, r_create_sg.unwrap()), is_shared=False)
+            )
+        )
+
+    def _reuse_security_group(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        security_group_request: SecurityGroupCreationRequest,
+        security_group: SecurityGroup,
+    ) -> _Result[SecurityGroupCreationOutcome, Failure]:
+        return _Ok(SecurityGroupCreationOutcome(resource=security_group))
+
+    @staticmethod
+    def _tags_from_raw(raw_tags: list[dict[str, str]]) -> dict[str, str]:
+        """Convert AWS ``Tags`` list of ``Key``/``Value`` mappings into a plain dict."""
+        return {tag['Key']: tag['Value'] for tag in raw_tags or []}
+
+    def _query_instances_by_guest_request(
+        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
+    ) -> _Result[list[AWSInstance], Failure]:
+        """
+        Fetch the list of instances - both on-demand and spot - belonging to a given guest request.
+
+        Instances are matched by the stable guest name tag (:py:data:`KNOB_INSTANCE_GUEST_NAME_TAG`), and their
+        ``name`` is taken from the guest label tag (:py:data:`KNOB_INSTANCE_GUEST_LABEL_TAG`) so the
+        :py:class:`ResourceManager` name matching / postfix naming works.
+
+        :returns: list of instances, sorted by their time of creation, oldest first.
+        """
         r_flavor_tag = self._instance_flavor_tag
         if r_flavor_tag.is_error:
-            return Error(r_flavor_tag.unwrap_error())
+            return _Error(r_flavor_tag.unwrap_error())
+        flavor_tag = r_flavor_tag.unwrap()
+
+        r_guest_name_tag = self._instance_guest_name_tag
+        if r_guest_name_tag.is_error:
+            return _Error(r_guest_name_tag.unwrap_error())
+        guest_name_tag = r_guest_name_tag.unwrap()
+
+        r_guest_label_tag = self._instance_guest_label_tag
+        if r_guest_label_tag.is_error:
+            return _Error(r_guest_label_tag.unwrap_error())
+        guest_label_tag = r_guest_label_tag.unwrap()
+
+        # On-demand (and fulfilled spot) instances.
+        r_instances = self._aws_command(
+            [
+                'ec2',
+                'describe-instances',
+                '--filters',
+                f'Name=tag:{guest_name_tag},Values={guest_request.guestname}',
+                'Name=instance-state-name,Values=pending,running,shutting-down',
+            ],
+            key='Reservations',
+            commandname='aws.ec2-describe-instances',
+        )
+        if r_instances.is_error:
+            return _Error(Failure.from_failure('failed to list instances', r_instances.unwrap_error()))
+
+        # Spot instance requests still tied to this guest request.
+        r_spot_requests = self._aws_command(
+            [
+                'ec2',
+                'describe-spot-instance-requests',
+                '--filters',
+                f'Name=tag:{guest_name_tag},Values={guest_request.guestname}',
+                'Name=state,Values=open,active',
+            ],
+            key='SpotInstanceRequests',
+            commandname='aws.ec2-describe-spot-instance-requests',
+        )
+        if r_spot_requests.is_error:
+            return _Error(Failure.from_failure('failed to list spot instance requests', r_spot_requests.unwrap_error()))
+
+        res: dict[str, AWSInstance] = {}
+        spot_without_instance: list[AWSInstance] = []
+
+        # Spot requests first so that a fulfilled spot request carries its spot_instance_id needed for cleanup.
+        for spot_request in cast(list[dict[str, Any]], r_spot_requests.unwrap()):
+            tags = self._tags_from_raw(spot_request.get('Tags', []))
+            r_created_at = self.timestamp_to_datetime(spot_request['CreateTime'])
+            if r_created_at.is_error:
+                return _Error(
+                    Failure.from_failure('Could not parse spot request timestamp', r_created_at.unwrap_error())
+                )
+
+            instance_id = spot_request.get('InstanceId', '')
+            instance = AWSInstance(
+                id=instance_id,
+                name=tags.get(guest_label_tag, ''),
+                status=spot_request['State'],
+                created_at=r_created_at.unwrap(),
+                spot_instance_id=spot_request['SpotInstanceRequestId'],
+                flavor_name=tags.get(flavor_tag),
+            )
+
+            if instance_id:
+                res[instance_id] = instance
+            else:
+                spot_without_instance.append(instance)
+
+        for reservation in cast(list[dict[str, Any]], r_instances.unwrap()):
+            for raw_instance in reservation.get('Instances', []):
+                instance_id = raw_instance['InstanceId']
+                if instance_id in res:
+                    continue
+
+                tags = self._tags_from_raw(raw_instance.get('Tags', []))
+                r_created_at = self.timestamp_to_datetime(raw_instance['LaunchTime'])
+                if r_created_at.is_error:
+                    return _Error(
+                        Failure.from_failure('Could not parse instance timestamp', r_created_at.unwrap_error())
+                    )
+
+                res[instance_id] = AWSInstance(
+                    id=instance_id,
+                    name=tags.get(guest_label_tag, ''),
+                    status=raw_instance['State']['Name'],
+                    created_at=r_created_at.unwrap(),
+                    flavor_name=tags.get(flavor_tag),
+                )
+
+        instances = [*res.values(), *spot_without_instance]
+
+        try:
+            instances = sorted(instances, key=lambda x: x.created_at)
+        except ValueError as exc:
+            return _Error(Failure.from_exc('Double check time format, could not convert time data', exc))
+
+        return _Ok(instances)
+
+    def _create_instance_request(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        transaction: Transaction,
+        guest_request: GuestRequest,
+    ) -> _Result[InstanceCreationRequest, Failure]:
+        r_image_flavor_pairs = self._collect_image_flavor_pairs(logger, session, guest_request)
+        if r_image_flavor_pairs.is_error:
+            return _Error(r_image_flavor_pairs.unwrap_error())
+
+        can_acquire, pairs = r_image_flavor_pairs.unwrap()
+
+        if not can_acquire.can_acquire:
+            assert can_acquire.reason is not None
+
+            return _Error(Failure(can_acquire.reason.message))
+
+        image, flavor = pairs[0]
+
+        r_flavor_tag = self._instance_flavor_tag
+        if r_flavor_tag.is_error:
+            return _Error(r_flavor_tag.unwrap_error())
 
         r_base_tags = self.get_guest_tags(
             logger,
             session,
             guest_request,
-            extra_tags={r_flavor_tag.unwrap(): instance_type.name},
+            extra_tags={r_flavor_tag.unwrap(): flavor.name},
         )
-
         if r_base_tags.is_error:
-            return Error(r_base_tags.unwrap_error())
+            return _Error(r_base_tags.unwrap_error())
 
         tags = r_base_tags.unwrap()
 
-        # If create-security-group-per-guest is defined in the config then precreate a security group for each guest,
-        # otherwise use the one from the security-group pool configuration
+        # If create-security-group-per-guest is defined in the config then acquire a security group for each guest,
+        # otherwise use the one(s) from the security-group pool configuration.
+        guest_security_group: Optional[str] = None
         if normalize_bool_option(self.pool_config.get('create-security-group-per-guest', False)):
-            r_create_guest_sg = self._acquire_guest_security_group(
-                logger=logger, guest_request=guest_request, tags=tags
-            )
-            if r_create_guest_sg.is_error:
-                return Error(r_create_guest_sg.unwrap_error())
+            r_guest_sg = self.security_group_resource_manager.acquire(logger, guest_request, session, transaction)
+            if not is_successful(r_guest_sg):
+                return _Error(Failure.from_failure('Could not acquire guest security group', r_guest_sg.failure()))
 
-            security_group_ids = r_create_guest_sg.unwrap()
+            guest_security_group = r_guest_sg.unwrap().resource.id
 
+            # Assign rules and obtain the full list of security groups to attach to the instance. This is idempotent,
+            # so it is safe to run on both freshly created and reused security groups.
+            r_security_group_ids = self._assign_security_group_rules(logger, guest_request, guest_security_group)
+            if r_security_group_ids.is_error:
+                return _Error(
+                    Failure.from_failure(
+                        'failed to setup guest security group rules properly', r_security_group_ids.unwrap_error()
+                    )
+                )
+
+            security_group_ids = r_security_group_ids.unwrap()
         else:
             security_group_ids = self._pool_security_groups
 
         logger.info(f'Using security groups {security_group_ids}')
+
+        return _Ok(
+            InstanceCreationRequest(
+                image=image,
+                flavor=flavor,
+                tags=tags,
+                use_spot=self._should_use_spot_request(guest_request),
+                security_group_ids=security_group_ids,
+                guest_security_group=guest_security_group,
+            )
+        )
+
+    def _create_instance(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        instance_name: str,
+        instance_request: InstanceCreationRequest,
+    ) -> _Result[InstanceCreationOutcome, Failure]:
+        image = instance_request.image
+        instance_type = instance_request.flavor
+        security_group_ids = instance_request.security_group_ids
+
+        r_guest_label_tag = self._instance_guest_label_tag
+        if r_guest_label_tag.is_error:
+            return _Error(r_guest_label_tag.unwrap_error())
+
+        # Override the guest label so that the instance is tracked under the name the ResourceManager chose for it.
+        tags = {**instance_request.tags, r_guest_label_tag.unwrap(): instance_name}
+
+        r_block_device_mappings = self._create_block_device_mappings(logger, guest_request, image, instance_type)
+        if r_block_device_mappings.is_error:
+            return _Error(r_block_device_mappings.unwrap_error())
+
+        r_network_interfaces = self._create_network_interfaces(
+            logger, guest_request, image, instance_type, security_group_ids
+        )
+        if r_network_interfaces.is_error:
+            return _Error(r_network_interfaces.unwrap_error())
+
+        user_data = self._create_user_data(logger, guest_request)
+
+        if instance_request.use_spot:
+            return self._launch_spot_instance(
+                logger,
+                guest_request,
+                instance_name,
+                instance_request,
+                tags,
+                r_block_device_mappings.unwrap(),
+                r_network_interfaces.unwrap(),
+                user_data,
+            )
+
+        return self._launch_instance(
+            logger,
+            guest_request,
+            instance_name,
+            instance_request,
+            tags,
+            r_block_device_mappings.unwrap(),
+            r_network_interfaces.unwrap(),
+            user_data,
+        )
+
+    def _launch_instance(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        guest_request: GuestRequest,
+        instance_name: str,
+        instance_request: InstanceCreationRequest,
+        tags: Tags,
+        block_device_mappings: 'BlockDeviceMappings',
+        network_interfaces: 'NetworkInterfaces',
+        user_data: Optional[str],
+    ) -> _Result[InstanceCreationOutcome, Failure]:
+        image = instance_request.image
+        instance_type = instance_request.flavor
+        security_group_ids = instance_request.security_group_ids
 
         command = [
             'ec2',
@@ -2423,7 +2854,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
         r_span = _get_constraint_span(logger, guest_request, instance_type)
 
         if r_span.is_error:
-            return Error(r_span.unwrap_error())
+            return _Error(r_span.unwrap_error())
 
         span = r_span.unwrap()
 
@@ -2442,23 +2873,8 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
         if 'subnet-id' in self.pool_config:
             command.extend(['--subnet-id', self.pool_config['subnet-id']])
 
-        r_block_device_mappings = self._create_block_device_mappings(logger, guest_request, image, instance_type)
-
-        if r_block_device_mappings.is_error:
-            return Error(r_block_device_mappings.unwrap_error())
-
-        command.extend(['--block-device-mappings', r_block_device_mappings.unwrap().serialize_to_json()])
-
-        r_network_interfaces = self._create_network_interfaces(
-            logger, guest_request, image, instance_type, security_group_ids
-        )
-
-        if r_network_interfaces.is_error:
-            return Error(r_network_interfaces.unwrap_error())
-
-        command.extend(['--network-interfaces', r_network_interfaces.unwrap().serialize_to_json()])
-
-        user_data = self._create_user_data(logger, guest_request)
+        command.extend(['--block-device-mappings', block_device_mappings.serialize_to_json()])
+        command.extend(['--network-interfaces', network_interfaces.serialize_to_json()])
 
         if user_data:
             command.extend(['--user-data', user_data])
@@ -2482,8 +2898,8 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
             subnet_id=self.pool_config['subnet-id'],
             security_groups=security_group_ids,
             user_data=_base64_encode(user_data) if user_data else '',
-            network_interfaces=r_network_interfaces.unwrap().serialize(),
-            block_device_mappings=r_block_device_mappings.unwrap().serialize(),
+            network_interfaces=network_interfaces.serialize(),
+            block_device_mappings=block_device_mappings.serialize(),
         )
 
         log_dict_yaml(logger.info, 'non-spot request launch specification', json.loads(specification))
@@ -2491,95 +2907,58 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
         r_instance_request = self._aws_command(command, key='Instances', commandname='aws.ec2-run-instances')
 
         if r_instance_request.is_error:
-            return Error(Failure.from_failure('failed to start instance', r_instance_request.unwrap_error()))
+            return _Error(Failure.from_failure('failed to start instance', r_instance_request.unwrap_error()))
 
-        instance_request = cast(list[dict[str, str]], r_instance_request.unwrap())
+        instance_request_output = cast(list[dict[str, str]], r_instance_request.unwrap())
 
         try:
-            instance_id = instance_request[0]['InstanceId']
+            instance_id = instance_request_output[0]['InstanceId']
         except (KeyError, IndexError) as exc:
-            return Error(Failure.from_exc('Failed to find InstanceID in aws output', exc, output=instance_request))
+            return _Error(
+                Failure.from_exc('Failed to find InstanceID in aws output', exc, output=instance_request_output)
+            )
 
         # instance state is "pending" after launch
         # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-lifecycle.html
         logger.info(f'current instance state {instance_id}:pending')
 
-        # There is no chance that the guest will be ready in this step
-        return Ok(
-            ProvisioningProgress(
-                state=ProvisioningState.PENDING,
-                pool_data=AWSPoolData(
-                    instance_id=instance_id,
-                    security_group=(
-                        security_group_ids[0] if security_group_ids[0] not in self._pool_security_groups else None
-                    ),
+        return _Ok(
+            InstanceCreationOutcome(
+                resource=AWSInstance(
+                    id=instance_id,
+                    name=instance_name,
+                    status='pending',
+                    created_at=datetime.datetime.utcnow(),
+                    security_group=instance_request.guest_security_group,
                     flavor_name=instance_type.name,
                 ),
-                ssh_info=image.ssh,
+                image=image,
+                flavor=instance_type,
             )
         )
 
-    def _request_spot_instance(
+    def _launch_spot_instance(
         self,
         logger: gluetool.log.ContextAdapter,
-        session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
-        instance_type: AWSFlavor,
-        image: AWSPoolImageInfo,
-    ) -> Result[ProvisioningProgress, Failure]:
-        r_flavor_tag = self._instance_flavor_tag
-        if r_flavor_tag.is_error:
-            return Error(r_flavor_tag.unwrap_error())
-
-        r_base_tags = self.get_guest_tags(
-            logger,
-            session,
-            guest_request,
-            extra_tags={r_flavor_tag.unwrap(): instance_type.name},
-        )
-
-        if r_base_tags.is_error:
-            return Error(r_base_tags.unwrap_error())
-
-        tags = r_base_tags.unwrap()
-
-        # If create-security-group-per-guest is defined in the config then precreate a security group for each guest,
-        # otherwise use the one from the security-group pool configuration
-        if normalize_bool_option(self.pool_config.get('create-security-group-per-guest', False)):
-            r_create_guest_sg = self._acquire_guest_security_group(
-                logger=logger, guest_request=guest_request, tags=tags
-            )
-            if r_create_guest_sg.is_error:
-                return Error(r_create_guest_sg.unwrap_error())
-
-            security_group_ids = r_create_guest_sg.unwrap()
-
-        else:
-            security_group_ids = self._pool_security_groups
-
-        logger.info(f'Using security groups {security_group_ids}')
+        instance_name: str,
+        instance_request: InstanceCreationRequest,
+        tags: Tags,
+        block_device_mappings: 'BlockDeviceMappings',
+        network_interfaces: 'NetworkInterfaces',
+        user_data: Optional[str],
+    ) -> _Result[InstanceCreationOutcome, Failure]:
+        image = instance_request.image
+        instance_type = instance_request.flavor
+        security_group_ids = instance_request.security_group_ids
 
         # find our spot instance prices for the instance_type in our availability zone
         r_price = self._get_spot_price(logger, instance_type, image)
         if r_price.is_error:
             # _get_spot_price has different return value, we cannot return it as it is
-            return Error(r_price.unwrap_error())
+            return _Error(r_price.unwrap_error())
 
         spot_price = r_price.unwrap()
-
-        r_block_device_mappings = self._create_block_device_mappings(logger, guest_request, image, instance_type)
-
-        if r_block_device_mappings.is_error:
-            return Error(r_block_device_mappings.unwrap_error())
-
-        r_network_interfaces = self._create_network_interfaces(
-            logger, guest_request, image, instance_type, security_group_ids
-        )
-
-        if r_network_interfaces.is_error:
-            return Error(r_network_interfaces.unwrap_error())
-
-        user_data = self._create_user_data(logger, guest_request)
 
         specification = AWS_INSTANCE_SPECIFICATION.render(
             ami_id=image.id,
@@ -2589,8 +2968,8 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
             subnet_id=self.pool_config['subnet-id'],
             security_group=security_group_ids,
             user_data=_base64_encode(user_data) if user_data else '',
-            network_interfaces=r_network_interfaces.unwrap().serialize(),
-            block_device_mappings=r_block_device_mappings.unwrap().serialize(),
+            network_interfaces=network_interfaces.serialize(),
+            block_device_mappings=block_device_mappings.serialize(),
         )
 
         log_dict_yaml(logger.info, 'spot request launch specification', json.loads(specification))
@@ -2610,24 +2989,45 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
         )
 
         if r_spot_request.is_error:
-            return Error(Failure.from_failure('failed to request spot instance', r_spot_request.unwrap_error()))
+            return _Error(Failure.from_failure('failed to request spot instance', r_spot_request.unwrap_error()))
 
         spot_instance_id = cast(list[dict[str, str]], r_spot_request.unwrap())[0]['SpotInstanceRequestId']
 
         # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/spot-request-status.html
         logger.info(f'current spot instance request state {spot_instance_id}:open:pending-evaluation')
 
-        return Ok(
-            ProvisioningProgress(
-                state=ProvisioningState.PENDING,
-                pool_data=AWSPoolData(
+        return _Ok(
+            InstanceCreationOutcome(
+                resource=AWSInstance(
+                    id='',
+                    name=instance_name,
+                    status='open',
+                    created_at=datetime.datetime.utcnow(),
                     spot_instance_id=spot_instance_id,
-                    security_group=(
-                        security_group_ids[0] if security_group_ids[0] not in self._pool_security_groups else None
-                    ),
+                    security_group=instance_request.guest_security_group,
                     flavor_name=instance_type.name,
                 ),
-                ssh_info=image.ssh,
+                image=image,
+                flavor=instance_type,
+            )
+        )
+
+    def _reuse_instance(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        instance_request: InstanceCreationRequest,
+        instance: AWSInstance,
+    ) -> _Result[InstanceCreationOutcome, Failure]:
+        # Make sure the reused instance carries the per-guest security group so cleanup targets it later.
+        instance.security_group = instance_request.guest_security_group
+
+        return _Ok(
+            InstanceCreationOutcome(
+                resource=instance,
+                image=instance_request.image,
+                flavor=instance_request.flavor,
             )
         )
 
@@ -2911,42 +3311,45 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
         return normalize_bool_option(self.pool_config.get('use-spot-request', False))
 
     @override
+    @rewrap_to_gluetool
     def acquire_guest(
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         transaction: Transaction,
         guest_request: GuestRequest,
-    ) -> Result[ProvisioningProgress, Failure]:
-        r_image_flavor_pairs = self._collect_image_flavor_pairs(logger, session, guest_request)
-
-        if r_image_flavor_pairs.is_error:
-            return Error(r_image_flavor_pairs.unwrap_error())
-
-        can_acquire, pairs = r_image_flavor_pairs.unwrap()
-
-        if not can_acquire.can_acquire:
-            assert can_acquire.reason is not None
-
-            return Error(Failure(can_acquire.reason.message))
-
-        image, flavor = pairs[0]
-
-        # If this pool provides spot instances, we start the provisioning by submitting a spot instance request.
-        # After that, we request an update to be scheduled, to check progress of this spot request. If successfull,
-        # we extract instance ID, and proceed just like we do with non-spot instances.
-        #
-        # There is only one request in both cases: either we submit a spot instance request, and the instance gets
-        # created implicitly, or, when this pool don't provide spot instances, we submit an instance request. There
-        # is no explicit request to transition from spot instance request to instance updates - once spot request is
-        # fulfilled, we're given instance ID to work with.
-
-        self.log_acquisition_attempt(logger, transaction, guest_request, flavor=flavor, image=image)
-
-        if self._should_use_spot_request(guest_request):
-            return self._request_spot_instance(logger, session, guest_request, flavor, image)
-
-        return self._request_instance(logger, session, guest_request, flavor, image)
+    ) -> _Result[ProvisioningProgress, Failure]:
+        # Both spot and on-demand provisioning go through a single instance ResourceManager. For a spot request,
+        # the resulting resource carries a spot_instance_id and no instance ID yet - update_guest then transitions
+        # from the spot request to the actual instance, exactly as before.
+        return (
+            self.instance_resource_manager.acquire(logger, guest_request, session, transaction)
+            .bind(
+                lambda instance_outcome: _Ok(
+                    ProvisioningProgress(
+                        state=ProvisioningState.PENDING,
+                        pool_data=AWSPoolData(
+                            instance_id=instance_outcome.resource.id or None,
+                            spot_instance_id=instance_outcome.resource.spot_instance_id,
+                            security_group=instance_outcome.resource.security_group,
+                            flavor_name=instance_outcome.resource.flavor_name,
+                        ),
+                        ssh_info=instance_outcome.image.ssh,
+                    )
+                )
+            )
+            .lash(
+                lambda failure: _Error(failure)
+                if failure.recoverable
+                else _Ok(
+                    ProvisioningProgress(
+                        state=ProvisioningState.CANCEL,
+                        pool_data=guest_request.pool_data.mine_or_none(self, AWSPoolData) or AWSPoolData(),
+                        pool_failures=[failure],
+                    )
+                )
+            )
+        )
 
     @override
     def release_guest(

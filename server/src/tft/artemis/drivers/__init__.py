@@ -300,6 +300,26 @@ KNOB_INSTANCE_FLAVOR_TAG: Knob[str] = Knob(
     default='ArtemisFlavor',
 )
 
+KNOB_INSTANCE_GUEST_NAME_TAG: Knob[str] = Knob(
+    'artemis.instance.guest-name.tag',
+    'Artemis tag to hold the guestname identifying the guest request. Does not change over time.',
+    has_db=False,
+    per_entity=True,
+    envvar='ARTEMIS_INSTANCE_GUEST_NAME_TAG',
+    cast_from_str=str,
+    default='ArtemisGuestName',
+)
+
+KNOB_INSTANCE_GUEST_LABEL_TAG: Knob[str] = Knob(
+    'artemis.instance.guest-label.tag',
+    'Artemis tag to hold the human-readable guest label, usable e.g. for naming instances. Changes over time.',
+    has_db=False,
+    per_entity=True,
+    envvar='ARTEMIS_INSTANCE_GUEST_LABEL_TAG',
+    cast_from_str=str,
+    default='ArtemisGuestLabel',
+)
+
 
 KNOB_DISPATCH_RESOURCE_CLEANUP_DELAY: Knob[int] = Knob(
     'pool.dispatch-resource-cleanup',
@@ -1725,6 +1745,24 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
 
         return Ok(r_value.unwrap())
 
+    @functools.cached_property
+    def _instance_guest_name_tag(self) -> Result[str, Failure]:
+        r_value = KNOB_INSTANCE_GUEST_NAME_TAG.get_value(entityname=self.poolname)
+
+        if r_value.is_error:
+            return Error(Failure.from_failure('Could not get instance guest name tag name', r_value.unwrap_error()))
+
+        return Ok(r_value.unwrap())
+
+    @functools.cached_property
+    def _instance_guest_label_tag(self) -> Result[str, Failure]:
+        r_value = KNOB_INSTANCE_GUEST_LABEL_TAG.get_value(entityname=self.poolname)
+
+        if r_value.is_error:
+            return Error(Failure.from_failure('Could not get instance guest label tag name', r_value.unwrap_error()))
+
+        return Ok(r_value.unwrap())
+
     def _render_instance_name(self, guest_request: GuestRequest) -> _Result[str, Failure]:
         r_instance_name_template = KNOB_INSTANCE_NAME_TEMPLATE.get_value(entityname=self.poolname)
         if r_instance_name_template.is_error:
@@ -2233,13 +2271,21 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
                 {key: value if value is not None else 'null' for key, value in (guest_request.user_data or {}).items()}
             )
 
-        tags['ArtemisGuestName'] = guest_request.guestname
+        r_guest_name_tag = self._instance_guest_name_tag
+        if r_guest_name_tag.is_error:
+            return Error(r_guest_name_tag.unwrap_error())
+
+        r_guest_label_tag = self._instance_guest_label_tag
+        if r_guest_label_tag.is_error:
+            return Error(r_guest_label_tag.unwrap_error())
+
+        tags[r_guest_name_tag.unwrap()] = guest_request.guestname
 
         r_guest_name = self._render_instance_name(guest_request)
         if not is_successful(r_guest_name):
             return Error(Failure.from_failure('failed to get expected instance name', r_guest_name.failure()))
 
-        tags['ArtemisGuestLabel'] = r_guest_name.unwrap()
+        tags[r_guest_label_tag.unwrap()] = r_guest_name.unwrap()
 
         r_rendered_tags = render_tags(
             logger, tags, {'GUESTNAME': guest_request.guestname, 'ENVIRONMENT': guest_request.environment}
