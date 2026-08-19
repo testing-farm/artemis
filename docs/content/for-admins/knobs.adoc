@@ -538,38 +538,6 @@ for the requested action.
 
 5+|Artemis tag to hold the actual instance flavor
 
-|`artemis.instance.guest-label.tag`
-|`str`
-|`ARTEMIS_INSTANCE_GUEST_LABEL_TAG`
-|`ArtemisGuestLabel`
-|no
-
-
-|`artemis.instance.guest-label.tag:$entityname`
-|
-|`ARTEMIS_INSTANCE_GUEST_LABEL_TAG_$entityname`
-|
-|
-
-
-5+|Artemis tag to hold the human-readable guest label, usable e.g. for naming instances. Changes over time.
-
-|`artemis.instance.guest-name.tag`
-|`str`
-|`ARTEMIS_INSTANCE_GUEST_NAME_TAG`
-|`ArtemisGuestName`
-|no
-
-
-|`artemis.instance.guest-name.tag:$entityname`
-|
-|`ARTEMIS_INSTANCE_GUEST_NAME_TAG_$entityname`
-|
-|
-
-
-5+|Artemis tag to hold the guestname identifying the guest request. Does not change over time.
-
 |`artemis.mapping.instance-name.template`
 |`str`
 |`ARTEMIS_INSTANCE_NAME_TEMPLATE`
