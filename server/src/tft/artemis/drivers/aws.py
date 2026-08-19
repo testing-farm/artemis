@@ -2587,9 +2587,13 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
         """
         Fetch the list of instances - both on-demand and spot - belonging to a given guest request.
 
-        Instances are matched by the stable guest name tag (:py:data:`KNOB_INSTANCE_GUEST_NAME_TAG`), and their
-        ``name`` is taken from the guest label tag (:py:data:`KNOB_INSTANCE_GUEST_LABEL_TAG`) so the
-        :py:class:`ResourceManager` name matching / postfix naming works.
+        Instances are matched by the stable ``ArtemisGuestName`` tag, and their ``name`` is taken from the
+        ``ArtemisGuestLabel`` tag so the :py:class:`ResourceManager` name matching / postfix naming works.
+
+        .. note::
+
+           The ``ArtemisGuestName`` / ``ArtemisGuestLabel`` tag names are hardcoded here. They should be
+           generalized (e.g. into per-entity knobs) in a separate patch.
 
         :returns: list of instances, sorted by their time of creation, oldest first.
         """
@@ -2598,23 +2602,13 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
             return _Error(r_flavor_tag.unwrap_error())
         flavor_tag = r_flavor_tag.unwrap()
 
-        r_guest_name_tag = self._instance_guest_name_tag
-        if r_guest_name_tag.is_error:
-            return _Error(r_guest_name_tag.unwrap_error())
-        guest_name_tag = r_guest_name_tag.unwrap()
-
-        r_guest_label_tag = self._instance_guest_label_tag
-        if r_guest_label_tag.is_error:
-            return _Error(r_guest_label_tag.unwrap_error())
-        guest_label_tag = r_guest_label_tag.unwrap()
-
         # On-demand (and fulfilled spot) instances.
         r_instances = self._aws_command(
             [
                 'ec2',
                 'describe-instances',
                 '--filters',
-                f'Name=tag:{guest_name_tag},Values={guest_request.guestname}',
+                f'Name=tag:ArtemisGuestName,Values={guest_request.guestname}',
                 'Name=instance-state-name,Values=pending,running,shutting-down',
             ],
             key='Reservations',
@@ -2629,7 +2623,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
                 'ec2',
                 'describe-spot-instance-requests',
                 '--filters',
-                f'Name=tag:{guest_name_tag},Values={guest_request.guestname}',
+                f'Name=tag:ArtemisGuestName,Values={guest_request.guestname}',
                 'Name=state,Values=open,active',
             ],
             key='SpotInstanceRequests',
@@ -2653,7 +2647,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
             instance_id = spot_request.get('InstanceId', '')
             instance = AWSInstance(
                 id=instance_id,
-                name=tags.get(guest_label_tag, ''),
+                name=tags.get('ArtemisGuestLabel', ''),
                 status=spot_request['State'],
                 created_at=r_created_at.unwrap(),
                 spot_instance_id=spot_request['SpotInstanceRequestId'],
@@ -2680,7 +2674,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
 
                 res[instance_id] = AWSInstance(
                     id=instance_id,
-                    name=tags.get(guest_label_tag, ''),
+                    name=tags.get('ArtemisGuestLabel', ''),
                     status=raw_instance['State']['Name'],
                     created_at=r_created_at.unwrap(),
                     flavor_name=tags.get(flavor_tag),
@@ -2779,12 +2773,10 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
         instance_type = instance_request.flavor
         security_group_ids = instance_request.security_group_ids
 
-        r_guest_label_tag = self._instance_guest_label_tag
-        if r_guest_label_tag.is_error:
-            return _Error(r_guest_label_tag.unwrap_error())
-
         # Override the guest label so that the instance is tracked under the name the ResourceManager chose for it.
-        tags = {**instance_request.tags, r_guest_label_tag.unwrap(): instance_name}
+        # NOTE: the ``ArtemisGuestLabel`` tag name is hardcoded; it should be generalized (e.g. into a knob) in a
+        # separate patch.
+        tags = {**instance_request.tags, 'ArtemisGuestLabel': instance_name}
 
         r_block_device_mappings = self._create_block_device_mappings(logger, guest_request, image, instance_type)
         if r_block_device_mappings.is_error:
