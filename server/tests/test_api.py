@@ -137,6 +137,7 @@ def test_metrics(
         ('provisioning_duration_seconds', 'histogram'),
         # Pool resource metrics
         ('pool_resources_instances', 'gauge'),
+        ('pool_resources_errored_instances', 'gauge'),
         ('pool_resources_cores', 'gauge'),
         ('pool_resources_memory_bytes', 'gauge'),
         ('pool_resources_diskspace_bytes', 'gauge'),
