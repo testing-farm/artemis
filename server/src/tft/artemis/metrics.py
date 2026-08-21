@@ -549,6 +549,12 @@ class PoolResources(PoolMetricsBase):
     Size of disk space, in bytes.
     """
 
+    errored_instances: Optional[int]
+    """
+    Number of instances in an error state. Tracked separately from :py:attr:`instances` because such instances
+    often lack network and flavor information, hence they are not counted towards regular resource usage.
+    """
+
     networks: dict[str, PoolNetworkResources] = dataclasses.field(default_factory=dict)
     """
     Network resources, i.e. number of addresses and other network-related metrics.
@@ -583,6 +589,7 @@ class PoolResources(PoolMetricsBase):
         self.cores = None
         self.memory = None
         self.diskspace = None
+        self.errored_instances = None
         self.networks = {}
         self.flavors = {}
 
@@ -1419,6 +1426,7 @@ class PoolsMetrics(MetricsBase):
         )
 
         self.POOL_RESOURCES_INSTANCES = _create_pool_resource_metric('instances')
+        self.POOL_RESOURCES_ERRORED_INSTANCES = _create_pool_resource_metric('errored_instances')
         self.POOL_RESOURCES_CORES = _create_pool_resource_metric('cores')
         self.POOL_RESOURCES_MEMORY = _create_pool_resource_metric('memory', unit='bytes')
         self.POOL_RESOURCES_DISKSPACE = _create_pool_resource_metric('diskspace', unit='bytes')
@@ -1518,6 +1526,7 @@ class PoolsMetrics(MetricsBase):
 
             for gauge, metric_name in [
                 (self.POOL_RESOURCES_INSTANCES, 'instances'),
+                (self.POOL_RESOURCES_ERRORED_INSTANCES, 'errored_instances'),
                 (self.POOL_RESOURCES_CORES, 'cores'),
                 (self.POOL_RESOURCES_MEMORY, 'memory'),
                 (self.POOL_RESOURCES_DISKSPACE, 'diskspace'),
