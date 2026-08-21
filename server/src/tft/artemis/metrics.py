@@ -524,7 +524,7 @@ class PoolResources(PoolMetricsBase):
     _KEY = 'metrics.pool.{poolname}.resources.{dimension}'  # noqa: FS003
     _KEY_UPDATED_TIMESTAMP = 'metrics.pool.{poolname}.resources.{dimension}.updated_timestamp'  # noqa: FS003
 
-    _TRIVIAL_FIELDS = ('instances', 'cores', 'memory', 'diskspace')
+    _TRIVIAL_FIELDS = ('instances', 'cores', 'memory', 'diskspace', 'errored_instances')
     _COMPOUND_FIELDS = ('networks',)
 
     instances: Optional[int]
@@ -697,6 +697,7 @@ class PoolResourcesDepleted:
     cores: bool = False
     memory: bool = False
     diskspace: bool = False
+    errored_instances: bool = False
 
     # Depleted networks are listed as names only, no deeper structure. We could change this to mapping between
     # network names and, for example, a boolean or a structure describing which network resource is depleted, but
