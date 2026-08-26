@@ -51,7 +51,6 @@ from sqlalchemy.orm.session import sessionmaker
 from sqlalchemy.schema import ForeignKeyConstraint, Index, PrimaryKeyConstraint
 from sqlalchemy_utils import EncryptedType
 from sqlalchemy_utils.types.encrypted.encrypted_type import AesEngine
-from typing_extensions import Self
 
 from .guest import GuestState
 from .knobs import KNOB_LOGGING_DB_QUERIES, get_vault_password

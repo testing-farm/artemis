@@ -1580,7 +1580,7 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
         self._pool_resources_metrics: Optional[PoolResourcesMetrics] = None
         self._pool_costs_metrics: Optional[PoolCostsMetrics] = None
 
-        self.image_info_cache_key = self.POOL_IMAGE_INFO_CACHE_KEY.format(self.poolname)
+        self.image_info_cache_key = self.POOL_IMAGE_INFO_CACHE_KEY.format(self.poolname)  # noqa: FS002
 
     _drivers_registry: ClassVar[dict[str, type['PoolDriver[Any, Any]']]] = {}
 
@@ -2687,7 +2687,7 @@ class FlavorBasedPoolDriver(
     def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str, pool_config: dict[str, Any]) -> None:
         super().__init__(logger, poolname, pool_config)
 
-        self.flavor_info_cache_key = self.POOL_FLAVOR_INFO_CACHE_KEY.format(self.poolname)
+        self.flavor_info_cache_key = self.POOL_FLAVOR_INFO_CACHE_KEY.format(self.poolname)  # noqa: FS002
 
     @abc.abstractmethod
     def _query_backend_flavors(self, logger: gluetool.log.ContextAdapter) -> _Result[list[BackendFlavorT], Failure]:
