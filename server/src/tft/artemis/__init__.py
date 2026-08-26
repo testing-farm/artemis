@@ -1196,11 +1196,12 @@ class Failure:
         details['fail_guest_request'] = self.fail_guest_request
 
         if self.exception:
-            details['exception'] = self._exception_details(self.exception, self.details.get('scrubbed_command'))
+            details['exception'] = self._exception_details(self.exception, self.details.get('scrubbed_command'))  # noqa: FS002
 
         if self.exc_info:
             details['traceback'] = '\n'.join(
-                line.rstrip() for line in stackprinter.format(self.exc_info, line_wrap=False).splitlines()
+                line.rstrip()
+                for line in stackprinter.format(self.exc_info, line_wrap=False).splitlines()  # noqa: FS002
             )
 
         if 'scrubbed_command' in details:
