@@ -392,16 +392,26 @@ def _new_tag(tag_name: str, **attrs: str) -> bs4.BeautifulSoup:
     return bs4.BeautifulSoup('', 'xml').new_tag(tag_name, **attrs)
 
 
-def operator_to_beaker_op(operator: Operator, value: str) -> tuple[str, str]:
+def _negate(tag: bs4.Tag) -> bs4.Tag:
+    group = _new_tag('not')
+    group.append(tag)
+
+    return group
+
+
+def operator_to_beaker_op(operator: Operator, value: str) -> tuple[str, str, bool]:
     """
     Convert constraint operator to Beaker "op".
     """
 
     if operator in OPERATOR_SIGN_TO_OPERATOR:
-        return OPERATOR_SIGN_TO_OPERATOR[operator], value
+        return OPERATOR_SIGN_TO_OPERATOR[operator], value, False
 
     # MATCH has special handling - convert the pattern to a wildcard form - and that may be weird :/
-    return 'like', value.replace('.*', '%').replace('.+', '%')
+    if operator == Operator.NOTMATCH:
+        return 'like', value.replace('.*', '%').replace('.+', '%'), True
+
+    return 'like', value.replace('.*', '%').replace('.+', '%'), False
 
 
 def _translate_constraint_by_config(
@@ -502,6 +512,9 @@ def constraint_to_beaker_filter(
 
         return Ok(grouping_or)
 
+    def _apply_negation(tag: bs4.Tag, flag: bool) -> Result[bs4.Tag, Failure]:
+        return Ok(_negate(tag) if flag else tag)
+
     constraint = cast(Constraint, constraint)
 
     constraint_name = constraint.expand_name()
@@ -538,49 +551,50 @@ def constraint_to_beaker_filter(
         cpu = _new_tag('cpu')
 
         if constraint_name.child_property == 'processors':
-            op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
+            op, value, _ = operator_to_beaker_op(constraint.operator, str(constraint.value))
 
             processors = _new_tag('processors', op=op, value=value)
 
             cpu.append(processors)
 
         elif constraint_name.child_property == 'cores':
-            op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
+            op, value, _ = operator_to_beaker_op(constraint.operator, str(constraint.value))
 
             cores = _new_tag('cores', op=op, value=value)
 
             cpu.append(cores)
 
         elif constraint_name.child_property == 'family':
-            op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
+            op, value, _ = operator_to_beaker_op(constraint.operator, str(constraint.value))
 
             family = _new_tag('family', op=op, value=value)
 
             cpu.append(family)
 
         elif constraint_name.child_property == 'model':
-            op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
+            op, value, _ = operator_to_beaker_op(constraint.operator, str(constraint.value))
 
             model = _new_tag('model', op=op, value=value)
 
             cpu.append(model)
 
         elif constraint_name.child_property == 'model_name':
-            op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
+            op, value, negate = operator_to_beaker_op(constraint.operator, str(constraint.value))
 
             model_name = _new_tag('model_name', op=op, value=value)
+            model_name = _negate(model_name) if negate else model_name
 
             cpu.append(model_name)
 
         elif constraint_name.child_property == 'stepping':
-            op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
+            op, value, _ = operator_to_beaker_op(constraint.operator, str(constraint.value))
 
             stepping = _new_tag('stepping', op=op, value=value)
 
             cpu.append(stepping)
 
         elif constraint_name.child_property == 'flag':
-            op, value = operator_to_beaker_op(
+            op, value, _ = operator_to_beaker_op(
                 Operator.EQ if constraint.operator is Operator.CONTAINS else Operator.NEQ, str(constraint.value)
             )
 
@@ -589,9 +603,10 @@ def constraint_to_beaker_filter(
             cpu.append(flag)
 
         elif constraint_name.child_property == 'vendor_name':
-            op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
+            op, value, negate = operator_to_beaker_op(constraint.operator, str(constraint.value))
 
             vendor_name = _new_tag('vendor', op=op, value=value)
+            vendor_name = _negate(vendor_name) if negate else vendor_name
 
             cpu.append(vendor_name)
 
@@ -608,7 +623,7 @@ def constraint_to_beaker_filter(
 
         if constraint_name.child_property == 'size':
             # `disk.size` is represented as quantity, for Beaker XML we need to convert to bytes, integer.
-            op, value = operator_to_beaker_op(
+            op, value, _ = operator_to_beaker_op(
                 constraint.operator, str(int(cast(SizeType, constraint.value).to('B').magnitude))
             )
 
@@ -617,9 +632,10 @@ def constraint_to_beaker_filter(
             disk.append(size)
 
         elif constraint_name.child_property == 'model_name':
-            op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
+            op, value, negate = operator_to_beaker_op(constraint.operator, str(constraint.value))
 
             model = _new_tag('model', op=op, value=value)
+            model = _negate(model) if negate else model
 
             disk.append(model)
 
@@ -661,7 +677,7 @@ def constraint_to_beaker_filter(
         return Ok(disk)
 
     if constraint_name.property == 'arch':
-        op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
+        op, value, _ = operator_to_beaker_op(constraint.operator, str(constraint.value))
 
         system = _new_tag('system')
         arch = _new_tag('arch', op=op, value=value)
@@ -672,7 +688,7 @@ def constraint_to_beaker_filter(
 
     if constraint_name.property == 'memory':
         # `memory` is represented as quantity, for Beaker XML we need to convert to mibibytes, integer.
-        op, value = operator_to_beaker_op(
+        op, value, _ = operator_to_beaker_op(
             constraint.operator, str(int(cast(SizeType, constraint.value).to('MiB').magnitude))
         )
 
@@ -684,18 +700,12 @@ def constraint_to_beaker_filter(
         return Ok(system)
 
     if constraint_name.property == 'hostname':
-        op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
+        op, value, negate = operator_to_beaker_op(constraint.operator, str(constraint.value))
 
-        hostname = _new_tag('hostname', op=op, value=value)
-        if constraint.operator == Operator.NOTMATCH:
-            group = _new_tag('not')
-            group.append(hostname)
-            return Ok(group)
-
-        return Ok(hostname)
+        return _apply_negation(_new_tag('hostname', op=op, value=value), negate)
 
     if constraint_name.property == 'tpm':
-        op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
+        op, value, _ = operator_to_beaker_op(constraint.operator, str(constraint.value))
 
         return Ok(_new_tag('key_value', key='TPM', op=op, value=str(constraint.value)))
 
@@ -772,7 +782,7 @@ def constraint_to_beaker_filter(
 
     if constraint_name.property == 'system':  # noqa: SIM102
         if constraint_name.child_property == 'numa_nodes':
-            op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
+            op, value, _ = operator_to_beaker_op(constraint.operator, str(constraint.value))
 
             system = _new_tag('system')
             numanodes = _new_tag('numanodes', op=op, value=value)
@@ -782,18 +792,18 @@ def constraint_to_beaker_filter(
             return Ok(system)
 
         if constraint_name.child_property == 'model_name':
-            op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
+            op, value, negate = operator_to_beaker_op(constraint.operator, str(constraint.value))
 
             system = _new_tag('system')
             model = _new_tag('model', op=op, value=value)
 
             system.append(model)
 
-            return Ok(system)
+            return _apply_negation(system, negate)
 
     if constraint_name.property == 'iommu':
         if constraint_name.child_property == 'is_supported':
-            op, value = operator_to_beaker_op(constraint.operator, '')
+            op, value, _ = operator_to_beaker_op(constraint.operator, '')
 
             return Ok(_new_tag('key_value', key='VIRT_IOMMU', op=op, value='1' if constraint.value else '0'))
 
@@ -824,23 +834,18 @@ def constraint_to_beaker_filter(
 
     if constraint_name.property == 'beaker':  # noqa: SIM102
         if constraint_name.child_property == 'pool':
-            op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
+            op, value, _ = operator_to_beaker_op(constraint.operator, str(constraint.value))
 
-            pool_container = _new_tag('pool', value=value)
-            if constraint.operator == Operator.NEQ:
-                group = _new_tag('not')
-                group.append(pool_container)
-                return Ok(group)
-            return Ok(pool_container)
+            return _apply_negation(_new_tag('pool', value=value), constraint.operator == Operator.NEQ)
 
         if constraint_name.child_property == 'panic_watchdog':
             # Not a beaker HW contstraint. Affects attribute of the <watchdog/> tag.
             return Ok(None)
 
     if constraint_name.property == 'device' and constraint_name.child_property == 'driver':
-        op, value = operator_to_beaker_op(constraint.operator, str(constraint.value))
+        op, value, negate = operator_to_beaker_op(constraint.operator, str(constraint.value))
 
-        return Ok(_new_tag('key_value', key='MODULE', op=op, value=value))
+        return _apply_negation(_new_tag('key_value', key='MODULE', op=op, value=value), negate)
 
     return Error(
         Failure('constraint not supported by driver', constraint=repr(constraint), constraint_name=constraint.name)
