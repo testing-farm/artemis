@@ -724,7 +724,7 @@ class TaskLogger(gluetool.log.ContextAdapter):
         self.info('finished')
 
     def failed(self, failure: Failure) -> None:
-        self.error(f'failed:\n{stackprinter.format(failure.exception)}')
+        self.error(f'failed:\n{stackprinter.format(failure.exception)}')  # noqa: FS002
 
 
 def actor_control_value(actor_name: str, var_name: str, default: Any) -> Any:  # noqa: ANN401
@@ -1122,7 +1122,7 @@ def _task_core(
 
     logger.begin(actor_args=doer_args)
 
-    logger.info(f'[{os.getpid()}] {rss.format()}')
+    logger.info(f'[{os.getpid()}] {rss.format()}')  # noqa: FS002
 
     # TODO: implement a proper decorator, or merge this into @task decorator - but @task seems to be flawed,
     # which requires a fix, therefore merge this into @task once it gets fixed.
@@ -1247,7 +1247,7 @@ def _task_core(
             logger.warning('message processing encountered error and requests waiver')
 
         rss.snapshot()
-        logger.info(f'[{os.getpid()}] {rss.format()}')
+        logger.info(f'[{os.getpid()}] {rss.format()}')  # noqa: FS002
 
         logger.finished()
 
@@ -1257,7 +1257,7 @@ def _task_core(
         return
 
     rss.snapshot()
-    logger.info(f'[{os.getpid()}] {rss.format()}')
+    logger.info(f'[{os.getpid()}] {rss.format()}')  # noqa: FS002
 
     # To avoid chain a of exceptions in the log - which we already logged above - raise a generic,
     # insignificant exception to notify scheduler that this task failed and needs to be retried.

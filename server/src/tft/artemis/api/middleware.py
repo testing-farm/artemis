@@ -211,14 +211,14 @@ class RSSWatcherMiddleware(BaseHTTPMiddleware):
 
         rss = RSSWatcher()
 
-        logger.info(f'{request_label} {rss.format()}')
+        logger.info(f'{request_label} {rss.format()}')  # noqa: FS002
 
         try:
             return await call_next(request)
 
         finally:
             rss.snapshot()
-            logger.info(f'{request_label} {rss.format()}')
+            logger.info(f'{request_label} {rss.format()}')  # noqa: FS002
 
 
 class ProfileMiddleware(BaseHTTPMiddleware):
