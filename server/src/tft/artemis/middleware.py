@@ -449,7 +449,7 @@ class WorkerTraffic(dramatiq.middleware.Middleware):
 
     @property
     def current_key(self) -> str:
-        return self.KEY_WORKER_TASK.format(worker=self.worker_name, pid=self.worker_pid, tid=threading.get_ident())
+        return self.KEY_WORKER_TASK.format(worker=self.worker_name, pid=self.worker_pid, tid=threading.get_ident())  # noqa: FS002
 
     def before_process_message(self, broker: dramatiq.broker.Broker, message: dramatiq.MessageProxy) -> None:
         from .cache import set_cache_value

@@ -3223,7 +3223,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
 
         # In AWS case only logged in users can access the console (1 session a time). The url has fixed format
         # depending on instance_id only, let's just generate it for every instance.
-        output = KNOB_CONSOLE_INTERACTIVE_URL.value.format(instance_id=pool_data.instance_id)
+        output = KNOB_CONSOLE_INTERACTIVE_URL.value.format(instance_id=pool_data.instance_id)  # noqa: FS002
 
         return Ok(GuestLogUpdateProgress(state=GuestLogState.COMPLETE, url=output))
 

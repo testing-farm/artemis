@@ -586,8 +586,8 @@ class PoolResources(PoolMetricsBase):
 
         super().__init__(poolname)
 
-        self._key = PoolResources._KEY.format(poolname=poolname, dimension=dimension.value)
-        self._key_updated_timestamp = PoolResources._KEY_UPDATED_TIMESTAMP.format(
+        self._key = PoolResources._KEY.format(poolname=poolname, dimension=dimension.value)  # noqa: FS002
+        self._key_updated_timestamp = PoolResources._KEY_UPDATED_TIMESTAMP.format(  # noqa: FS002
             poolname=poolname, dimension=dimension.value
         )
 
@@ -927,19 +927,19 @@ class PoolMetrics(PoolMetricsBase):
 
         super().__init__(poolname)
 
-        self.key_errors = self._KEY_ERRORS.format(poolname=poolname)
-        self.key_aborts = self._KEY_ABORTS.format(poolname=poolname)
+        self.key_errors = self._KEY_ERRORS.format(poolname=poolname)  # noqa: FS002
+        self.key_aborts = self._KEY_ABORTS.format(poolname=poolname)  # noqa: FS002
 
-        self.key_image_info_count = self._KEY_INFO_COUNT.format(poolname=poolname, info='image')
-        self.key_image_info_refresh_timestamp = self._KEY_INFO_UPDATED_TIMESTAMP.format(poolname=poolname, info='image')
-        self.key_flavor_info_count = self._KEY_INFO_COUNT.format(poolname=poolname, info='flavor')
-        self.key_flavor_info_refresh_timestamp = self._KEY_INFO_UPDATED_TIMESTAMP.format(
+        self.key_image_info_count = self._KEY_INFO_COUNT.format(poolname=poolname, info='image')  # noqa: FS002
+        self.key_image_info_refresh_timestamp = self._KEY_INFO_UPDATED_TIMESTAMP.format(poolname=poolname, info='image')  # noqa: FS002
+        self.key_flavor_info_count = self._KEY_INFO_COUNT.format(poolname=poolname, info='flavor')  # noqa: FS002
+        self.key_flavor_info_refresh_timestamp = self._KEY_INFO_UPDATED_TIMESTAMP.format(  # noqa: FS002
             poolname=poolname, info='flavor'
         )
 
-        self.key_cli_calls = self._KEY_CLI_CALLS.format(poolname=poolname)
-        self.key_cli_calls_exit_codes = self._KEY_CLI_EXIT_CODES.format(poolname=poolname)
-        self.key_cli_calls_durations = self._KEY_CLI_CALLS_DURATIONS.format(poolname=poolname)
+        self.key_cli_calls = self._KEY_CLI_CALLS.format(poolname=poolname)  # noqa: FS002
+        self.key_cli_calls_exit_codes = self._KEY_CLI_EXIT_CODES.format(poolname=poolname)  # noqa: FS002
+        self.key_cli_calls_durations = self._KEY_CLI_CALLS_DURATIONS.format(poolname=poolname)  # noqa: FS002
 
         self.enabled = False
         self.routing_enabled = True
@@ -969,7 +969,7 @@ class PoolMetrics(PoolMetricsBase):
     def _refresh_info_count(pool: str, info: str, count: float, cache: redis.Redis) -> Result[None, Failure]:
         safe_call(
             cast(Callable[[str, float], None], cache.set),
-            PoolMetrics._KEY_INFO_COUNT.format(poolname=pool, info=info),
+            PoolMetrics._KEY_INFO_COUNT.format(poolname=pool, info=info),  # noqa: FS002
             count,
         )
 
@@ -980,7 +980,7 @@ class PoolMetrics(PoolMetricsBase):
     def _refresh_info_updated_timestamp(pool: str, info: str, cache: redis.Redis) -> Result[None, Failure]:
         safe_call(
             cast(Callable[[str, float], None], cache.set),
-            PoolMetrics._KEY_INFO_UPDATED_TIMESTAMP.format(poolname=pool, info=info),
+            PoolMetrics._KEY_INFO_UPDATED_TIMESTAMP.format(poolname=pool, info=info),  # noqa: FS002
             datetime.datetime.timestamp(datetime.datetime.utcnow()),
         )
 
@@ -1031,7 +1031,7 @@ class PoolMetrics(PoolMetricsBase):
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric_field(logger, cache, PoolMetrics._KEY_ERRORS.format(poolname=pool), error.value)
+        inc_metric_field(logger, cache, PoolMetrics._KEY_ERRORS.format(poolname=pool), error.value)  # noqa: FS002
         return Ok(None)
 
     @staticmethod
@@ -1061,7 +1061,7 @@ class PoolMetrics(PoolMetricsBase):
         inc_metric_field(
             logger,
             cache,
-            PoolMetrics._KEY_ABORTS.format(poolname=pool),
+            PoolMetrics._KEY_ABORTS.format(poolname=pool),  # noqa: FS002
             f'{instance_id or ""}:{compose}:{arch}:{cause.value}',
         )
 
@@ -1095,7 +1095,7 @@ class PoolMetrics(PoolMetricsBase):
         inc_metric_field(
             logger,
             cache,
-            PoolMetrics._KEY_CLI_CALLS.format(poolname=poolname),
+            PoolMetrics._KEY_CLI_CALLS.format(poolname=poolname),  # noqa: FS002
             commandname,
         )
 
@@ -1103,7 +1103,7 @@ class PoolMetrics(PoolMetricsBase):
         inc_metric_field(
             logger,
             cache,
-            PoolMetrics._KEY_CLI_EXIT_CODES.format(poolname=poolname),
+            PoolMetrics._KEY_CLI_EXIT_CODES.format(poolname=poolname),  # noqa: FS002
             f'{commandname}:{exit_code}:{cause.value if cause else ""}',
         )
 
@@ -1113,7 +1113,7 @@ class PoolMetrics(PoolMetricsBase):
         inc_metric_field(
             logger,
             cache,
-            PoolMetrics._KEY_CLI_CALLS_DURATIONS.format(poolname=poolname),
+            PoolMetrics._KEY_CLI_CALLS_DURATIONS.format(poolname=poolname),  # noqa: FS002
             f'{bucket}:{commandname}:{exit_code}:{cause.value if cause else ""}',
         )
 
@@ -1184,7 +1184,7 @@ class PoolMetrics(PoolMetricsBase):
             for field, count in get_metric_fields(
                 logger,
                 cache,
-                self._KEY_ABORTS.format(poolname=self.poolname),
+                self._KEY_ABORTS.format(poolname=self.poolname),  # noqa: FS002
             ).items()
         }
 
@@ -1207,7 +1207,7 @@ class PoolMetrics(PoolMetricsBase):
             get_metric_fields(
                 logger,
                 cache,
-                self._KEY_CLI_CALLS.format(poolname=self.poolname),
+                self._KEY_CLI_CALLS.format(poolname=self.poolname),  # noqa: FS002
             ).items()
         )
 
@@ -1223,7 +1223,7 @@ class PoolMetrics(PoolMetricsBase):
             for field, count in get_metric_fields(
                 logger,
                 cache,
-                self._KEY_CLI_CALLS_DURATIONS.format(poolname=self.poolname),
+                self._KEY_CLI_CALLS_DURATIONS.format(poolname=self.poolname),  # noqa: FS002
             ).items()
         }
 
@@ -2108,11 +2108,11 @@ class ShelfMetrics(MetricsBase):
         :param shelfname: name of the shelf for which metrics are being tracked.
         """
 
-        self.key_hits = self._KEY_HITS.format(shelfname=shelfname)
-        self.key_misses = self._KEY_MISSES.format(shelfname=shelfname)
-        self.key_removals = self._KEY_REMOVALS.format(shelfname=shelfname)
-        self.key_forced_removals = self._KEY_FORCED_REMOVALS.format(shelfname=shelfname)
-        self.key_dead = self._KEY_DEAD.format(shelfname=shelfname)
+        self.key_hits = self._KEY_HITS.format(shelfname=shelfname)  # noqa: FS002
+        self.key_misses = self._KEY_MISSES.format(shelfname=shelfname)  # noqa: FS002
+        self.key_removals = self._KEY_REMOVALS.format(shelfname=shelfname)  # noqa: FS002
+        self.key_forced_removals = self._KEY_FORCED_REMOVALS.format(shelfname=shelfname)  # noqa: FS002
+        self.key_dead = self._KEY_DEAD.format(shelfname=shelfname)  # noqa: FS002
 
         self.shelfname = shelfname
 
@@ -2138,7 +2138,7 @@ class ShelfMetrics(MetricsBase):
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric(logger, cache, cls._KEY_HITS.format(shelfname=shelfname))
+        inc_metric(logger, cache, cls._KEY_HITS.format(shelfname=shelfname))  # noqa: FS002
         return Ok(None)
 
     @classmethod
@@ -2155,7 +2155,7 @@ class ShelfMetrics(MetricsBase):
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric(logger, cache, cls._KEY_MISSES.format(shelfname=shelfname))
+        inc_metric(logger, cache, cls._KEY_MISSES.format(shelfname=shelfname))  # noqa: FS002
         return Ok(None)
 
     @classmethod
@@ -2172,7 +2172,7 @@ class ShelfMetrics(MetricsBase):
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric(logger, cache, cls._KEY_REMOVALS.format(shelfname=shelfname))
+        inc_metric(logger, cache, cls._KEY_REMOVALS.format(shelfname=shelfname))  # noqa: FS002
         return Ok(None)
 
     @classmethod
@@ -2189,7 +2189,7 @@ class ShelfMetrics(MetricsBase):
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric(logger, cache, cls._KEY_FORCED_REMOVALS.format(shelfname=shelfname))
+        inc_metric(logger, cache, cls._KEY_FORCED_REMOVALS.format(shelfname=shelfname))  # noqa: FS002
         return Ok(None)
 
     @classmethod
@@ -2204,7 +2204,7 @@ class ShelfMetrics(MetricsBase):
         :returns: ``None`` on success, :py:class:`Failure` instance otherwise.
         """
 
-        inc_metric(logger, cache, cls._KEY_DEAD.format(shelfname=shelfname))
+        inc_metric(logger, cache, cls._KEY_DEAD.format(shelfname=shelfname))  # noqa: FS002
         return Ok(None)
 
     @with_context
@@ -3049,7 +3049,7 @@ class WorkerMetrics(MetricsBase):
         set_metric(
             logger,
             cache,
-            WorkerMetrics._KEY_WORKER_PROCESS_COUNT.format(worker=worker),
+            WorkerMetrics._KEY_WORKER_PROCESS_COUNT.format(worker=worker),  # noqa: FS002
             processes,
             ttl=KNOB_WORKER_PROCESS_METRICS_TTL.value,
         )
@@ -3057,7 +3057,7 @@ class WorkerMetrics(MetricsBase):
         set_metric(
             logger,
             cache,
-            WorkerMetrics._KEY_WORKER_THREAD_COUNT.format(worker=worker),
+            WorkerMetrics._KEY_WORKER_THREAD_COUNT.format(worker=worker),  # noqa: FS002
             threads,
             ttl=KNOB_WORKER_PROCESS_METRICS_TTL.value,
         )
@@ -3065,7 +3065,7 @@ class WorkerMetrics(MetricsBase):
         set_metric(
             logger,
             cache,
-            WorkerMetrics._KEY_UPDATED_TIMESTAMP.format(worker=worker),
+            WorkerMetrics._KEY_UPDATED_TIMESTAMP.format(worker=worker),  # noqa: FS002
             int(datetime.datetime.timestamp(datetime.datetime.utcnow())),
             ttl=KNOB_WORKER_PROCESS_METRICS_TTL.value,
         )
@@ -3089,7 +3089,7 @@ class WorkerMetrics(MetricsBase):
         inc_metric(
             logger,
             cache,
-            WorkerMetrics._KEY_WORKER_PROCESS_RESTART_COUNT.format(worker=worker),
+            WorkerMetrics._KEY_WORKER_PROCESS_RESTART_COUNT.format(worker=worker),  # noqa: FS002
         )
 
         return Ok(None)
