@@ -512,7 +512,7 @@ def constraint_to_beaker_filter(
 
         return Ok(grouping_or)
 
-    def _apply_negation(tag: bs4.Tag, flag: bool) -> Result[bs4.Tag, Failure]:
+    def _apply_negation(tag: bs4.Tag, flag: bool) -> Result[bs4.Tag, Failure]:  # noqa: FBT001
         return Ok(_negate(tag) if flag else tag)
 
     constraint = cast(Constraint, constraint)
