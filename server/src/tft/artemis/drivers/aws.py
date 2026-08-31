@@ -1822,6 +1822,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
             create_resource_request=self._create_instance_request,
             create_resource=self._create_instance,
             reuse_resource=self._reuse_instance,
+            can_reuse_resource=self._can_reuse_instance,
         )
 
         self.security_group_resource_manager: ResourceManager[
@@ -3003,6 +3004,11 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
                 flavor=instance_type,
             )
         )
+
+    def _can_reuse_instance(self, instance_request: InstanceCreationRequest, instance: AWSInstance) -> bool:
+        # A leftover instance whose spot lifecycle no longer matches the request must not be reused - e.g. a spot
+        # instance provisioned before the pool was reconfigured to non-spot (or vice versa).
+        return instance.is_spot == instance_request.use_spot
 
     def _reuse_instance(
         self,

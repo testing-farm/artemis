@@ -4098,6 +4098,18 @@ RMResourceNameCallback = Callable[
 ]
 
 
+#: When invoked, decide whether an existing resource may be reused to satisfy the given creation request.
+#: A resource that is otherwise reusable (pending/ready) but incompatible with the request - e.g. a spot
+#: instance for a request that no longer wants spot - must not be reused, and is cleaned up instead.
+RMCanReuseResourceCallback = Callable[
+    [
+        ResourceCreationRequestT,
+        ResourceT,
+    ],
+    bool,
+]
+
+
 class ResourceManager(Generic[ResourceT, ResourceCreationRequestT, ResourceCreationOutcomeT]):
     def __init__(
         self,
@@ -4109,6 +4121,7 @@ class ResourceManager(Generic[ResourceT, ResourceCreationRequestT, ResourceCreat
         create_resource_request: RMCreateResourceRequestCallback[ResourceCreationRequestT],
         create_resource: RMCreateResourceCallback[ResourceCreationRequestT, ResourceCreationOutcomeT],
         reuse_resource: RMReuseResourceCallback[ResourceCreationRequestT, ResourceT, ResourceCreationOutcomeT],
+        can_reuse_resource: Optional[RMCanReuseResourceCallback[ResourceCreationRequestT, ResourceT]] = None,
     ) -> None:
         self.logger = logger
         self.pool = pool
@@ -4120,6 +4133,7 @@ class ResourceManager(Generic[ResourceT, ResourceCreationRequestT, ResourceCreat
         self.list_resources = list_resources
         self.resource_name = resource_name
         self.create_resource_request = create_resource_request
+        self.can_reuse_resource = can_reuse_resource
 
     def acquire(
         self,
@@ -4170,7 +4184,21 @@ class ResourceManager(Generic[ResourceT, ResourceCreationRequestT, ResourceCreat
         # build or active state can be reused.
         pending_resources = [resource for resource in existing_resources if resource.is_pending or resource.is_ready]
         error_resources = [resource for resource in existing_resources if resource.is_error]
-        leftover_resources = pending_resources[1:] + error_resources
+
+        # An otherwise reusable resource may still be incompatible with the current request - e.g. a spot instance
+        # left over from a previous attempt while the pool (or request) no longer asks for spot. Such resources must
+        # not be reused; treat them as leftovers so they get cleaned up and a fresh, compatible one is created.
+        if self.can_reuse_resource is not None:
+            incompatible_resources = [
+                resource for resource in pending_resources if not self.can_reuse_resource(resource_request, resource)
+            ]
+            pending_resources = [
+                resource for resource in pending_resources if self.can_reuse_resource(resource_request, resource)
+            ]
+        else:
+            incompatible_resources = []
+
+        leftover_resources = pending_resources[1:] + error_resources + incompatible_resources
 
         # Schedule cleanup of resources we won't use
         for leftover in leftover_resources:
