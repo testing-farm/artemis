@@ -721,6 +721,15 @@ KNOB_WORKER_TRAFFIC_METRICS_TTL: Knob[int] = Knob(
     default=600,
 )
 
+KNOB_WORKER_HEARTBEAT_FILEPATH_TEMPLATE: Knob[str] = Knob(
+    'worker.heartbeat.filepath-template',
+    'Template of the heartbeat file path.',
+    has_db=False,
+    envvar='ARTEMIS_WORKER_HEARTBEAT_FILEPATH_TEMPLATE',
+    cast_from_str=str,
+    default='/var/run/artemis/worker-heartbeat-{{ WORKER_PID }}-{{ WORKER_TID }}',
+)
+
 KNOB_DEPLOYMENT: Knob[str] = Knob(
     'deployment.name',
     'Optional name of the Artemis deployment (e.g. "production-01" or "development").',

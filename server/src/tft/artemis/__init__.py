@@ -74,7 +74,7 @@ from gluetool.result import Error, Ok, Result
 from returns.pipeline import is_successful
 from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
-from typing_extensions import ParamSpec, Self
+from typing_extensions import ParamSpec, Self, TypeAlias
 
 __VERSION__ = pkg_resources.get_distribution('tft-artemis').version
 
@@ -1303,8 +1303,15 @@ def get_config() -> dict[str, Any]:
     )
 
 
+WorkerNameComponents: TypeAlias = tuple[str, int, int]
+
+
+def worker_name_components() -> WorkerNameComponents:
+    return (platform.node(), os.getpid(), threading.get_native_id())
+
+
 def get_worker_name() -> str:
-    return f'{platform.node()}-{os.getpid()}-{threading.get_native_id()}'
+    return '-'.join(str(s) for s in worker_name_components())
 
 
 def get_broker_middleware(logger: gluetool.log.ContextAdapter) -> list[dramatiq.Middleware]:
@@ -1339,6 +1346,7 @@ def get_broker_middleware(logger: gluetool.log.ContextAdapter) -> list[dramatiq.
         middleware.append(artemis_middleware.WorkerTraffic(logger, get_cache(logger), worker_name))
 
     middleware += [
+        artemis_middleware.HeartbeatMark(logger, worker_name_components()),
         artemis_middleware.AgeLimit(),
         dramatiq.middleware.time_limit.TimeLimit(),
         dramatiq.middleware.shutdown.ShutdownNotifications(notify_shutdown=True),
