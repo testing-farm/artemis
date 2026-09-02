@@ -6,6 +6,7 @@ import os
 import signal
 import threading
 import traceback
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional, cast
 
 import dramatiq.broker
@@ -17,9 +18,10 @@ import gluetool.log
 import redis
 from dramatiq.common import compute_backoff, current_millis
 from gluetool.result import Ok
+from returns.pipeline import is_successful
 
 if TYPE_CHECKING:
-    from . import ExceptionInfoType
+    from . import ExceptionInfoType, WorkerNameComponents
     from .tasks import Actor, ActorArgumentType, TaskCall
 
 
@@ -734,3 +736,62 @@ class AgeLimit(dramatiq.middleware.age_limit.AgeLimit):  # type: ignore[misc]  #
         _fail_message(logger, message, f'message exceeded its age limit {delta / 1000.0}')
 
         raise dramatiq.middleware.SkipMessage('message exceeded its age limit')
+
+
+class HeartbeatMark(dramatiq.middleware.Middleware):  # type: ignore[misc]  # cannot subclass 'Middleware'
+    """
+    On every received message, update a heartbeat file for this worker.
+    """
+
+    logger: gluetool.log.ContextAdapter
+    worker_name_components: 'WorkerNameComponents'
+    filepath: Optional[Path]
+
+    def __init__(self, logger: gluetool.log.ContextAdapter, worker_name_components: 'WorkerNameComponents') -> None:
+        super().__init__()
+
+        self.logger = logger
+        self.worker_name_components = worker_name_components
+        self.filepath = None
+
+        from . import render_template, safe_call
+        from .knobs import KNOB_WORKER_HEARTBEAT_FILEPATH_TEMPLATE
+
+        r_filepath = render_template(
+            KNOB_WORKER_HEARTBEAT_FILEPATH_TEMPLATE.value,
+            WORKER_NODE=worker_name_components[0],
+            WORKER_PID=worker_name_components[1],
+            WORKER_TID=worker_name_components[2],
+        )
+
+        if not is_successful(r_filepath):
+            r_filepath.failure().handle(logger, label='failed to render heartbeat filepath template')
+
+            return
+
+        filepath = Path(r_filepath.unwrap())
+
+        r_mkdir = safe_call(filepath.parent.mkdir, parents=True, exist_ok=True)
+
+        if r_mkdir.is_error:
+            r_mkdir.unwrap_error().handle(logger, label='failed to create parent directory for the heartbeat file')
+
+            return
+
+        self.filepath = filepath
+
+    def before_process_message(self, broker: dramatiq.broker.Broker, message: dramatiq.message.Message) -> None:
+        logger, _, _ = _message_tools(broker, message)
+
+        if self.filepath is None:
+            logger.debug('refreshing heartbeat file is not enabled')
+            return
+
+        logger.debug(f'refreshing heartbeat file {self.filepath}')
+
+        from . import safe_call
+
+        r = safe_call(self.filepath.touch)
+
+        if r.is_error:
+            r.unwrap_error().handle(logger, label='failed to update the hearbeat file')
