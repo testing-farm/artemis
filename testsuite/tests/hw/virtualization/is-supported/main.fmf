@@ -1,4 +1,9 @@
 test: ./test.sh
+
+# Booting a throwaway VM (image download + boot to login) for the x86_64 "yes"
+# nested-virtualization proof needs headroom.
+duration: 15m
+
 require+:
   - libvirt
   - libvirt-client
@@ -12,6 +17,13 @@ adjust:
   - when: arch != s390x
     require+:
       - dmidecode
+
+  # Packages needed to boot a KVM-accelerated VM as nested-virt proof.
+  # qemu-kvm-core provides the /usr/libexec/qemu-kvm emulator binary.
+  - when: arch == x86_64
+    require+:
+      - curl
+      - qemu-kvm
 
 /yes:
     environment+:
