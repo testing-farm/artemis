@@ -964,10 +964,20 @@ def print_pools(
     print_collection(cfg, pools, tabulate, console=console)
 
 
-def print_image_info_update(
+def _format_cache_timestamp(timestamp: float) -> str:
+    if math.isnan(timestamp):
+        return 'N/A'
+
+    return datetime.datetime.utcfromtimestamp(timestamp).strftime(
+        '%Y-%m-%d %H:%M:%S UTC'
+    )
+
+
+def print_cache_info_update(
     cfg: Configuration,
     pools: CollectionType,
     metrics: List[Sample],
+    metric_name: str,
     console: Optional[rich.console.Console] = None,
 ) -> None:
     pool_to_driver = {entry['poolname']: entry['driver'] for entry in pools}
@@ -979,8 +989,7 @@ def print_image_info_update(
             (
                 s[2]
                 for s in metrics
-                if s[0] == 'pool_image_info_updated_timestamp'
-                and s[1].get('pool') == poolname
+                if s[0] == metric_name and s[1].get('pool') == poolname
             ),
             float('nan'),
         )
@@ -996,18 +1005,34 @@ def print_image_info_update(
         table.add_column('Last Updated')
 
         for entry in collection:
-            timestamp = entry['updated']
-            if math.isnan(timestamp):
-                updated = 'N/A'
-            else:
-                updated = datetime.datetime.utcfromtimestamp(timestamp).strftime(
-                    '%Y-%m-%d %H:%M:%S UTC'
-                )
+            updated = _format_cache_timestamp(entry['updated'])
             table.add_row(entry['poolname'], entry['driver'], updated)
 
         return table
 
     print_collection(cfg, collection, tabulate, console=console)
+
+
+def print_image_info_update(
+    cfg: Configuration,
+    pools: CollectionType,
+    metrics: List[Sample],
+    console: Optional[rich.console.Console] = None,
+) -> None:
+    print_cache_info_update(
+        cfg, pools, metrics, 'pool_image_info_updated_timestamp', console=console
+    )
+
+
+def print_flavor_info_update(
+    cfg: Configuration,
+    pools: CollectionType,
+    metrics: List[Sample],
+    console: Optional[rich.console.Console] = None,
+) -> None:
+    print_cache_info_update(
+        cfg, pools, metrics, 'pool_flavor_info_updated_timestamp', console=console
+    )
 
 
 def print_broker_tasks(

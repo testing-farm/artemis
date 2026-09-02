@@ -16,7 +16,7 @@ import time
 import urllib
 import urllib.parse
 from time import sleep
-from typing import Any, Dict, Generator, Iterator, List, Optional, Tuple, cast
+from typing import Any, Callable, Dict, Generator, Iterator, List, Optional, Tuple, cast
 
 import click
 import click_completion
@@ -49,6 +49,7 @@ from . import (
     parse_metrics,
     print_broker_tasks,
     print_events,
+    print_flavor_info_update,
     print_guest_logs,
     print_guests,
     print_image_info_update,
@@ -1420,21 +1421,36 @@ def cmd_cache_image_info(cfg: Configuration) -> None:
     print_image_info_update(cfg, response.json(), metrics)
 
 
+@cmd_cache.command(
+    name='flavor-info', short_help='Display flavor info cache update times'
+)
+@click.pass_obj
+def cmd_cache_flavor_info(cfg: Configuration) -> None:
+    response = fetch_artemis(cfg, '/_status/pools')
+
+    if not response.ok:
+        cfg.logger.unhandled_api_response(response)
+
+    metrics = fetch_metrics(cfg)
+
+    print_flavor_info_update(cfg, response.json(), metrics)
+
+
 @cmd_cache.group(name='update', short_help='Trigger cache updates')
 @click.pass_obj
 def cmd_cache_update(cfg: Configuration) -> None:
     pass
 
 
-def _get_image_info_timestamps(
-    cfg: Configuration, pools: Tuple[str, ...]
+def _get_cache_timestamps(
+    cfg: Configuration, pools: Tuple[str, ...], metric_name: str
 ) -> Dict[str, float]:
     metrics = fetch_metrics(cfg)
 
     timestamps: Dict[str, float] = {}
 
     for sample in metrics:
-        if sample[0] != 'pool_image_info_updated_timestamp':
+        if sample[0] != metric_name:
             continue
 
         poolname = sample[1].get('pool', '')
@@ -1445,39 +1461,46 @@ def _get_image_info_timestamps(
     return timestamps
 
 
-@cmd_cache_update.command(
-    name='image-info', short_help='Refresh image info cache for given pools'
-)
-@click.option(
-    '--pool', 'pools', multiple=True, required=True, help='Pool name to refresh'
-)
-@click.option('--wait', is_flag=True, default=False, help='Wait until cache is updated')
-@click.option(
-    '--wait-timeout',
-    type=int,
-    default=300,
-    help='Timeout in seconds when waiting (default: 300)',
-)
-@click.option(
-    '--wait-tick',
-    type=int,
-    default=10,
-    help='Poll interval in seconds when waiting (default: 10)',
-)
-@click.pass_obj
-def cmd_cache_update_image_info(
+def _cache_update_options(fn: Callable[..., Any]) -> Callable[..., Any]:
+    fn = click.option(
+        '--pool', 'pools', multiple=True, required=True, help='Pool name to refresh'
+    )(fn)
+    fn = click.option(
+        '--wait', is_flag=True, default=False, help='Wait until cache is updated'
+    )(fn)
+    fn = click.option(
+        '--wait-timeout',
+        type=int,
+        default=300,
+        help='Timeout in seconds when waiting (default: 300)',
+    )(fn)
+    fn = click.option(
+        '--wait-tick',
+        type=int,
+        default=10,
+        help='Poll interval in seconds when waiting (default: 10)',
+    )(fn)
+
+    return fn
+
+
+def _run_cache_update(
     cfg: Configuration,
     pools: Tuple[str, ...],
     wait: bool,
     wait_timeout: int,
     wait_tick: int,
+    *,
+    kind: str,
+    endpoint: str,
+    metric_name: str,
 ) -> None:
-    old_timestamps = _get_image_info_timestamps(cfg, pools) if wait else {}
+    old_timestamps = _get_cache_timestamps(cfg, pools, metric_name) if wait else {}
 
     for poolname in pools:
         response = fetch_artemis(
             cfg,
-            f'/_cache/pools/{poolname}/image-info',
+            f'/_cache/pools/{poolname}/{endpoint}',
             method='post',
             allow_statuses=[204],
         )
@@ -1485,7 +1508,7 @@ def cmd_cache_update_image_info(
         if not response.ok:
             cfg.logger.unhandled_api_response(response, exit=False)
         else:
-            cfg.logger.success(f'Image cache refresh triggered for pool {poolname}')
+            cfg.logger.success(f'{kind} cache refresh triggered for pool {poolname}')
 
     if not wait:
         return
@@ -1493,11 +1516,13 @@ def cmd_cache_update_image_info(
     pending = set(pools)
     deadline = datetime.datetime.now() + datetime.timedelta(seconds=wait_timeout)
 
-    with cfg.console.status('Waiting for image cache update...', spinner='dots'):
+    with cfg.console.status(
+        f'Waiting for {kind.lower()} cache update...', spinner='dots'
+    ):
         while pending and datetime.datetime.now() < deadline:
             time.sleep(wait_tick)
 
-            new_timestamps = _get_image_info_timestamps(cfg, tuple(pending))
+            new_timestamps = _get_cache_timestamps(cfg, tuple(pending), metric_name)
 
             for poolname in list(pending):
                 old_ts = old_timestamps.get(poolname, float('nan'))
@@ -1507,13 +1532,62 @@ def cmd_cache_update_image_info(
                     continue
 
                 if math.isnan(old_ts) or new_ts > old_ts:
-                    cfg.logger.success(f'Image cache updated for pool {poolname}')
+                    cfg.logger.success(f'{kind} cache updated for pool {poolname}')
                     pending.discard(poolname)
 
     for poolname in pending:
         cfg.logger.error(
-            f'Timed out waiting for image cache update for pool {poolname}', exit=False
+            f'Timed out waiting for {kind.lower()} cache update for pool {poolname}',
+            exit=False,
         )
+
+
+@cmd_cache_update.command(
+    name='image-info', short_help='Refresh image info cache for given pools'
+)
+@_cache_update_options
+@click.pass_obj
+def cmd_cache_update_image_info(
+    cfg: Configuration,
+    pools: Tuple[str, ...],
+    wait: bool,
+    wait_timeout: int,
+    wait_tick: int,
+) -> None:
+    _run_cache_update(
+        cfg,
+        pools,
+        wait,
+        wait_timeout,
+        wait_tick,
+        kind='Image',
+        endpoint='image-info',
+        metric_name='pool_image_info_updated_timestamp',
+    )
+
+
+@cmd_cache_update.command(
+    name='flavor-info', short_help='Refresh flavor info cache for given pools'
+)
+@_cache_update_options
+@click.pass_obj
+def cmd_cache_update_flavor_info(
+    cfg: Configuration,
+    pools: Tuple[str, ...],
+    wait: bool,
+    wait_timeout: int,
+    wait_tick: int,
+) -> None:
+    _run_cache_update(
+        cfg,
+        pools,
+        wait,
+        wait_timeout,
+        wait_tick,
+        kind='Flavor',
+        endpoint='flavor-info',
+        metric_name='pool_flavor_info_updated_timestamp',
+    )
 
 
 def _status_top_raw(cfg: Configuration) -> None:
