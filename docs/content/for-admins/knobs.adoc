@@ -1771,6 +1771,16 @@ of a variable to render in a template.
 
 5+|Path to a file with a password for decrypting files protected by Ansible Vault.
 
+|`worker.heartbeat.filepath-template`
+|`str`
+|`ARTEMIS_WORKER_HEARTBEAT_FILEPATH_TEMPLATE`
+|`/var/run/artemis/worker-heartbeat-{{ WORKER_PID }}-{{ WORKER_TID }}`
+|no
+
+
+
+5+|Template of the heartbeat file path.
+
 |`worker.max-tasks`
 |`int`
 |`ARTEMIS_WORKER_MAX_TASKS_PER_PROCESS`
