@@ -845,9 +845,7 @@ class OpenStackDriver(
             raw_instance: dict[str, str],
             flavor: Optional[Flavor],
         ) -> Result[None, Failure]:
-            assert usage.instances is not None  # narrow type
-
-            usage.instances += 1
+            usage.inc_instances(raw_instance.get('status'))
 
             if flavor is not None:
                 if flavor.name not in usage.flavors:
@@ -893,7 +891,7 @@ class OpenStackDriver(
                 resources.usage.memory = int(value) * 1048576
 
             elif name == 'totalInstancesUsed':
-                resources.usage.instances = int(value)
+                resources.usage.inc_instances('unknown', count=int(value))
 
             elif name == 'totalGigabytesUsed':
                 resources.usage.diskspace = int(value) * 1073741824
@@ -902,8 +900,8 @@ class OpenStackDriver(
             elif name == 'maxTotalCores' and resources.limits.cores is None:
                 resources.limits.cores = int(value)
 
-            elif name == 'maxTotalInstances' and resources.limits.instances is None:
-                resources.limits.instances = int(value)
+            elif name == 'maxTotalInstances' and not resources.limits._instances:
+                resources.limits.inc_instances('unknown', count=int(value))
 
             # RAM size/usage is reported in megabytes
             elif name == 'maxTotalRAMSize' and resources.limits.memory is None:

@@ -1103,9 +1103,7 @@ class AzureDriver(
                 raw_instance: Any,  # noqa: ANN401
                 flavor: Optional[Flavor],
             ) -> Result[None, Failure]:
-                assert usage.instances is not None  # narrow type
-
-                usage.instances += 1
+                usage.inc_instances(raw_instance.get('provisioningState'))
 
                 return Ok(None)
 

@@ -2269,7 +2269,7 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
             usage by adding data about the instance.
         """
 
-        usage.instances = 0
+        usage._instances = {}
         usage.cores = 0
         usage.memory = 0
         usage.diskspace = 0
@@ -2315,6 +2315,20 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
             return Ok(metrics)
 
         configured_limits = resources.get('limits', {})
+
+        if 'instances' in configured_limits:
+            try:
+                metrics.limits._instances['unknown'] = int(configured_limits['instances'])
+
+            except ValueError as exc:
+                return Error(
+                    Failure.from_exc(
+                        'failed to parse configured pool limit',
+                        exc,
+                        field_name='instances',
+                        field_value=configured_limits['instances'],
+                    )
+                )
 
         for field_name in metrics.limits._TRIVIAL_FIELDS:
             if field_name not in configured_limits:
@@ -3257,7 +3271,7 @@ class FlavorBasedPoolDriver(
 
         flavors = {flavor.name: flavor for flavor in r_flavors.unwrap()}
 
-        usage.instances = 0
+        usage._instances = {}
         usage.cores = 0
         usage.memory = 0
         usage.diskspace = 0

@@ -371,11 +371,10 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, 
                 raw_instance: dict[str, Any],
                 flavor: Optional[Flavor],
             ) -> Result[None, Failure]:
-                assert usage.instances is not None  # narrow type
                 assert usage.cores is not None  # narrow type
                 assert usage.memory is not None  # narrow type
 
-                usage.instances += 1
+                usage.inc_instances(raw_instance.get('status'))
 
                 # ibmcloud is doesn't have info about cores per instance, but rather vcpus per instance. Anyway, will
                 # be storing this info under cores

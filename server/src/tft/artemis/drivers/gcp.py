@@ -810,9 +810,7 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, 
             raw_instance: compute_v1.Instance,
             flavor: Optional[Flavor],
         ) -> Result[None, Failure]:
-            assert usage.instances is not None  # narrow type
-
-            usage.instances += 1
+            usage.inc_instances('unknown')
 
             return Ok(None)
 

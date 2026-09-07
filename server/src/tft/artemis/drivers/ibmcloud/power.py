@@ -311,7 +311,6 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
                     return Error(Failure.from_failure('Could not list instances', r_list_instances.unwrap_error()))
 
                 raw_instances: list[dict[str, Any]] = []
-                errored_instances = 0
 
                 for raw_instance_entry in r_list_instances.unwrap():
                     # To get network details need to additionally get instance details
@@ -328,19 +327,11 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
 
                     raw_instance = r_instance.unwrap()
 
-                    # Error instances may lack network and flavor information, so they cannot be filtered by subnet
-                    # nor counted towards regular resource usage. Track them in a dedicated counter instead.
-                    if raw_instance.get('status', '').lower() == 'error':
-                        errored_instances += 1
-                        continue
-
                     # Filter out instances not on pool network.
                     if subnet_id not in raw_instance['networkIDs']:
                         continue
 
                     raw_instances.append(raw_instance)
-
-                resources.usage.errored_instances = errored_instances
 
                 return Ok(raw_instances)
 
@@ -350,11 +341,10 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
                 raw_instance: dict[str, Any],
                 flavor: Optional[Flavor],
             ) -> Result[None, Failure]:
-                assert usage.instances is not None  # narrow type
                 assert usage.cores is not None  # narrow type
                 assert usage.memory is not None  # narrow type
 
-                usage.instances += 1
+                usage.inc_instances(raw_instance.get('status'))
 
                 usage.cores += int(raw_instance.get('virtualCores', {}).get('assigned', 0))
                 # Instance memory is in GB

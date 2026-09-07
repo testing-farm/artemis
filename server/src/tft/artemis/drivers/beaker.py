@@ -2569,9 +2569,9 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
             usage: PoolResourcesUsage,
             raw_instance: str,
         ) -> Result[None, Failure]:
-            assert usage.instances is not None  # narrow type
-
-            usage.instances += 1
+            # Since we don't have (simple) access to provisioning state through the system, let's use the dummy
+            # `unknown` state for now.
+            usage.inc_instances('unknown')
 
             # For the actual numbers of cores, memory and other metrics, we'd have to query each and every machine from
             # the list above. Is it worth it? At this moment it's not. But it can be done. Leaving them unspecified for

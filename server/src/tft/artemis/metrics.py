@@ -524,35 +524,42 @@ class PoolResources(PoolMetricsBase):
     _KEY = 'metrics.pool.{poolname}.resources.{dimension}'  # noqa: FS003
     _KEY_UPDATED_TIMESTAMP = 'metrics.pool.{poolname}.resources.{dimension}.updated_timestamp'  # noqa: FS003
 
-    _TRIVIAL_FIELDS = ('instances', 'cores', 'memory', 'diskspace', 'errored_instances')
-    _COMPOUND_FIELDS = ('networks',)
+    _TRIVIAL_FIELDS = ('cores', 'memory', 'diskspace')
+    _COMPOUND_FIELDS = (
+        '_instances',
+        'networks',
+    )
 
-    instances: Optional[int]
+    _instances: dict[str, int] = dataclasses.field(default_factory=dict)
     """
     Number of instances (or machines, VMs, servers, etc. - depending on pool's
     terminology).
     """
 
-    cores: Optional[int]
+    @property
+    def instances(self) -> int:
+        """
+        Total number of instances across all states.
+
+        :returns: number of instances.
+        """
+
+        return sum(self._instances.values())
+
+    cores: Optional[int] = dataclasses.field(default=None)
     """
     Number of CPU cores. Given the virtual nature of many pools, cores are more
     common commodity than CPUs.
     """
 
-    memory: Optional[int]
+    memory: Optional[int] = dataclasses.field(default=None)
     """
     Size of RAM, in bytes.
     """
 
-    diskspace: Optional[int]
+    diskspace: Optional[int] = dataclasses.field(default=None)
     """
     Size of disk space, in bytes.
-    """
-
-    errored_instances: Optional[int]
-    """
-    Number of instances in an error state. Tracked separately from :py:attr:`instances` because such instances
-    often lack network and flavor information, hence they are not counted towards regular resource usage.
     """
 
     networks: dict[str, PoolNetworkResources] = dataclasses.field(default_factory=dict)
@@ -585,11 +592,10 @@ class PoolResources(PoolMetricsBase):
             poolname=poolname, dimension=dimension.value
         )
 
-        self.instances = None
+        self._instances = {}
         self.cores = None
         self.memory = None
         self.diskspace = None
-        self.errored_instances = None
         self.networks = {}
         self.flavors = {}
 
@@ -631,6 +637,21 @@ class PoolResources(PoolMetricsBase):
         }
 
         self.updated_timestamp = cast(RedisGetType[float], cache.get)(self._key_updated_timestamp)
+
+    def inc_instances(self, state: Optional[str], count: int = 1) -> None:
+        """
+        Increase number of pool instances in the given state.
+
+        :param state: a state of the instances. ``unknown`` is used instead of ``None``.
+        :param count: how many instances to add.
+        """
+
+        state = state.lower() if state else 'unknown'
+
+        if state not in self._instances:
+            self._instances[state] = 0
+
+        self._instances[state] += count
 
     @with_context
     def store(self, cache: redis.Redis) -> None:
@@ -697,7 +718,6 @@ class PoolResourcesDepleted:
     cores: bool = False
     memory: bool = False
     diskspace: bool = False
-    errored_instances: bool = False
 
     # Depleted networks are listed as names only, no deeper structure. We could change this to mapping between
     # network names and, for example, a boolean or a structure describing which network resource is depleted, but
@@ -712,7 +732,7 @@ class PoolResourcesDepleted:
             but all of them are marked as depleted; ``False`` otherwise.
         """
 
-        return any(getattr(self, field) for field in PoolResources._TRIVIAL_FIELDS) or (
+        return any(getattr(self, field) for field in ('instances', *PoolResources._TRIVIAL_FIELDS)) or (
             self.available_network_count != 0 and len(self.networks) == self.available_network_count
         )
 
@@ -724,9 +744,9 @@ class PoolResourcesDepleted:
             by their names, networks are represented as network name prefixed with ``network.``, e.g. ``network.foo``.
         """
 
-        return [fieldname for fieldname in PoolResources._TRIVIAL_FIELDS if getattr(self, fieldname) is True] + [
-            f'network.{network_name}' for network_name in self.networks
-        ]
+        return [
+            fieldname for fieldname in ('instances', *PoolResources._TRIVIAL_FIELDS) if getattr(self, fieldname) is True
+        ] + [f'network.{network_name}' for network_name in self.networks]
 
 
 @dataclasses.dataclass
@@ -764,7 +784,7 @@ class PoolResourcesMetrics(PoolMetricsBase):
 
         delta = PoolResourcesDepleted()
 
-        for fieldname in PoolResources._TRIVIAL_FIELDS:
+        for fieldname in ('instances', *PoolResources._TRIVIAL_FIELDS):
             limit, usage = getattr(self.limits, fieldname), getattr(self.usage, fieldname)
 
             # Skip undefined values: if left undefined, pool does not care about this dimension.
@@ -1426,8 +1446,13 @@ class PoolsMetrics(MetricsBase):
             registry=registry,
         )
 
-        self.POOL_RESOURCES_INSTANCES = _create_pool_resource_metric('instances')
-        self.POOL_RESOURCES_ERRORED_INSTANCES = _create_pool_resource_metric('errored_instances')
+        self.POOL_RESOURCES_INSTANCES = Gauge(
+            'pool_resources_instances',
+            'Limits and usage of pool instances',
+            ['pool', 'dimension', 'state'],
+            registry=registry,
+        )
+
         self.POOL_RESOURCES_CORES = _create_pool_resource_metric('cores')
         self.POOL_RESOURCES_MEMORY = _create_pool_resource_metric('memory', unit='bytes')
         self.POOL_RESOURCES_DISKSPACE = _create_pool_resource_metric('diskspace', unit='bytes')
@@ -1525,9 +1550,22 @@ class PoolsMetrics(MetricsBase):
                     value if value is not None else float('NaN')
                 )
 
+            for instance_state, instance_count in pool_metrics.resources.usage._instances.items():
+                self.POOL_RESOURCES_INSTANCES.labels(pool=poolname, dimension='limit', state=instance_state).set(
+                    instance_count
+                )
+
+            for instance_state, instance_count in pool_metrics.resources.limits._instances.items():
+                self.POOL_RESOURCES_INSTANCES.labels(pool=poolname, dimension='usage', state=instance_state).set(
+                    instance_count
+                )
+
+            for network_name, network_metrics in pool_metrics.resources.limits.networks.items():
+                self.POOL_RESOURCES_NETWORK_ADDRESSES.labels(
+                    pool=poolname, dimension='limit', network=network_name
+                ).set(network_metrics.addresses if network_metrics.addresses is not None else float('NaN'))
+
             for gauge, metric_name in [
-                (self.POOL_RESOURCES_INSTANCES, 'instances'),
-                (self.POOL_RESOURCES_ERRORED_INSTANCES, 'errored_instances'),
                 (self.POOL_RESOURCES_CORES, 'cores'),
                 (self.POOL_RESOURCES_MEMORY, 'memory'),
                 (self.POOL_RESOURCES_DISKSPACE, 'diskspace'),
