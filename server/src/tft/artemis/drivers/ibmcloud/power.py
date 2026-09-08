@@ -327,6 +327,13 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
 
                     raw_instance = r_instance.unwrap()
 
+                    # Error instances carry no network information, so they would be dropped by the
+                    # pool-network filter below. Let's account for them here and skip any further processing, they
+                    # should not be counted towards used resources anyway.
+                    if raw_instance.get('status', '').lower() == 'error':
+                        resources.usage.inc_instances(raw_instance.get('status'))
+                        continue
+
                     # Filter out instances not on pool network.
                     if subnet_id not in raw_instance['networkIDs']:
                         continue

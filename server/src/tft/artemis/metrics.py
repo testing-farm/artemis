@@ -1551,12 +1551,12 @@ class PoolsMetrics(MetricsBase):
                 )
 
             for instance_state, instance_count in pool_metrics.resources.usage._instances.items():
-                self.POOL_RESOURCES_INSTANCES.labels(pool=poolname, dimension='limit', state=instance_state).set(
+                self.POOL_RESOURCES_INSTANCES.labels(pool=poolname, dimension='usage', state=instance_state).set(
                     instance_count
                 )
 
             for instance_state, instance_count in pool_metrics.resources.limits._instances.items():
-                self.POOL_RESOURCES_INSTANCES.labels(pool=poolname, dimension='usage', state=instance_state).set(
+                self.POOL_RESOURCES_INSTANCES.labels(pool=poolname, dimension='limit', state=instance_state).set(
                     instance_count
                 )
 
