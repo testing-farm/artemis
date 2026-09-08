@@ -1,9 +1,5 @@
 test: ./test.sh
 
-# Booting a throwaway VM (image download + boot to login) for the x86_64 "yes"
-# nested-virtualization proof needs headroom.
-duration: 15m
-
 require+:
   - libvirt
   - libvirt-client

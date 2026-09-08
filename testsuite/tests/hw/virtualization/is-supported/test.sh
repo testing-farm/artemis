@@ -1,8 +1,6 @@
 #!/bin/sh -eux
 
-# Prove nested virtualization actually works: boot a throwaway VM that hard-requires
-# KVM acceleration. Used for the x86_64 "yes" case, where Artemis provisions a
-# nested-virt capable instance (C8i/M8i/R8i) with --cpu-options NestedVirtualization=enabled.
+# Prove the guest supports virtualization by spawning a throwaway VM on it
 verify_nested_kvm() {
     modprobe kvm_intel 2>/dev/null || modprobe kvm_amd 2>/dev/null || true
     [ -e /dev/kvm ] || return 1
@@ -70,8 +68,7 @@ if [ "$(arch)" = "aarch64" ]; then
 
 elif [ "$(arch)" = "x86_64" ]; then
     if [ "$EXPECTED" = "yes" ]; then
-        # CPU virtualization extension must be exposed to the guest, and KVM must
-        # actually work (nested virtualization) - proven by booting a real VM.
+        # Virtualization extension must be exposed to the guest and function correctly; proven by booting a VM.
         grep -E 'svm|vmx' /proc/cpuinfo && verify_nested_kvm && exit 0
     else
         grep -E 'svm|vmx' /proc/cpuinfo || exit 0
