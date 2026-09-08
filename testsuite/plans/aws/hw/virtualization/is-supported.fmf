@@ -21,6 +21,12 @@
     pool: "${ARTEMIS_AWS_POOLNAME_AARCH64}"
 
 /yes/x86_64:
+  # Nested virtualization is now supported on AWS (C8i/M8i/R8i +
+  # --cpu-options NestedVirtualization=enabled), so this case can run.
+  enabled: true
+
+  tag: []
+
   provision+:
     arch: x86_64
 

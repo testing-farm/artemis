@@ -1,4 +1,5 @@
 test: ./test.sh
+
 require+:
   - libvirt
   - libvirt-client
@@ -12,6 +13,13 @@ adjust:
   - when: arch != s390x
     require+:
       - dmidecode
+
+  # Packages needed to boot a KVM-accelerated VM as nested-virt proof.
+  # qemu-kvm-core provides the /usr/libexec/qemu-kvm emulator binary.
+  - when: arch == x86_64
+    require+:
+      - curl
+      - qemu-kvm
 
 /yes:
     environment+:
