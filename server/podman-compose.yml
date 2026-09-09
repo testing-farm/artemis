@@ -39,7 +39,7 @@ services:
       - postgresql_data:/var/lib/postgresql/data
 
   postgresql-exporter:
-    image: "docker.io/bitnamilegacy/postgres-exporter:0.17.1"
+    image: "docker.io/soldevelo/postgres-exporter:0.17.1"
     environment:
       DATA_SOURCE_NAME: "postgresql://artemis:artemis@postgresql:5432/artemis?sslmode=disable"
       PG_EXPORTER_EXTEND_QUERY_PATH: /tmp/queries.yaml
@@ -47,7 +47,7 @@ services:
       - ./configuration/podman-compose/postgresql-exporter/custom-metrics.yaml:/tmp/queries.yaml:Z,ro
 
   prometheus:
-    image: "docker.io/bitnamilegacy/prometheus:3.0.1"
+    image: "docker.io/soldevelo/prometheus:3.0.1"
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
     ports:
