@@ -145,13 +145,24 @@ def db(logger: gluetool.log.ContextAdapter, db_url: str) -> Generator[tft.artemi
 
         sqlalchemy_utils.functions.create_database(db_url)
 
+    _db: Optional[tft.artemis.db.DB] = None
+
     try:
         tft.artemis.db.DB.instance = None  # type: ignore[misc]
         tft.artemis.tasks._ROOT_DB = None
 
-        yield tft.artemis.db.DB(logger, db_url)
+        _db = tft.artemis.db.DB(logger, db_url)
+
+        yield _db
 
     finally:
+        if _db is not None:
+            _db.engine.dispose()
+            _db.engine_committed.dispose()
+            _db.engine_committed_read_only.dispose()
+            _db.engine_repeatable.dispose()
+            _db.engine_repeatable_read_only.dispose()
+
         if dialect_name != 'sqlalchemy':
             sqlalchemy_utils.functions.drop_database(db_url)
 
