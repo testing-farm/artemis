@@ -58,6 +58,7 @@ RUN    microdnf --refresh \
                            openssl-devel \
                            postgresql \
                            python3.12 \
+                           python3.12-devel \
                            # required by `openstack`
                            which \
                            # for debugging
