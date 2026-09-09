@@ -25,7 +25,7 @@ def upgrade() -> None:
     with op.batch_alter_table('guest_events', schema=None) as batch_op:
         batch_op.create_index(
             batch_op.f('ix_guest_events_guestname_updated'),
-            ['guestname', sa.text('updated ASC')],  # type: ignore[list-item]
+            ['guestname', sa.text('updated ASC')],
             unique=False,
         )
 
