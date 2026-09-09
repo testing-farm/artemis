@@ -44,11 +44,13 @@ test/server/unittests:
   script:
     - make -C server/ test-units
 
-test/server/db-schema:
-  extends: .tests
-
-  script:
-    - make -C server/ test-db-schema-revisions
+# Disabling for now: requires real PostgreSQL to work with, given the differences between SQL dialects.
+#
+# test/server/db-schema:
+#   extends: .tests
+#
+#   script:
+#     - make -C server/ test-db-schema-revisions
 
 test/cli/pre-commit:
   extends: .tests
