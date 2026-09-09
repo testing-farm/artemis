@@ -57,7 +57,7 @@ RUN    microdnf --refresh \
                            openssh-clients \
                            openssl-devel \
                            postgresql \
-                           python3.9 \
+                           python3.12 \
                            # required by `openstack`
                            which \
                            # for debugging
@@ -69,7 +69,7 @@ RUN    microdnf --refresh \
     && update-crypto-policies --set LEGACY \
     && microdnf clean all \
     && rm -rf /var/cache/dnf \
-    && curl -sSL https://install.python-poetry.org | python3.9 - --version 1.4.2 \
+    && curl -sSL https://install.python-poetry.org | python3.12 - --version 1.4.2 \
     && sed -ri "s|\[libdefaults\]|\[libdefaults\]\n  default_ccache_name = FILE:$KRB_CCACHE|" /etc/krb5.conf
 
 #
@@ -152,7 +152,7 @@ RUN    cd /APP \
     # when plenty of packages are needed.
     && poetry config experimental.new-installer false \
     && poetry config installer.parallel false \
-    && PYTHON=python3.9 make install-no-dev \
+    && PYTHON=python3.12 make install-no-dev \
     # Make Poetry configuration accesible to Poetry in containers
     && chmod a+rw /tmp/.config/pypoetry/config.toml
 
