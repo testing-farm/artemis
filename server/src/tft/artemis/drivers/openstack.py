@@ -828,8 +828,10 @@ class OpenStackDriver(
 
         # Resource usage - instances and flavors
         def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[list[dict[str, str]], Failure]:
+            raw_instances: list[dict[str, str]] = []
+
             r_servers = self._run_os(
-                ['server', 'list', '--user', self.pool_config['username']],
+                ['server', 'list'],
                 json_format=True,
                 commandname='os.server-list',
             )
@@ -837,7 +839,13 @@ class OpenStackDriver(
             if r_servers.is_error:
                 return Error(Failure.from_failure('failed to fetch server list', r_servers.unwrap_error()))
 
-            return Ok(cast(list[dict[str, str]], r_servers.unwrap()))
+            # now match against pool-configured subnet
+            network_pattern = re.compile(self.pool_config['network-regex'])
+            for server in cast(list[dict[str, str]], r_servers.unwrap()):
+                if any(network_pattern.match(network) for network in server.get('Networks', [])):
+                    raw_instances.append(server)
+
+            return Ok(raw_instances)
 
         def _update_instance_usage(
             logger: gluetool.log.ContextAdapter,
@@ -845,7 +853,7 @@ class OpenStackDriver(
             raw_instance: dict[str, str],
             flavor: Optional[Flavor],
         ) -> Result[None, Failure]:
-            usage.inc_instances(raw_instance.get('status'))
+            usage.inc_instances(raw_instance.get('Status'))
 
             if flavor is not None:
                 if flavor.name not in usage.flavors:
@@ -889,9 +897,6 @@ class OpenStackDriver(
 
             elif name == 'totalRAMUsed':
                 resources.usage.memory = int(value) * 1048576
-
-            elif name == 'totalInstancesUsed':
-                resources.usage.inc_instances('unknown', count=int(value))
 
             elif name == 'totalGigabytesUsed':
                 resources.usage.diskspace = int(value) * 1073741824
