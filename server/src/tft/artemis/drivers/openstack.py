@@ -842,6 +842,13 @@ class OpenStackDriver(
             # now match against pool-configured subnet
             network_pattern = re.compile(self.pool_config['network-regex'])
             for server in cast(list[dict[str, str]], r_servers.unwrap()):
+                # Error instances can have no network information, so they would be dropped by the
+                # pool-network filter below. Let's account for them here and skip any further processing, they
+                # should not be counted towards used resources anyway.
+                if server.get('Status', '').lower() == 'error':
+                    resources.usage.inc_instances(server.get('Status'))
+                    continue
+
                 if any(network_pattern.match(network) for network in server.get('Networks', [])):
                     raw_instances.append(server)
 
