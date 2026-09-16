@@ -122,6 +122,63 @@ class Workspace(_Workspace):
 
         self.request_task(transaction, prepare_kickstart_wait, self.guestname, delay=r_delay.unwrap())
 
+    def _store_kickstart_log(self, blob: GuestLogBlob) -> None:
+        """
+        Store the rendered kickstart script as a ``ks.cfg:dump`` guest log.
+
+        Storing the log takes place in a transaction of its own, separate from the one that performed the kexec
+        submission: the guest is already reinstalling by the time this method is called, and the follow-up task
+        has already been scheduled. Failing to store the log, while unfortunate, must therefore not affect the
+        outcome of this task -- the chain is alive elsewhere.
+        """
+
+        assert self.guestname
+
+        with Transaction.go(self.logger, self.session) as transaction:
+            r_guest_log = (
+                SafeQuery.from_session(self.session, GuestLog)
+                .filter(GuestLog.guestname == self.guestname)
+                .filter(GuestLog.logname == KS_LOGNAME)
+                .filter(GuestLog.contenttype == GuestLogContentType.BLOB)
+                .one_or_none()
+            )
+
+            if r_guest_log.is_error:
+                # Failing to log the generated kickstart is not a critical error but may make debugging installation
+                # issues more difficult.
+                return self._error(transaction, r_guest_log, f'failed to load the log {KS_LOGNAME}', no_effect=True)
+
+            log = r_guest_log.unwrap()
+
+            if log is not None:
+                r_store_log = log.update(self.logger, transaction, GuestLogState.COMPLETE)
+
+                if r_store_log.is_error:
+                    return self._error(
+                        transaction, r_store_log, 'failed to update the kickstart script log', no_effect=True
+                    )
+            else:
+                r_create_log = GuestLog.create(
+                    self.logger,
+                    transaction,
+                    self.guestname,
+                    KS_LOGNAME,
+                    GuestLogContentType.BLOB,
+                    GuestLogState.COMPLETE,
+                )
+
+                if r_create_log.is_error:
+                    return self._error(
+                        transaction, r_create_log, 'failed to create log entry for the kickstart script', no_effect=True
+                    )
+
+                log = r_create_log.unwrap()
+
+            r_store_blob = blob.save(self.logger, transaction, log, overwrite=True)
+
+            if r_store_blob.is_error:
+                self._error(transaction, r_store_blob, 'failed to store the kickstart script log blob', no_effect=True)
+
     @step
     def run(self, ks_dst: str = KS_DST, script_dst: str = SCRIPT_DST) -> None:
         """
@@ -130,7 +187,19 @@ class Workspace(_Workspace):
 
         assert self.guestname
 
-        with self.transaction() as transaction:
+        kexec_submitted = False
+
+        # NOTE on transactions: unlike most tasks, this task performs a number of irreversible remote actions
+        # (uploading the kickstart script to the guest and booting the installer via kexec). If the follow-up task
+        # request and the kickstart log shared the same transaction as those actions, an abort of that transaction
+        # -- e.g. a DB hiccup at commit time -- would roll back both, stranding the guest in ``PREPARING`` with an
+        # empty chain. To survive that, this task performs the main work in a raw ``Transaction.go`` block, while
+        # the follow-up task request and the kickstart log are committed in transactions of their own afterwards.
+        # A raw block is used instead of ``self.transaction()`` so that an abort does not automatically mark the
+        # task as failed: all that matters after the follow-up is scheduled is the remote installation, which
+        # already succeeded.
+
+        with Transaction.go(self.logger, self.session) as transaction:
             # Load GR and associated info
             self.load_guest_request(transaction, self.guestname, state=GuestState.PREPARING)
             self.load_gr_pool(transaction)
@@ -338,56 +407,6 @@ class Workspace(_Workspace):
             kickstart_script = r_kickstart.unwrap()
             blob = GuestLogBlob.from_content(kickstart_script)
 
-            r_guest_log = (
-                SafeQuery.from_session(self.session, GuestLog)
-                .filter(GuestLog.guestname == self.gr.guestname)
-                .filter(GuestLog.logname == KS_LOGNAME)
-                .filter(GuestLog.contenttype == GuestLogContentType.BLOB)
-                .one_or_none()
-            )
-
-            if r_guest_log.is_error:
-                # Failing to log the generated kickstart is not a critical error but may make debugging installation
-                # issues more difficult.
-                return self._error(transaction, r_guest_log, f'failed to load the log {KS_LOGNAME}', no_effect=True)
-
-            log = r_guest_log.unwrap()
-
-            if log is not None:
-                r_store_log = log.update(self.logger, transaction, GuestLogState.COMPLETE)
-
-                if r_store_log.is_error:
-                    self._fail(
-                        transaction,
-                        r_store_log.unwrap_error(),
-                        'failed to update the kickstart script log',
-                        no_effect=True,
-                    )
-                    return None
-            else:
-                r_create_log = GuestLog.create(
-                    self.logger,
-                    transaction,
-                    self.gr.guestname,
-                    KS_LOGNAME,
-                    GuestLogContentType.BLOB,
-                    GuestLogState.COMPLETE,
-                )
-
-                if r_create_log.is_error:
-                    self._error(
-                        transaction, r_create_log, 'failed to create log entry for the kickstart script', no_effect=True
-                    )
-                    return None
-
-                log = r_create_log.unwrap()
-
-            r_store_blob = blob.save(self.logger, transaction, log, overwrite=True)
-
-            if r_store_blob.is_error:
-                self._error(transaction, r_store_blob, 'failed to store the kickstart script log blob', no_effect=True)
-                return None
-
             # Copy the templated kickstart script to guest
             with create_tempfile(file_contents=kickstart_script) as kickstart_filepath:
                 # Validate the generated ks
@@ -461,7 +480,26 @@ class Workspace(_Workspace):
 
             self.logger.debug('successfuly executed the installer')
 
-            self._request_installation_check(transaction)
+            kexec_submitted = True
+
+        if kexec_submitted:
+            # kexec has been submitted -- the guest is about to be reinstalled. Scheduling the follow-up task and
+            # storing the kickstart log take place in transactions of their own, so that an abort of the transaction
+            # above -- e.g. a DB hiccup at commit time -- could not roll them back, stranding the guest in
+            # ``PREPARING``.
+            with self.transaction() as transaction:
+                self._request_installation_check(transaction)
+
+            self._store_kickstart_log(blob)
+
+        elif not transaction.complete:
+            # The main transaction was aborted before kexec was submitted. Propagate the failure so the task is
+            # retried -- on the next attempt, either the guest is in a good state and the check re-runs, or
+            # another error causes a clean abort.
+            assert transaction.failure is not None  # narrow type
+            self.fail(transaction.failure, 'failed to complete transaction')
+
+        return None
 
     @classmethod
     def create(
