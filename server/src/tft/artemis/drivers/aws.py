@@ -3089,11 +3089,10 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
             raw_instance: dict[str, Any],
             flavor: Optional[Flavor],
         ) -> Result[None, Failure]:
-            assert usage.instances is not None  # narrow type
             assert usage.cores is not None  # narrow type
             assert usage.memory is not None  # narrow type
 
-            usage.instances += 1
+            usage.inc_instances(raw_instance.get('State', {}).get('Name'))
 
             if flavor is not None:
                 usage.cores += flavor.cpu.cores or 0

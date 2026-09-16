@@ -828,8 +828,10 @@ class OpenStackDriver(
 
         # Resource usage - instances and flavors
         def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[list[dict[str, str]], Failure]:
+            raw_instances: list[dict[str, str]] = []
+
             r_servers = self._run_os(
-                ['server', 'list', '--user', self.pool_config['username']],
+                ['server', 'list'],
                 json_format=True,
                 commandname='os.server-list',
             )
@@ -837,7 +839,20 @@ class OpenStackDriver(
             if r_servers.is_error:
                 return Error(Failure.from_failure('failed to fetch server list', r_servers.unwrap_error()))
 
-            return Ok(cast(list[dict[str, str]], r_servers.unwrap()))
+            # now match against pool-configured subnet
+            network_pattern = re.compile(self.pool_config['network-regex'])
+            for server in cast(list[dict[str, str]], r_servers.unwrap()):
+                # Error instances can have no network information, so they would be dropped by the
+                # pool-network filter below. Let's account for them here and skip any further processing, they
+                # should not be counted towards used resources anyway.
+                if server.get('Status', '').lower() == 'error':
+                    resources.usage.inc_instances(server.get('Status'))
+                    continue
+
+                if any(network_pattern.match(network) for network in server.get('Networks', [])):
+                    raw_instances.append(server)
+
+            return Ok(raw_instances)
 
         def _update_instance_usage(
             logger: gluetool.log.ContextAdapter,
@@ -845,9 +860,7 @@ class OpenStackDriver(
             raw_instance: dict[str, str],
             flavor: Optional[Flavor],
         ) -> Result[None, Failure]:
-            assert usage.instances is not None  # narrow type
-
-            usage.instances += 1
+            usage.inc_instances(raw_instance.get('Status'))
 
             if flavor is not None:
                 if flavor.name not in usage.flavors:
@@ -892,9 +905,6 @@ class OpenStackDriver(
             elif name == 'totalRAMUsed':
                 resources.usage.memory = int(value) * 1048576
 
-            elif name == 'totalInstancesUsed':
-                resources.usage.instances = int(value)
-
             elif name == 'totalGigabytesUsed':
                 resources.usage.diskspace = int(value) * 1073741824
 
@@ -902,8 +912,8 @@ class OpenStackDriver(
             elif name == 'maxTotalCores' and resources.limits.cores is None:
                 resources.limits.cores = int(value)
 
-            elif name == 'maxTotalInstances' and resources.limits.instances is None:
-                resources.limits.instances = int(value)
+            elif name == 'maxTotalInstances' and not resources.limits._instances:
+                resources.limits.inc_instances('unknown', count=int(value))
 
             # RAM size/usage is reported in megabytes
             elif name == 'maxTotalRAMSize' and resources.limits.memory is None:

@@ -260,8 +260,8 @@ class FlasherDriver(PoolDriver[FlasherErrorCauses, Instance]):
 
         try:
             data = response.json()
-            resources.usage.instances = int(data['borrowed'])
-            resources.limits.instances = int(data['enabled'])
+            resources.usage.inc_instances('unknown', count=int(data['borrowed']))
+            resources.limits.inc_instances('unknown', count=int(data['enabled']))
         except ValueError as exc:
             return Error(Failure.from_exc('invalid metrics from pool', exc))
 

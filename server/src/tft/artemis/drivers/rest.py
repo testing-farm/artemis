@@ -384,10 +384,10 @@ class RestDriver(PoolDriver[RestErrorCauses, Instance]):
             return Error(Failure.from_exc('failed to fetch pool resources metrics', exc))
 
         data = response.json()
-        resources.usage.instances = data['usage']['instances']
+        resources.usage.inc_instances('unknown', count=data['usage']['instances'])
         resources.usage.cores = 0
         resources.usage.memory = 0
-        resources.limits.instances = data['limits']['instances']
+        resources.limits.inc_instances('unknown', data['limits']['instances'])
         resources.limits.cores = 0
         resources.limits.memory = 0
 
