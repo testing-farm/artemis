@@ -14,7 +14,7 @@ import configparser
 import glob
 import os
 from tempfile import TemporaryDirectory
-from typing import cast
+from typing import Optional, cast
 
 import gluetool.log
 import sqlalchemy.orm.session
@@ -103,18 +103,20 @@ class Workspace(_Workspace):
     Workspace for executing kickstart using kexec.
     """
 
-    def _request_installation_check(self, transaction: Transaction) -> None:
+    def _request_installation_check(self, transaction: Transaction, poolname: str) -> None:
         """
         Hand the guest over to ``prepare-kickstart-wait``, which owns the rest of the chain.
+
+        :param poolname: pool name to use for knob lookup. Passed explicitly so that this method
+            does not depend on ``self.pool`` which may have been expunged from the session.
         """
 
         from .prepare_kickstart_wait import KNOB_PREPARE_KICKSTART_WAIT_INITIAL_DELAY, prepare_kickstart_wait
 
         assert self.guestname
-        assert self.pool
 
         r_delay = KNOB_PREPARE_KICKSTART_WAIT_INITIAL_DELAY.get_value(
-            session=self.session, entityname=self.pool.poolname
+            session=self.session, entityname=poolname
         )
 
         if r_delay.is_error:
@@ -187,7 +189,19 @@ class Workspace(_Workspace):
 
         assert self.guestname
 
+        # Flags that control post-transaction actions.  The follow-up task and the kickstart log
+        # are committed in transactions of their own, *after* the main transaction exits, so that
+        # a commit-time abort of the main transaction cannot roll them back.
         kexec_submitted = False
+        already_reinstalled = False
+
+        # ``blob`` is set only when a fresh kickstart was rendered (kexec path).
+        blob: Optional[GuestLogBlob] = None
+
+        # Capture poolname before the transaction exits and expunges ORM objects.  The follow-up
+        # scheduling code that runs *after* the main transaction only needs the pool name string
+        # (for a knob lookup), so keeping it as a plain value avoids any ``DetachedInstanceError``.
+        poolname: str = ''
 
         # NOTE on transactions: unlike most tasks, this task performs a number of irreversible remote actions
         # (uploading the kickstart script to the guest and booting the installer via kexec). If the follow-up task
@@ -212,9 +226,12 @@ class Workspace(_Workspace):
             assert self.pool
             assert self.master_key
 
+            # Capture poolname while the ORM object is still attached to the session.
+            poolname = self.pool.poolname
+
             # Load the SSH timeout value
             r_ssh_timeout = KNOB_PREPARE_KICKSTART_SSH_TIMEOUT.get_value(
-                session=self.session, entityname=self.pool.poolname
+                session=self.session, entityname=poolname
             )
 
             if r_ssh_timeout.is_error:
@@ -231,7 +248,7 @@ class Workspace(_Workspace):
                 ssh_options=self.pool.ssh_options,
                 ssh_timeout=ssh_timeout,
                 guestname=self.guestname,
-                poolname=self.pool.poolname,
+                poolname=poolname,
                 commandname='prepare-kickstart.check-if-ran',
             )
 
@@ -245,252 +262,269 @@ class Workspace(_Workspace):
                 # before the guest becomes `READY`.
                 self._guest_request_event(transaction, 'already-reinstalled')
 
-                return self._request_installation_check(transaction)
+                # Schedule the follow-up *after* the main transaction exits, so that a commit-time
+                # abort of this transaction cannot roll back the task request.
+                already_reinstalled = True
 
-            # Verify the error is due to the file missing, which indicates the installer had not run yet
-            failure = r_check.unwrap_error()
-            stderr = failure.details['command_output'].stderr if 'command_output' in failure.details else None
+            elif r_check.is_error:
+                # Verify the error is due to the file missing, which indicates the installer had not run yet
+                failure = r_check.unwrap_error()
+                stderr = failure.details['command_output'].stderr if 'command_output' in failure.details else None
 
-            if stderr is not None and "cannot access '/.ksinstall': No such file or directory" not in stderr:
-                return self._fail(
-                    transaction, failure, 'could not verify whether kickstart installation was already started'
-                )
+                if stderr is not None and "cannot access '/.ksinstall': No such file or directory" not in stderr:
+                    return self._fail(
+                        transaction, failure, 'could not verify whether kickstart installation was already started'
+                    )
 
-            # Fetch preserved files from the guest
-            files_tmp_dir = TemporaryDirectory()
-            for pattern in FILES_TO_FETCH:
-                dst_dir = os.path.join(files_tmp_dir.name, os.path.dirname(os.path.relpath(pattern, '/')))
+            if not already_reinstalled:
+                # Fetch preserved files from the guest
+                files_tmp_dir = TemporaryDirectory()
+                for pattern in FILES_TO_FETCH:
+                    dst_dir = os.path.join(files_tmp_dir.name, os.path.dirname(os.path.relpath(pattern, '/')))
 
+                    try:
+                        os.makedirs(dst_dir, mode=0o700, exist_ok=True)
+                    except Exception as exc:
+                        return self._fail(
+                            transaction,
+                            Failure.from_exc('failed to create a local destination directory', exc),
+                            'failed to create a local destination directory',
+                        )
+
+                    r_copy = copy_from_remote(
+                        self.logger,
+                        self.gr,
+                        pattern,
+                        os.path.join(files_tmp_dir.name, os.path.dirname(os.path.relpath(pattern, '/'))),
+                        key=self.master_key,
+                        ssh_options=self.pool.ssh_options,
+                        ssh_timeout=ssh_timeout,
+                        guestname=self.guestname,
+                        poolname=poolname,
+                        commandname='prepare-kickstart.fetch-files',
+                    )
+
+                    if r_copy.is_error:
+                        # Error out if we fail to copy the file
+                        # TODO: Should we error out or continue if the file is missing?
+                        return self._error(transaction, r_copy, 'failed to fetch a file from remote')
+
+                files = {}
+
+                for root, _, local_files in os.walk(files_tmp_dir.name):
+                    for file in local_files:
+                        file_path = os.path.join(root, file)
+
+                        # Fix permissions for reading
+                        os.chmod(file_path, 0o644)
+
+                        with open(file_path) as f:
+                            files[os.path.relpath(file_path, files_tmp_dir.name)] = f.read()
+
+                # Parse enabled yum repos and select enabled ones for the installer
+                # TODO: Is there a way to disable configparser's DEFAULT section altogether?
                 try:
-                    os.makedirs(dst_dir, mode=0o700, exist_ok=True)
+                    _repos = configparser.ConfigParser()
+                    _repos.read(glob.glob(os.path.abspath(os.path.join(files_tmp_dir.name, REPOS_GLOB))))
+
+                    repos = {
+                        name: dict(vals)
+                        for name, vals in _repos.items()
+                        if name != 'DEFAULT' and vals['enabled'] == '1'
+                    }
                 except Exception as exc:
                     return self._fail(
                         transaction,
-                        Failure.from_exc('failed to create a local destination directory', exc),
-                        'failed to create a local destination directory',
+                        Failure.from_exc('failed to parse enabled repos', exc),
+                        'failed to parse enabled repos',
                     )
 
-                r_copy = copy_from_remote(
+                # Fetch the list of installed packages
+                r_pkg_list = run_remote(
                     self.logger,
                     self.gr,
-                    pattern,
-                    os.path.join(files_tmp_dir.name, os.path.dirname(os.path.relpath(pattern, '/'))),
+                    ['/usr/bin/rpm', '-qa', '--queryformat', '%{NAME}.%{ARCH}\n'],  # noqa: FS003
                     key=self.master_key,
                     ssh_options=self.pool.ssh_options,
                     ssh_timeout=ssh_timeout,
                     guestname=self.guestname,
-                    poolname=self.pool.poolname,
-                    commandname='prepare-kickstart.fetch-files',
+                    poolname=poolname,
+                    commandname='prepare-kickstart.installed-pkgs',
                 )
 
-                if r_copy.is_error:
-                    # Error out if we fail to copy the file
-                    # TODO: Should we error out or continue if the file is missing?
-                    return self._error(transaction, r_copy, 'failed to fetch a file from remote')
+                if r_pkg_list.is_error:
+                    return self._error(transaction, r_pkg_list, 'failed to fetch the list of installed packages')
 
-            files = {}
+                packages = r_pkg_list.unwrap().stdout.split()
 
-            for root, _, local_files in os.walk(files_tmp_dir.name):
-                for file in local_files:
-                    file_path = os.path.join(root, file)
+                # Get installer url from the repo
+                r_cache_enabled = KNOB_CACHE_PATTERN_MAPS.get_value(entityname=poolname)
 
-                    # Fix permissions for reading
-                    os.chmod(file_path, 0o644)
+                if r_cache_enabled.is_error:
+                    return self._error(
+                        transaction, r_cache_enabled, 'could not determine whether to use cache for repo mapping'
+                    )
 
-                    with open(file_path) as f:
-                        files[os.path.relpath(file_path, files_tmp_dir.name)] = f.read()
-
-            # Parse enabled yum repos and select enabled ones for the installer
-            # TODO: Is there a way to disable configparser's DEFAULT section altogether?
-            try:
-                _repos = configparser.ConfigParser()
-                _repos.read(glob.glob(os.path.abspath(os.path.join(files_tmp_dir.name, REPOS_GLOB))))
-
-                repos = {
-                    name: dict(vals) for name, vals in _repos.items() if name != 'DEFAULT' and vals['enabled'] == '1'
-                }
-            except Exception as exc:
-                return self._fail(
-                    transaction, Failure.from_exc('failed to parse enabled repos', exc), 'failed to parse enabled repos'
+                r_pattern_map = get_pattern_map(
+                    self.logger,
+                    os.path.join(KNOB_CONFIG_DIRPATH.value, KNOB_PREPARE_KICKSTART_COMPOSE_REPO_MAPPING_FILEPATH.value),
+                    use_cache=r_cache_enabled.unwrap(),
                 )
 
-            # Fetch the list of installed packages
-            r_pkg_list = run_remote(
-                self.logger,
-                self.gr,
-                ['/usr/bin/rpm', '-qa', '--queryformat', '%{NAME}.%{ARCH}\n'],  # noqa: FS003
-                key=self.master_key,
-                ssh_options=self.pool.ssh_options,
-                ssh_timeout=ssh_timeout,
-                guestname=self.guestname,
-                poolname=self.pool.poolname,
-                commandname='prepare-kickstart.installed-pkgs',
-            )
+                if r_pattern_map.is_error:
+                    return self._error(
+                        transaction, r_pattern_map, 'could not load compose installer repo name mapping'
+                    )
 
-            if r_pkg_list.is_error:
-                return self._error(transaction, r_pkg_list, 'failed to fetch the list of installed packages')
+                try:
+                    repo_name = r_pattern_map.unwrap().match(self.gr.environment.os.compose)
+                except gluetool.glue.GlueError as exc:
+                    # TODO: Switch guest to error as there is nothing else we can do
+                    return self._fail(
+                        transaction,
+                        Failure.from_exc('failed to match the compose', exc, recoverable=False),
+                        'failed to match compose',
+                    )
 
-            packages = r_pkg_list.unwrap().stdout.split()
+                repo = None
 
-            # Get installer url from the repo
-            r_cache_enabled = KNOB_CACHE_PATTERN_MAPS.get_value(entityname=self.pool.poolname)
+                if repo_name in repos:
+                    repo = repos[repo_name].get('baseurl', None)
 
-            if r_cache_enabled.is_error:
-                return self._error(
-                    transaction, r_cache_enabled, 'could not determine whether to use cache for repo mapping'
-                )
+                if not repo:
+                    return self._fail(
+                        transaction,
+                        Failure(
+                            f'the guest does not contain a repo named {repo_name} that would provide base url for the installer',  # noqa: E501
+                            recoverable=False,
+                        ),
+                        'installer source repo is not valid',
+                    )
 
-            r_pattern_map = get_pattern_map(
-                self.logger,
-                os.path.join(KNOB_CONFIG_DIRPATH.value, KNOB_PREPARE_KICKSTART_COMPOSE_REPO_MAPPING_FILEPATH.value),
-                use_cache=r_cache_enabled.unwrap(),
-            )
+                # Template kickstart
+                try:
+                    metadata = self.gr.environment.kickstart.metadata or ''
 
-            if r_pattern_map.is_error:
-                return self._error(transaction, r_pattern_map, 'could not load compose installer repo name mapping')
+                    with open(
+                        os.path.join(KNOB_CONFIG_DIRPATH.value, KNOB_PREPARE_KICKSTART_TEMPLATE_FILEPATH.value)
+                    ) as f:
+                        r_kickstart = render_template(
+                            f.read(),
+                            install_tree=repo,
+                            repos=repos,
+                            packages=packages,
+                            files=files,
+                            script=self.gr.environment.kickstart.script,
+                            pre_install=self.gr.environment.kickstart.pre_install,
+                            post_install=self.gr.environment.kickstart.post_install,
+                            kernel_options_post=self.gr.environment.kickstart.kernel_options_post,
+                            metadata={
+                                tag[0]: tag[1] if len(tag) > 1 else None
+                                for tag in [m.split('=', maxsplit=1) for m in metadata.split()]
+                            },
+                        )
+                except OSError as exc:
+                    return self._fail(
+                        transaction,
+                        Failure.from_exc('failed to read the kickstart template', exc),
+                        'failed to read the kickstart template',
+                    )
 
-            try:
-                repo_name = r_pattern_map.unwrap().match(self.gr.environment.os.compose)
-            except gluetool.glue.GlueError as exc:
-                # TODO: Switch guest to error as there is nothing else we can do
-                return self._fail(
-                    transaction,
-                    Failure.from_exc('failed to match the compose', exc, recoverable=False),
-                    'failed to match compose',
-                )
+                if not is_successful(r_kickstart):
+                    return self._error(transaction, Error(r_kickstart.failure()), 'failed to render kickstart script')
 
-            repo = None
+                kickstart_script = r_kickstart.unwrap()
+                blob = GuestLogBlob.from_content(kickstart_script)
 
-            if repo_name in repos:
-                repo = repos[repo_name].get('baseurl', None)
+                # Copy the templated kickstart script to guest
+                with create_tempfile(file_contents=kickstart_script) as kickstart_filepath:
+                    # Validate the generated ks
+                    # TODO: Validate against concrete kickstart version? (ksvalidator -v VERSION ...)
+                    r_validator = run_cli_tool(
+                        self.logger,
+                        ['ksvalidator', kickstart_filepath],
+                        guestname=self.guestname,
+                        poolname=poolname,
+                        commandname='prepare-kickstart.validate-kickstart',
+                    )
 
-            if not repo:
-                return self._fail(
-                    transaction,
-                    Failure(
-                        f'the guest does not contain a repo named {repo_name} that would provide base url for the installer',  # noqa: E501
-                        recoverable=False,
+                    if r_validator.is_error:
+                        # Maybe turn into warning for now?
+                        return self._error(transaction, r_validator, 'rendered kickstart validation failed')
+
+                    r_ks_upload = copy_to_remote(
+                        self.logger,
+                        self.gr,
+                        kickstart_filepath,
+                        ks_dst,
+                        key=self.master_key,
+                        ssh_options=self.pool.ssh_options,
+                        ssh_timeout=ssh_timeout,
+                        guestname=self.guestname,
+                        poolname=poolname,
+                        commandname='prepare-kickstart.copy-kickstart',
+                    )
+
+                    if r_ks_upload.is_error:
+                        return self._error(
+                            transaction, r_ks_upload, 'failed to copy the kickstart script to the guest'
+                        )
+
+                self.logger.debug('copied rendered kickstart template to the guest')
+
+                # Copy files required to initiate the kickstart installation.
+                r_script_upload = copy_to_remote(
+                    self.logger,
+                    self.gr,
+                    os.path.join(
+                        KNOB_CONFIG_DIRPATH.value, KNOB_PREPARE_KICKSTART_BOOT_INSTALLER_SCRIPT_FILEPATH.value
                     ),
-                    'installer source repo is not valid',
-                )
-
-            # Template kickstart
-            try:
-                metadata = self.gr.environment.kickstart.metadata or ''
-
-                with open(os.path.join(KNOB_CONFIG_DIRPATH.value, KNOB_PREPARE_KICKSTART_TEMPLATE_FILEPATH.value)) as f:
-                    r_kickstart = render_template(
-                        f.read(),
-                        install_tree=repo,
-                        repos=repos,
-                        packages=packages,
-                        files=files,
-                        script=self.gr.environment.kickstart.script,
-                        pre_install=self.gr.environment.kickstart.pre_install,
-                        post_install=self.gr.environment.kickstart.post_install,
-                        kernel_options_post=self.gr.environment.kickstart.kernel_options_post,
-                        metadata={
-                            tag[0]: tag[1] if len(tag) > 1 else None
-                            for tag in [m.split('=', maxsplit=1) for m in metadata.split()]
-                        },
-                    )
-            except OSError as exc:
-                return self._fail(
-                    transaction,
-                    Failure.from_exc('failed to read the kickstart template', exc),
-                    'failed to read the kickstart template',
-                )
-
-            if not is_successful(r_kickstart):
-                return self._error(transaction, Error(r_kickstart.failure()), 'failed to render kickstart script')
-
-            kickstart_script = r_kickstart.unwrap()
-            blob = GuestLogBlob.from_content(kickstart_script)
-
-            # Copy the templated kickstart script to guest
-            with create_tempfile(file_contents=kickstart_script) as kickstart_filepath:
-                # Validate the generated ks
-                # TODO: Validate against concrete kickstart version? (ksvalidator -v VERSION ...)
-                r_validator = run_cli_tool(
-                    self.logger,
-                    ['ksvalidator', kickstart_filepath],
-                    guestname=self.guestname,
-                    poolname=self.pool.poolname,
-                    commandname='prepare-kickstart.validate-kickstart',
-                )
-
-                if r_validator.is_error:
-                    # Maybe turn into warning for now?
-                    return self._error(transaction, r_validator, 'rendered kickstart validation failed')
-
-                r_ks_upload = copy_to_remote(
-                    self.logger,
-                    self.gr,
-                    kickstart_filepath,
-                    ks_dst,
+                    script_dst,
                     key=self.master_key,
                     ssh_options=self.pool.ssh_options,
                     ssh_timeout=ssh_timeout,
                     guestname=self.guestname,
-                    poolname=self.pool.poolname,
-                    commandname='prepare-kickstart.copy-kickstart',
+                    poolname=poolname,
+                    commandname='prepare-kickstart.copy-script',
                 )
 
-                if r_ks_upload.is_error:
-                    return self._error(transaction, r_ks_upload, 'failed to copy the kickstart script to the guest')
+                if r_script_upload.is_error:
+                    return self._error(
+                        transaction, r_script_upload, 'failed to copy the kickstart install initiation script'
+                    )
 
-            self.logger.debug('copied rendered kickstart template to the guest')
+                self.logger.debug('copied installer initiation script to the guest')
 
-            # Copy files required to initiate the kickstart installation.
-            r_script_upload = copy_to_remote(
-                self.logger,
-                self.gr,
-                os.path.join(KNOB_CONFIG_DIRPATH.value, KNOB_PREPARE_KICKSTART_BOOT_INSTALLER_SCRIPT_FILEPATH.value),
-                script_dst,
-                key=self.master_key,
-                ssh_options=self.pool.ssh_options,
-                ssh_timeout=ssh_timeout,
-                guestname=self.guestname,
-                poolname=self.pool.poolname,
-                commandname='prepare-kickstart.copy-script',
-            )
-
-            if r_script_upload.is_error:
-                return self._error(
-                    transaction, r_script_upload, 'failed to copy the kickstart install initiation script'
+                # Execute the script to fetch images and boot the netinstall using kexec.
+                r_kexec = run_remote(
+                    self.logger,
+                    self.gr,
+                    ['/bin/bash', '-x', script_dst, repo, ks_dst, self.gr.environment.kickstart.kernel_options or ''],
+                    key=self.master_key,
+                    ssh_options=self.pool.ssh_options,
+                    ssh_timeout=ssh_timeout,
+                    guestname=self.guestname,
+                    poolname=poolname,
+                    commandname='prepare-kickstart.kexec',
                 )
 
-            self.logger.debug('copied installer initiation script to the guest')
+                if r_kexec.is_error:
+                    return self._error(transaction, r_kexec, 'failed to run the installer')
 
-            # Execute the script to fetch images and boot the netinstall using kexec.
-            r_kexec = run_remote(
-                self.logger,
-                self.gr,
-                ['/bin/bash', '-x', script_dst, repo, ks_dst, self.gr.environment.kickstart.kernel_options or ''],
-                key=self.master_key,
-                ssh_options=self.pool.ssh_options,
-                ssh_timeout=ssh_timeout,
-                guestname=self.guestname,
-                poolname=self.pool.poolname,
-                commandname='prepare-kickstart.kexec',
-            )
+                self.logger.debug('successfuly executed the installer')
 
-            if r_kexec.is_error:
-                return self._error(transaction, r_kexec, 'failed to run the installer')
+                kexec_submitted = True
 
-            self.logger.debug('successfuly executed the installer')
-
-            kexec_submitted = True
-
-        if kexec_submitted:
-            # kexec has been submitted -- the guest is about to be reinstalled. Scheduling the follow-up task and
-            # storing the kickstart log take place in transactions of their own, so that an abort of the transaction
-            # above -- e.g. a DB hiccup at commit time -- could not roll them back, stranding the guest in
-            # ``PREPARING``.
+        if kexec_submitted or already_reinstalled:
+            # The guest is about to be (or is already being) reinstalled.  Scheduling the follow-up task and
+            # storing the kickstart log take place in transactions of their own, so that an abort of the main
+            # transaction above -- e.g. a DB hiccup at commit time -- cannot roll them back, stranding the guest
+            # in ``PREPARING``.
             with self.transaction() as transaction:
-                self._request_installation_check(transaction)
+                self._request_installation_check(transaction, poolname)
 
-            self._store_kickstart_log(blob)
+            if blob is not None:
+                self._store_kickstart_log(blob)
 
         elif not transaction.complete:
             # The main transaction was aborted before kexec was submitted. Propagate the failure so the task is
