@@ -349,7 +349,7 @@ class Workspace(_Workspace):
             if r_guest_log.is_error:
                 # Failing to log the generated kickstart is not a critical error but may make debugging installation
                 # issues more difficult.
-                self._error(transaction, r_guest_log, f'failed to load the log {KS_LOGNAME}', no_effect=True)
+                return self._error(transaction, r_guest_log, f'failed to load the log {KS_LOGNAME}', no_effect=True)
 
             log = r_guest_log.unwrap()
 
@@ -363,6 +363,7 @@ class Workspace(_Workspace):
                         'failed to update the kickstart script log',
                         no_effect=True,
                     )
+                    return None
             else:
                 r_create_log = GuestLog.create(
                     self.logger,
@@ -377,6 +378,7 @@ class Workspace(_Workspace):
                     self._error(
                         transaction, r_create_log, 'failed to create log entry for the kickstart script', no_effect=True
                     )
+                    return None
 
                 log = r_create_log.unwrap()
 
@@ -384,6 +386,7 @@ class Workspace(_Workspace):
 
             if r_store_blob.is_error:
                 self._error(transaction, r_store_blob, 'failed to store the kickstart script log blob', no_effect=True)
+                return None
 
             # Copy the templated kickstart script to guest
             with create_tempfile(file_contents=kickstart_script) as kickstart_filepath:
