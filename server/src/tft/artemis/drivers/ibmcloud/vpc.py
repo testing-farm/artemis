@@ -214,6 +214,21 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, 
     def fetch_pool_flavor_info(self) -> Result[list[IBMCloudFlavor], Failure]:
         # See https://cloud.ibm.com/docs/vpc?topic=vpc-vs-profiles&interface=cli for more info
 
+        def _attr_value(attr: dict[str, Any], default: int = 0) -> int:
+            # An instance-profile numeric attribute reports its value depending on "type", and the
+            # available keys changed between vpc-infrastructure plugin versions:
+            #   "value"    -> plugin <= 14.1.0 (API version 2025-07-11), "fixed" attributes: {"value": N}
+            #   "default"  -> plugin >= 17.0.0 (API version 2026-09-09), "enum"/"range"/"dependent"
+            #                 attributes dropped "value" in favour of {"default": N, "values": [...]}
+            #   "values"   -> plugin >= 17.0.0, first allowed value, fallback when "default" is absent
+            # Prefer an explicit value, fall back to the profile default, then the first allowed value.
+            if 'value' in attr:
+                return int(attr['value'])
+            if 'default' in attr:
+                return int(attr['default'])
+            values = attr.get('values') or []
+            return int(values[0]) if values else default
+
         def _constructor(
             logger: gluetool.log.ContextAdapter, raw_flavor: dict[str, Any]
         ) -> Iterator[Result[IBMCloudFlavor, Failure]]:
@@ -225,7 +240,7 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, 
 
             else:
                 # diskspace is reported in GB
-                disks = [FlavorDisk(size=UNITS.Quantity(int(raw_disks[0]['size']['value']), UNITS.gigabytes))]
+                disks = [FlavorDisk(size=UNITS.Quantity(_attr_value(raw_disks[0]['size']), UNITS.gigabytes))]
 
                 if len(raw_disks) > 1:
                     disks.append(FlavorDisk(is_expansion=True, max_additional_items=len(raw_disks) - 1))
@@ -247,13 +262,13 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, 
                 IBMCloudFlavor(
                     name=raw_flavor['name'],
                     id=raw_flavor['name'],
-                    cpu=FlavorCpu(processors=int(raw_flavor['vcpu_count']['value'])),
-                    memory=UNITS.Quantity(int(raw_flavor['memory']['value']), UNITS.gibibytes),
+                    cpu=FlavorCpu(processors=_attr_value(raw_flavor['vcpu_count'])),
+                    memory=UNITS.Quantity(_attr_value(raw_flavor['memory']), UNITS.gibibytes),
                     disk=FlavorDisks(disks),
                     network=FlavorNetworks(networks),
                     virtualization=FlavorVirtualization(),
                     arch=arch,
-                    numa_count=int(raw_flavor['numa_count'].get('value', 0)),
+                    numa_count=_attr_value(raw_flavor['numa_count']),
                 )
             )
 
