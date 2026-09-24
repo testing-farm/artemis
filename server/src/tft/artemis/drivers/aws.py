@@ -293,6 +293,9 @@ JQ_QUERY_IMAGE_SUPPORTED_BOOT_MODE = jq.compile('.BootMode')
 
 JQ_QUERY_SECURITY_GROUP_IDS = jq.compile('.SecurityGroups | .[] | .GroupId')
 
+#: Canonical, comparable identity of a security group rule: (direction, protocol, port_min, port_max, cidr).
+SecurityGroupRuleKey: TypeAlias = tuple[str, str, Optional[int], Optional[int], str]
+
 
 KNOB_SPOT_OPEN_TIMEOUT: Knob[int] = Knob(
     'aws.spot-open-timeout',
@@ -549,6 +552,9 @@ class InstanceCreationOutcome(ResourceCreationOutcome[AWSInstance]):
 class SecurityGroupCreationRequest(ResourceCreationRequest):
     vpc_id: str
     tags: Tags
+    #: Full set of rules the per-guest security group is expected to carry (guest custom rules merged with any
+    #: pool ``security-group-rules``). Used to decide whether an existing group may be reused.
+    expected_rules: SecurityGroupRules
 
 
 @dataclasses.dataclass
@@ -1837,6 +1843,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
             create_resource_request=self._create_security_group_request,
             create_resource=self._create_security_group,
             reuse_resource=self._reuse_security_group,
+            can_reuse_resource=self._can_reuse_security_group,
         )
 
     @property
@@ -2283,6 +2290,102 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
 
         return r_post_install_script.unwrap()
 
+    def _expected_guest_security_group_rules(self, guest_request: GuestRequest) -> Result[SecurityGroupRules, Failure]:
+        """
+        Compute the full set of rules a per-guest security group is expected to carry: the guest's custom rules
+        merged with any ``security-group-rules`` defined in the pool config. A fresh ``SecurityGroupRules`` is
+        returned so the guest request's own rules are never mutated.
+        """
+        rules = SecurityGroupRules(
+            ingress=list(guest_request.security_group_rules.ingress),
+            egress=list(guest_request.security_group_rules.egress),
+        )
+
+        if self.pool_config.get('security-group-rules'):
+            r_rules_from_config = SecurityGroupRules.load_from_pool_config(self.pool_config['security-group-rules'])
+            if r_rules_from_config.is_error:
+                return Error(
+                    Failure.from_failure(
+                        'failed to load security group rules from pool config', r_rules_from_config.unwrap_error()
+                    )
+                )
+
+            rules.extend(r_rules_from_config.unwrap())
+
+        return Ok(rules)
+
+    def _can_reuse_security_group(
+        self, security_group_request: SecurityGroupCreationRequest, security_group: SecurityGroup
+    ) -> bool:
+        """
+        A leftover per-guest security group may only be reused if it already carries every rule the request expects.
+        A group that is missing an expected rule is stale (e.g. left over after the pool rules or the guest request
+        changed) and must be cleaned up and recreated rather than silently topped up.
+
+        Extra rules present on the group are tolerated - AWS always adds a default allow-all egress rule to a fresh
+        group, and any shared pool rules are attached separately - so only the expected rules being a subset of the
+        actual ones matters here.
+        """
+        r_actual_rules = self._aws_command(
+            [
+                'ec2',
+                'describe-security-group-rules',
+                '--filters',
+                f'Name=group-id,Values={security_group.id}',
+            ],
+            key='SecurityGroupRules',
+            commandname='aws.ec2-describe-security-group-rules',
+        )
+
+        if r_actual_rules.is_error:
+            Failure.from_failure(
+                'failed to list security group rules, cannot verify reuse',
+                r_actual_rules.unwrap_error(),
+                security_group_id=security_group.id,
+            ).handle(self.logger)
+            # Be conservative: if we cannot confirm the rules match, do not reuse the group.
+            return False
+
+        def _rule_key(
+            direction: str, protocol: str, port_min: Optional[int], port_max: Optional[int], cidr: str
+        ) -> Optional[SecurityGroupRuleKey]:
+            try:
+                normalized_cidr = SecurityGroupRule.validate_cidr(cidr)
+            except ValueError:
+                return None
+
+            # For the "all protocols" rule ports are meaningless - AWS reports them as -1 while our config models
+            # the same rule as the full 0-65535 range. Drop the ports from the key so the two representations match.
+            if str(protocol) == '-1':
+                port_min = port_max = None
+
+            return (direction, str(protocol), port_min, port_max, normalized_cidr)
+
+        actual_keys: set[SecurityGroupRuleKey] = set()
+        for raw in cast(list[dict[str, Any]], r_actual_rules.unwrap()):
+            cidr = raw.get('CidrIpv4') or raw.get('CidrIpv6')
+            # Rules referencing another group or a prefix list have no CIDR - they are not something we manage here.
+            if cidr is None:
+                continue
+
+            key = _rule_key(
+                'egress' if raw.get('IsEgress') else 'ingress',
+                raw['IpProtocol'],
+                raw.get('FromPort'),
+                raw.get('ToPort'),
+                cidr,
+            )
+            if key is not None:
+                actual_keys.add(key)
+
+        expected_rules = security_group_request.expected_rules
+        for rule in [*expected_rules.ingress, *expected_rules.egress]:
+            key = _rule_key(rule.type, rule.protocol, rule.port_min, rule.port_max, rule.cidr)
+            if key is None or key not in actual_keys:
+                return False
+
+        return True
+
     def _assign_security_group_rules(
         self, logger: ContextAdapter, guest_request: GuestRequest, guest_security_group_id: str
     ) -> Result[list[str], Failure]:
@@ -2308,23 +2411,18 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
         in the resulted list.
         """
         res_security_groups = [guest_security_group_id]
-        guest_secgroup_rules = guest_request.security_group_rules
 
         if not self.pool_config.get('security-group-rules') and self.pool_config.get('security-group'):
             # 2 security groups per guest case
             res_security_groups.extend(self._pool_security_groups)
 
-        if self.pool_config.get('security-group-rules'):
-            # 1 security group per guest case, custom and pool merged into one secgroup
-            r_rules_from_config = SecurityGroupRules.load_from_pool_config(self.pool_config['security-group-rules'])
-            if r_rules_from_config.is_error:
-                return Error(
-                    Failure.from_failure(
-                        'failed to load security group rules from pool config', r_rules_from_config.unwrap_error()
-                    )
-                )
+        # 1 security group per guest case merges custom and pool rules into one secgroup; either way the expected
+        # rule set is what we apply here.
+        r_guest_secgroup_rules = self._expected_guest_security_group_rules(guest_request)
+        if r_guest_secgroup_rules.is_error:
+            return Error(r_guest_secgroup_rules.unwrap_error())
 
-            guest_secgroup_rules.extend(r_rules_from_config.unwrap())
+        guest_secgroup_rules = r_guest_secgroup_rules.unwrap()
 
         def _create_ip_permissions_payload(rules: list[SecurityGroupRule]) -> str:
             ip_permissions = []
@@ -2531,7 +2629,15 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
         if r_vpc_id.is_error:
             return _Error(r_vpc_id.unwrap_error())
 
-        return _Ok(SecurityGroupCreationRequest(vpc_id=r_vpc_id.unwrap(), tags=r_base_tags.unwrap()))
+        r_expected_rules = self._expected_guest_security_group_rules(guest_request)
+        if r_expected_rules.is_error:
+            return _Error(r_expected_rules.unwrap_error())
+
+        return _Ok(
+            SecurityGroupCreationRequest(
+                vpc_id=r_vpc_id.unwrap(), tags=r_base_tags.unwrap(), expected_rules=r_expected_rules.unwrap()
+            )
+        )
 
     def _create_security_group(
         self,
