@@ -4203,12 +4203,13 @@ class ResourceManager(Generic[ResourceT, ResourceCreationRequestT, ResourceCreat
         # left over from a previous attempt while the pool (or request) no longer asks for spot. Such resources must
         # not be reused; treat them as leftovers so they get cleaned up and a fresh, compatible one is created.
         if self.can_reuse_resource is not None:
+            pending_reusability = {
+                resource: self.can_reuse_resource(resource_request, resource) for resource in pending_resources
+            }
             incompatible_resources = [
-                resource for resource in pending_resources if not self.can_reuse_resource(resource_request, resource)
+                resource for resource, is_reusable in pending_reusability.items() if not is_reusable
             ]
-            pending_resources = [
-                resource for resource in pending_resources if self.can_reuse_resource(resource_request, resource)
-            ]
+            pending_resources = [resource for resource, is_reusable in pending_reusability.items() if is_reusable]
         else:
             incompatible_resources = []
 

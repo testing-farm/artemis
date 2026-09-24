@@ -2600,10 +2600,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
 
         instances = [*res.values(), *spot_without_instance]
 
-        try:
-            instances = sorted(instances, key=lambda x: x.created_at)
-        except ValueError as exc:
-            return _Error(Failure.from_exc('Double check time format, could not convert time data', exc))
+        instances = sorted(instances, key=lambda x: x.created_at)
 
         return _Ok(instances)
 
