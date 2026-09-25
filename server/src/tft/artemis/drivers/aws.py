@@ -417,7 +417,7 @@ class AWSPoolResourcesIDs(PoolResourcesIDs):
     security_group: Optional[str] = None
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(eq=False)
 class AWSInstance(Instance):
     """
     Represents an AWS backend instance.

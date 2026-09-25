@@ -3984,10 +3984,19 @@ class CLISessionPermanentDir(CLISessionDir):
 #
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(eq=False)
 class Resource(SerializableContainer, abc.ABC):
     """
     Represents a resource acquired from the backend.
+
+    .. note::
+
+       Declared with ``eq=False`` so ``@dataclass`` does not reset ``__hash__`` to ``None`` (which it does whenever
+       it generates ``__eq__``). This keeps the identity-based ``__eq__`` / ``__hash__`` inherited from ``object``,
+       which is exactly what the reuse bookkeeping in :py:class:`ResourceManager` needs: distinct resource objects
+       must stay distinct as dict keys / set members. We deliberately do not hash by a field - ``name`` may be empty
+       (e.g. an instance whose label tag is missing) and no single field is unique across all resource kinds.
+       Nothing compares resources by value. Subclasses must also use ``eq=False``.
     """
 
     #: Resource name.
@@ -4010,7 +4019,7 @@ class Resource(SerializableContainer, abc.ABC):
         raise NotImplementedError
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(eq=False)
 class Instance(Resource):
     """
     Represents a backend instance.

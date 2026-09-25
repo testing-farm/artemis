@@ -150,7 +150,7 @@ class AzurePoolImageInfo(PoolImageInfo):
     version: str
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(eq=False)
 class ResourceGroup(Resource):
     # shared resource groups are not to be cleaned up on guest cancellation
     is_shared: bool
@@ -185,7 +185,7 @@ class ResourceGroupCreationOutcome(ResourceCreationOutcome[ResourceGroup]):
     pass
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(eq=False)
 class AzureInstance(Instance):
     status: str
     created_at: datetime.datetime
