@@ -511,7 +511,7 @@ class AWSInstance(Instance):
         return instance
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(eq=False)
 class SecurityGroup(Resource):
     """
     Represents a per-guest security group.
