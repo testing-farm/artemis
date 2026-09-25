@@ -76,6 +76,7 @@ publish:  ## Publish component as PyPI package
 clean:  ## Remove virtual environments
 	rm -rf .tox
 	rm -rf .venv
+	rm -rf .pytest_cache .ruff_cache .mypy_cache
 
 # See https://www.thapaliya.com/en/writings/well-documented-makefiles/ for details.
 reverse = $(if $(1),$(call reverse,$(wordlist 2,$(words $(1)),$(1)))) $(firstword $(1))
