@@ -47,7 +47,7 @@ typing-extensions = "*"
 pendulum = "3.0"
 periodiq = "*"
 redis = "^8.0.0"
-returns = "*"
+returns = { version = "*", extras = ["compatible-mypy"] }
 jsonschema = "*"
 sentry-sdk = "^2.18"
 # setuptools 82.0.0+ do not ship pkg_resources
