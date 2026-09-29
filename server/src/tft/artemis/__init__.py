@@ -77,7 +77,7 @@ from gluetool.result import Error, Ok, Result
 from returns.pipeline import is_successful
 from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
-from typing_extensions import ParamSpec, Self, TypeAlias
+from typing_extensions import ParamSpec, Self
 
 __VERSION__ = importlib.metadata.version('tft-artemis')
 
