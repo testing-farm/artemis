@@ -597,6 +597,30 @@ class FlavorNetworks(_FlavorSequenceContainer[FlavorNetwork]):
 
 
 @dataclasses.dataclass(repr=False)
+class FlavorSystem(_FlavorSubsystemContainer):
+    """
+    Represents a HW properties related to the system itself.
+    """
+
+    CONTAINER_PREFIX = 'system'
+
+    #: System model ID.
+    model: Optional[int] = None
+
+    #: System model name.
+    model_name: Optional[str] = None
+
+    #: Number of NUMA nodes.
+    numa_nodes: Optional[int] = None
+
+    #: ID of the device vendor.
+    vendor: Optional[int] = None
+
+    #: Name of the device vendor.
+    vendor_name: Optional[str] = None
+
+
+@dataclasses.dataclass(repr=False)
 class FlavorTPM(_FlavorSubsystemContainer):
     """
     Represents HW properties related to flavor TPM support.
@@ -683,6 +707,9 @@ class Flavor(_FlavorSubsystemContainer):
 
     #: Network interfaces.
     network: FlavorNetworks = dataclasses.field(default_factory=FlavorNetworks)
+
+    #: System properties.
+    system: FlavorSystem = dataclasses.field(default_factory=FlavorSystem)
 
     #: TPM support
     tpm: FlavorTPM = dataclasses.field(default_factory=FlavorTPM)

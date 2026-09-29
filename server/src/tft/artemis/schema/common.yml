@@ -28,6 +28,9 @@ definitions:
       network:
         "$ref": "#/definitions/patch_flavor_networks"
 
+      system:
+        "$ref": "#/definitions/patch_flavor_system"
+
       memory:
         type: string
 
@@ -186,6 +189,28 @@ definitions:
     required: []
     additionalProperties: false
 
+  patch_flavor_system:
+    type: object
+
+    properties:
+      vendor:
+        type: integer
+
+      vendor-name:
+        type: string
+
+      model:
+        type: integer
+
+      model-name:
+        type: string
+
+      numa-nodes:
+        type: integer
+
+    required: []
+    additionalProperties: false
+
   patch_flavor_virtualization:
     type: object
 
@@ -242,6 +267,9 @@ definitions:
 
       iommu:
         "$ref": "#/definitions/patch_flavor_iommu"
+
+      system:
+        "$ref": "#/definitions/patch_flavor_system"
 
       virtualization:
         "$ref": "#/definitions/patch_flavor_virtualization"
