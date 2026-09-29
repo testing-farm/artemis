@@ -3984,19 +3984,10 @@ class CLISessionPermanentDir(CLISessionDir):
 #
 
 
-@dataclasses.dataclass(eq=False)
+@dataclasses.dataclass
 class Resource(SerializableContainer, abc.ABC):
     """
     Represents a resource acquired from the backend.
-
-    .. note::
-
-       Declared with ``eq=False`` so ``@dataclass`` does not reset ``__hash__`` to ``None`` (which it does whenever
-       it generates ``__eq__``). This keeps the identity-based ``__eq__`` / ``__hash__`` inherited from ``object``,
-       which is exactly what the reuse bookkeeping in :py:class:`ResourceManager` needs: distinct resource objects
-       must stay distinct as dict keys / set members. We deliberately do not hash by a field - ``name`` may be empty
-       (e.g. an instance whose label tag is missing) and no single field is unique across all resource kinds.
-       Nothing compares resources by value. Subclasses must also use ``eq=False``.
     """
 
     #: Resource name.
@@ -4019,7 +4010,7 @@ class Resource(SerializableContainer, abc.ABC):
         raise NotImplementedError
 
 
-@dataclasses.dataclass(eq=False)
+@dataclasses.dataclass
 class Instance(Resource):
     """
     Represents a backend instance.
@@ -4212,13 +4203,11 @@ class ResourceManager(Generic[ResourceT, ResourceCreationRequestT, ResourceCreat
         # left over from a previous attempt while the pool (or request) no longer asks for spot. Such resources must
         # not be reused; treat them as leftovers so they get cleaned up and a fresh, compatible one is created.
         if self.can_reuse_resource is not None:
-            pending_reusability = {
-                resource: self.can_reuse_resource(resource_request, resource) for resource in pending_resources
-            }
-            incompatible_resources = [
-                resource for resource, is_reusable in pending_reusability.items() if not is_reusable
+            pending_reusability = [
+                (resource, self.can_reuse_resource(resource_request, resource)) for resource in pending_resources
             ]
-            pending_resources = [resource for resource, is_reusable in pending_reusability.items() if is_reusable]
+            incompatible_resources = [resource for resource, is_reusable in pending_reusability if not is_reusable]
+            pending_resources = [resource for resource, is_reusable in pending_reusability if is_reusable]
         else:
             incompatible_resources = []
 

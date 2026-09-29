@@ -152,7 +152,7 @@ class OpenStackPoolResourcesIDs(PoolResourcesIDs):
     instance_id: Optional[str] = None
 
 
-@dataclasses.dataclass(eq=False)
+@dataclasses.dataclass
 class OpenStackInstance(Instance):
     status: str
     created_at: datetime.datetime

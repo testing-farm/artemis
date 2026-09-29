@@ -73,7 +73,7 @@ class IBMCloudPoolResourcesIDs(PoolResourcesIDs):
     assorted_resource_ids: Optional[list[dict[str, str]]] = None
 
 
-@dataclasses.dataclass(eq=False)
+@dataclasses.dataclass
 class IBMCloudInstance(Instance):
     status: str
     created_at: datetime.datetime

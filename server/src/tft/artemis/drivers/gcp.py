@@ -141,7 +141,7 @@ class GCPPoolResourcesIDs(PoolResourcesIDs):
     instance_name: Optional[str] = None
 
 
-@dataclasses.dataclass(eq=False)
+@dataclasses.dataclass
 class GCPInstance(Instance):
     status: str
     created_at: datetime.datetime
