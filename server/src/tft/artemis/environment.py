@@ -613,7 +613,7 @@ class FlavorSystem(_FlavorSubsystemContainer):
     #: Number of NUMA nodes.
     numa_nodes: Optional[int] = None
 
-    #: ID of the device vendor.
+    #: ID of the system vendor.
     vendor: Optional[int] = None
 
     #: Name of the device vendor.
