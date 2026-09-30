@@ -2643,7 +2643,6 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
-        transaction: Transaction,
         guest_request: GuestRequest,
         security_group_name: str,
         security_group_request: SecurityGroupCreationRequest,
