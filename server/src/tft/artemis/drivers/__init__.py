@@ -159,6 +159,19 @@ ConfigFlavorGPUSpecType = TypedDict(
 )
 
 
+#: pools[].parameters.{custom-flavors,patch-flavors}[].system
+ConfigFlavorSystemSpecType = TypedDict(
+    'ConfigFlavorSystemSpecType',
+    {
+        'model': Optional[int],
+        'model-name': Optional[str],
+        'vendor': Optional[int],
+        'vendor-name': Optional[str],
+        'numa-nodes': Optional[int],
+    },
+)
+
+
 #: pools[].parameters.{custom-flavors,patch-flavors}[].tpm
 class ConfigFlavorTPMSpecType(TypedDict):
     version: Optional[str]
@@ -197,6 +210,7 @@ ConfigPatchFlavorSpecType = TypedDict(
         'cpu': ConfigFlavorCPUSpecType,
         'disk': list[ConfigFlavorDiskSpecType],
         'gpu': ConfigFlavorGPUSpecType,
+        'system': ConfigFlavorSystemSpecType,
         'tpm': ConfigFlavorTPMSpecType,
         'virtualization': ConfigFlavorVirtualizationSpecType,
         'boot': ConfigFlavorBootSpecType,
@@ -215,6 +229,7 @@ class ConfigCustomFlavorSpecType(TypedDict):
     cpu: ConfigFlavorCPUSpecType
     disk: list[ConfigFlavorDiskSpecType]
     gpu: ConfigFlavorGPUSpecType
+    system: ConfigFlavorSystemSpecType
     tpm: ConfigFlavorTPMSpecType
     virtualization: ConfigFlavorVirtualizationSpecType
     boot: ConfigFlavorBootSpecType
@@ -1096,6 +1111,24 @@ def _apply_flavor_specification(flavor: Flavor, flavor_spec: ConfigFlavorSpecTyp
 
         if 'driver' in gpu_patch:
             flavor.gpu.driver = gpu_patch['driver']
+
+    if 'system' in flavor_spec:
+        system_patch = flavor_spec['system']
+
+        if 'model' in system_patch:
+            flavor.system.model = system_patch['model']
+
+        if 'model-name' in system_patch:
+            flavor.system.model_name = system_patch['model-name']
+
+        if 'numa-nodes' in system_patch:
+            flavor.system.numa_nodes = system_patch['numa-nodes']
+
+        if 'vendor' in system_patch:
+            flavor.system.vendor = system_patch['vendor']
+
+        if 'vendor-name' in system_patch:
+            flavor.system.vendor_name = system_patch['vendor-name']
 
     if 'tpm' in flavor_spec:
         tpm_patch = flavor_spec['tpm']
