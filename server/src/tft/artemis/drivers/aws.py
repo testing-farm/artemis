@@ -409,6 +409,14 @@ class AWSFlavor(Flavor):
     # TODO: when Flavor gains `network` object, move this there.
     ena_support: Literal['required', 'supported', 'unsupported'] = 'unsupported'
 
+    #: Whether "nested virtualization" feature is supported or not.
+    #:
+    #: .. note::
+    #:
+    #:    Be aware that flavors may still support virtualization even when this flag is false. The flag tracks support
+    #:    of particular AWS EV2 feature, and e.g. baremetal flavors may still allow virtualization in general.
+    nested_virtualization_support: bool = False
+
 
 @dataclasses.dataclass
 class AWSPoolResourcesIDs(PoolResourcesIDs):
@@ -2767,7 +2775,8 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
                 cpu_options.add('AmdSevSnp=enabled')
 
             elif property_name == 'virtualization' and child_property == 'is_supported' and constraint.value is True:
-                cpu_options.add('NestedVirtualization=enabled')
+                if instance_request.flavor.nested_virtualization_support:
+                    cpu_options.add('NestedVirtualization=enabled')
 
         if cpu_options:
             command += ['--cpu-options', ','.join(cpu_options)]
@@ -3354,10 +3363,12 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
                         virtualization=FlavorVirtualization(
                             hypervisor=raw_flavor.get('Hypervisor'),
                             is_virtualized=bool(raw_flavor.get('Hypervisor', '').lower() in AWS_VM_HYPERVISORS),
-                            is_supported='nested-virtualization'
-                            in (raw_flavor.get('ProcessorInfo', {}).get('SupportedFeatures') or []),
                         ),
                         ena_support=raw_flavor.get('NetworkInfo', {}).get('EnaSupport', 'unsupported'),
+                        nested_virtualization_support=(
+                            'nested-virtualization'
+                            in (raw_flavor.get('ProcessorInfo', {}).get('SupportedFeatures') or [])
+                        ),
                     )
                 )
 
