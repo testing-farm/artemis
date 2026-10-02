@@ -2774,9 +2774,13 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
             if property_name == 'virtualization' and child_property == 'confidential' and constraint.value is True:
                 cpu_options.add('AmdSevSnp=enabled')
 
-            elif property_name == 'virtualization' and child_property == 'is_supported' and constraint.value is True:
-                if instance_request.flavor.nested_virtualization_support:
-                    cpu_options.add('NestedVirtualization=enabled')
+            elif (
+                property_name == 'virtualization'
+                and child_property == 'is_supported'
+                and constraint.value is True
+                and instance_request.flavor.nested_virtualization_support
+            ):
+                cpu_options.add('NestedVirtualization=enabled')
 
         if cpu_options:
             command += ['--cpu-options', ','.join(cpu_options)]
