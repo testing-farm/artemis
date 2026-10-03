@@ -414,7 +414,7 @@ class AWSFlavor(Flavor):
     #: .. note::
     #:
     #:    Be aware that flavors may still support virtualization even when this flag is false. The flag tracks support
-    #:    of particular AWS EV2 feature, and e.g. baremetal flavors may still allow virtualization in general.
+    #:    of particular AWS EC2 feature, and e.g. baremetal flavors may still allow virtualization in general.
     nested_virtualization_support: bool = False
 
 
