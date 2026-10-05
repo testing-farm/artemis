@@ -3349,6 +3349,10 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
                 if nic_limit > 1:
                     network.items += [FlavorNetwork(type='eth', is_expansion=True, max_additional_items=nic_limit - 1)]
 
+                nested_virtualization_support = 'nested-virtualization' in (
+                    raw_flavor.get('ProcessorInfo', {}).get('SupportedFeatures') or []
+                )
+
                 yield Ok(
                     AWSFlavor(
                         name=raw_flavor['InstanceType'],
@@ -3367,12 +3371,10 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
                         virtualization=FlavorVirtualization(
                             hypervisor=raw_flavor.get('Hypervisor'),
                             is_virtualized=bool(raw_flavor.get('Hypervisor', '').lower() in AWS_VM_HYPERVISORS),
+                            is_supported=True if nested_virtualization_support else None,
                         ),
                         ena_support=raw_flavor.get('NetworkInfo', {}).get('EnaSupport', 'unsupported'),
-                        nested_virtualization_support=(
-                            'nested-virtualization'
-                            in (raw_flavor.get('ProcessorInfo', {}).get('SupportedFeatures') or [])
-                        ),
+                        nested_virtualization_support=nested_virtualization_support,
                     )
                 )
 
