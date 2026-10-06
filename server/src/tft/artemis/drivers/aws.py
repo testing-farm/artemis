@@ -1803,6 +1803,8 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
             reuse_resource=self._reuse_instance,
             can_reuse_resource=self._can_reuse_instance,
         )
+        # Will be populated after the first successful call to get_vpc_id
+        self._vpc_id = None
 
     @property
     def _image_owners(self) -> list[str]:
@@ -1966,6 +1968,32 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
             res.append(r_image.unwrap())
 
         return Ok(res)
+
+    def get_vpc_id(self) -> Result[str, Failure]:
+        # AWS ec2 api has request throttling limits (100/10 for console non-mutating actions)
+        # To minimize possible retries because of hitting those limits - let's reduce unnecessary calls, like those
+        # of retrieving vpc id which is always the same for the given pool configuration.
+        # https://docs.aws.amazon.com/ec2/latest/devguide/ec2-api-throttling.html
+        if not self._vpc_id:
+            # Get the VPC id from the subnet-id, otherwise subsequent instance creation may fail with SG and subnet
+            # not belonging to the same network
+            r_subnet_details = self._aws_command(
+                ['ec2', 'describe-subnets', '--filters', f'Name=subnet-id,Values={self.pool_config["subnet-id"]}'],
+                key='Subnets',
+                commandname='aws.ec2-describe-subnets',
+            )
+
+            if r_subnet_details.is_error:
+                return Error(
+                    Failure.from_failure(
+                        'failed to list subnet details, cannot retrieve VPC id', r_subnet_details.unwrap_error()
+                    )
+                )
+
+            subnet_details = cast(list[dict[str, str]], r_subnet_details.unwrap())
+            self._vpc_id = subnet_details[0]['VpcId']
+
+        return Ok(self._vpc_id)
 
     @override
     def release_pool_resources(
@@ -2442,21 +2470,10 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
 
         # Get the VPC id from the subnet-id, otherwise subsequent instance creation may fail with SG and subnet
         # not belonging to the same network
-        r_subnet_details = self._aws_command(
-            ['ec2', 'describe-subnets', '--filters', f'Name=subnet-id,Values={self.pool_config["subnet-id"]}'],
-            key='Subnets',
-            commandname='aws.ec2-describe-subnets',
-        )
-
-        if r_subnet_details.is_error:
-            return Error(
-                Failure.from_failure(
-                    'failed to list subnet details, cannot retrieve VPC id', r_subnet_details.unwrap_error()
-                )
-            )
-
-        subnet_details = cast(list[dict[str, str]], r_subnet_details.unwrap())
-        vpc_id = subnet_details[0]['VpcId']
+        r_vpc_id = self.get_vpc_id()
+        if not is_successful(r_vpc_id):
+            return Error(Failure.from_failure('Could not retrieve VPC id from the subnet details', r_vpc_id.failure()))
+        vpc_id = r_vpc_id.unwrap()
 
         r_security_group_id = self._find_security_group_id(logger, security_group_name, vpc_id)
 
