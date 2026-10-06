@@ -1804,7 +1804,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
             can_reuse_resource=self._can_reuse_instance,
         )
         # Will be populated after the first successful call to get_vpc_id
-        self._vpc_id = None
+        self._vpc_id: Optional[str] = None
 
     @property
     def _image_owners(self) -> list[str]:
@@ -1969,7 +1969,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
 
         return Ok(res)
 
-    def get_vpc_id(self) -> Result[str, Failure]:
+    def get_vpc_id(self) -> _Result[str, Failure]:
         # AWS ec2 api has request throttling limits (100/10 for console non-mutating actions)
         # To minimize possible retries because of hitting those limits - let's reduce unnecessary calls, like those
         # of retrieving vpc id which is always the same for the given pool configuration.
@@ -1984,7 +1984,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
             )
 
             if r_subnet_details.is_error:
-                return Error(
+                return _Error(
                     Failure.from_failure(
                         'failed to list subnet details, cannot retrieve VPC id', r_subnet_details.unwrap_error()
                     )
@@ -1993,7 +1993,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
             subnet_details = cast(list[dict[str, str]], r_subnet_details.unwrap())
             self._vpc_id = subnet_details[0]['VpcId']
 
-        return Ok(self._vpc_id)
+        return _Ok(self._vpc_id)
 
     @override
     def release_pool_resources(
