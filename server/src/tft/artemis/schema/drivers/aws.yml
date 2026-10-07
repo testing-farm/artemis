@@ -26,6 +26,9 @@ properties:
   default-flavor:
     type: string
 
+  vpc-id:
+    type: string
+
   use-default-flavor-when-no-suitable:
     type: boolean
     default: true
