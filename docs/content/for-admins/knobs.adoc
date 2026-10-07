@@ -1774,7 +1774,7 @@ of a variable to render in a template.
 |`worker.heartbeat.filepath-template`
 |`str`
 |`ARTEMIS_WORKER_HEARTBEAT_FILEPATH_TEMPLATE`
-|`/var/run/artemis/worker-heartbeat-{{ WORKER_PID }}-{{ WORKER_TID }}`
+|`/var/tmp/artemis/worker-heartbeat-{{ WORKER_PID }}-{{ WORKER_TID }}`
 |no
 
 
