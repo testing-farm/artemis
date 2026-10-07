@@ -727,7 +727,7 @@ KNOB_WORKER_HEARTBEAT_FILEPATH_TEMPLATE: Knob[str] = Knob(
     has_db=False,
     envvar='ARTEMIS_WORKER_HEARTBEAT_FILEPATH_TEMPLATE',
     cast_from_str=str,
-    default='/var/run/artemis/worker-heartbeat-{{ WORKER_PID }}-{{ WORKER_TID }}',
+    default='/var/tmp/artemis/worker-heartbeat-{{ WORKER_PID }}-{{ WORKER_TID }}',
 )
 
 KNOB_DEPLOYMENT: Knob[str] = Knob(
