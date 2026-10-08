@@ -1803,8 +1803,6 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
             reuse_resource=self._reuse_instance,
             can_reuse_resource=self._can_reuse_instance,
         )
-        # Will be populated after the first successful call to get_vpc_id
-        self._vpc_id: Optional[str] = None
 
     @property
     def _image_owners(self) -> list[str]:
@@ -1968,38 +1966,6 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
             res.append(r_image.unwrap())
 
         return Ok(res)
-
-    def get_vpc_id(self) -> _Result[str, Failure]:
-        # AWS ec2 api has request throttling limits (100/10 for console non-mutating actions)
-        # To minimize possible retries because of hitting those limits - let's reduce unnecessary calls, like those
-        # of retrieving vpc id which is always the same for the given pool configuration.
-        # https://docs.aws.amazon.com/ec2/latest/devguide/ec2-api-throttling.html
-
-        # If it's possible to retrieve vpc id from pool config - use that static value;
-        # If it's not - check if there is a populated _vpc_id in the driver; otherwise perform the actual api call.
-        if self.pool_config.get('vpc-id'):
-            self._vpc_id = self.pool_config['vpc-id']
-
-        elif not self._vpc_id:
-            # Get the VPC id from the subnet-id, otherwise subsequent instance creation may fail with SG and subnet
-            # not belonging to the same network
-            r_subnet_details = self._aws_command(
-                ['ec2', 'describe-subnets', '--filters', f'Name=subnet-id,Values={self.pool_config["subnet-id"]}'],
-                key='Subnets',
-                commandname='aws.ec2-describe-subnets',
-            )
-
-            if r_subnet_details.is_error:
-                return _Error(
-                    Failure.from_failure(
-                        'failed to list subnet details, cannot retrieve VPC id', r_subnet_details.unwrap_error()
-                    )
-                )
-
-            subnet_details = cast(list[dict[str, str]], r_subnet_details.unwrap())
-            self._vpc_id = subnet_details[0]['VpcId']
-
-        return _Ok(self._vpc_id)
 
     @override
     def release_pool_resources(
@@ -2476,10 +2442,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
 
         # Get the VPC id from the subnet-id, otherwise subsequent instance creation may fail with SG and subnet
         # not belonging to the same network
-        r_vpc_id = self.get_vpc_id()
-        if not is_successful(r_vpc_id):
-            return Error(Failure.from_failure('Could not retrieve VPC id', r_vpc_id.failure()))
-        vpc_id = r_vpc_id.unwrap()
+        vpc_id = self.pool_config['vpc-id']
 
         r_security_group_id = self._find_security_group_id(logger, security_group_name, vpc_id)
 

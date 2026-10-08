@@ -160,6 +160,7 @@ required:
 - master-key-name
 - secret-access-key
 - subnet-id
+- vpc-id
 
 oneOf:
   - required:
