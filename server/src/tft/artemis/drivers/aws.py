@@ -2442,21 +2442,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
 
         # Get the VPC id from the subnet-id, otherwise subsequent instance creation may fail with SG and subnet
         # not belonging to the same network
-        r_subnet_details = self._aws_command(
-            ['ec2', 'describe-subnets', '--filters', f'Name=subnet-id,Values={self.pool_config["subnet-id"]}'],
-            key='Subnets',
-            commandname='aws.ec2-describe-subnets',
-        )
-
-        if r_subnet_details.is_error:
-            return Error(
-                Failure.from_failure(
-                    'failed to list subnet details, cannot retrieve VPC id', r_subnet_details.unwrap_error()
-                )
-            )
-
-        subnet_details = cast(list[dict[str, str]], r_subnet_details.unwrap())
-        vpc_id = subnet_details[0]['VpcId']
+        vpc_id = self.pool_config['vpc-id']
 
         r_security_group_id = self._find_security_group_id(logger, security_group_name, vpc_id)
 
