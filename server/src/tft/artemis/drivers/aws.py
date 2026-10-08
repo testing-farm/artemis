@@ -2582,7 +2582,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
                 'describe-security-groups',
                 '--filters',
                 f'Name=group-name,Values={expected_name}*',
-                f'Name=vpc-id,Values={self.pool_config['vpc-id']}',
+                f'Name=vpc-id,Values={self.pool_config["vpc-id"]}',
             ],
             key='SecurityGroups',
             commandname='aws.ec2-describe-security-groups',
