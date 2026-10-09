@@ -312,10 +312,10 @@ def main() -> None:
             for failure in failures:
                 failure.handle(logger)
 
-            if dispatched > 0:
+            if not failures and dispatched > 0:
                 continue
 
-            time.sleep(KNOB_DISPATCHER_TICK.value)
+        time.sleep(KNOB_DISPATCHER_TICK.value)
 
 
 if __name__ == '__main__':
