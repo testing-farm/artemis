@@ -229,7 +229,7 @@ class Workspace(_Workspace):
         return cls.create(logger, db, session, guestname).begin().run().complete().final_result
 
 
-@task(tail_handler=ProvisioningTailHandler(GuestState.PROVISIONING, GuestState.SHELF_LOOKUP))
+@task(tail_handler=ProvisioningTailHandler(GuestState.PROVISIONING, GuestState.SHELF_LOOKUP), singleton=True)
 def acquire_guest_request(guestname: str) -> None:
     task_core(
         cast(DoerType, Workspace.acquire_guest_request),
