@@ -101,9 +101,17 @@ class Workspace(_Workspace):
                 )
 
                 if self.result:
-                    # TODO: we failed to save pool data & request follow-up task, must retry - and that will
-                    # cause acquire-guest-task to allocate new resources while those we have *now* would not
-                    # be tracked.
+                    # State update failed - another worker likely won the race and already
+                    # transitioned this guest request.  The instance we just created is not
+                    # tracked anywhere; schedule its cleanup so it does not become an orphan.
+                    self.result = None
+                    self.gr._pool_data = new_guest_values['_pool_data']
+
+                    r_release = self.pool.release_guest(self.logger, self.session, transaction, self.gr)
+
+                    if r_release.is_error:
+                        self._error(transaction, r_release, 'failed to release untracked resources after lost race')
+
                     return None
 
                 self._progress(
@@ -173,9 +181,17 @@ class Workspace(_Workspace):
                     )
 
                 if self.result:
-                    # TODO: we failed to save pool data & request follow-up task, must retry - and that will
-                    # cause acquire-guest-task to allocate new resources while those we have *now* would not
-                    # be tracked.
+                    # State update failed - another worker likely won the race and already
+                    # transitioned this guest request.  The instance we just created is not
+                    # tracked anywhere; schedule its cleanup so it does not become an orphan.
+                    self.result = None
+                    self.gr._pool_data = new_guest_values['_pool_data']
+
+                    r_release = self.pool.release_guest(self.logger, self.session, transaction, self.gr)
+
+                    if r_release.is_error:
+                        self._error(transaction, r_release, 'failed to release untracked resources after lost race')
+
                     return None
 
                 self._progress(transaction, 'successfully acquired')
