@@ -15,7 +15,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = 'd3da2cf5de49'
-down_revision = 'c7138dc9a462'
+down_revision = '63866e38fe0b'
 branch_labels = None
 depends_on = None
 
@@ -42,3 +42,4 @@ def upgrade() -> None:
 def downgrade() -> None:
     with op.batch_alter_table('task_requests', schema=None) as batch_op:
         batch_op.drop_index(batch_op.f('ix_task_requests_standalone_id'))
+        batch_op.drop_index(batch_op.f('ix_task_requests_in_sequence_id'))
