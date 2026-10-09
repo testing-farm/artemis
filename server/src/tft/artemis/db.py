@@ -789,6 +789,25 @@ class TaskRequest(Base):
     )
     task_sequence_request = relationship('TaskSequenceRequest', back_populates='task_requests')
 
+    # Serves the dispatcher's pick of the next standalone task request, `... WHERE task_sequence_request_id IS NULL
+    # ORDER BY id ASC LIMIT 1 FOR UPDATE SKIP LOCKED`. Without it, the pick walks the primary key index and throws
+    # away rows owned by task sequences - and rows locked by other dispatchers - on every single iteration. The
+    # partial index holds only the rows the dispatcher can actually claim, already in the order it wants them.
+    __table_args__ = (
+        Index(
+            'ix_task_requests_standalone_id',
+            'id',
+            postgresql_where=sqlalchemy.text('task_sequence_request_id IS NULL'),
+            sqlite_where=sqlalchemy.text('task_sequence_request_id IS NULL'),
+        ),
+        Index(
+            'ix_task_requests_in_sequence_id',
+            'id',
+            postgresql_where=sqlalchemy.text('task_sequence_request_id IS NOT NULL'),
+            sqlite_where=sqlalchemy.text('task_sequence_request_id IS NOT NULL'),
+        ),
+    )
+
     @classmethod
     def create_query(
         cls,
