@@ -800,6 +800,12 @@ class TaskRequest(Base):
             postgresql_where=sqlalchemy.text('task_sequence_request_id IS NULL'),
             sqlite_where=sqlalchemy.text('task_sequence_request_id IS NULL'),
         ),
+        Index(
+            'ix_task_requests_in_sequence_id',
+            'id',
+            postgresql_where=sqlalchemy.text('task_sequence_request_id IS NOT NULL'),
+            sqlite_where=sqlalchemy.text('task_sequence_request_id IS NOT NULL'),
+        ),
     )
 
     @classmethod

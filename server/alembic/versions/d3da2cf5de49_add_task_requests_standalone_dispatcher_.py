@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Add task_requests standalone dispatcher index
+Add task_requests standalone/in sequence dispatcher indexes
 
 Revision ID: d3da2cf5de49
 Revises: c7138dc9a462
@@ -19,8 +19,6 @@ down_revision = 'c7138dc9a462'
 branch_labels = None
 depends_on = None
 
-_WHERE_STANDALONE = 'task_sequence_request_id IS NULL'
-
 
 def upgrade() -> None:
     with op.batch_alter_table('task_requests', schema=None) as batch_op:
@@ -28,8 +26,16 @@ def upgrade() -> None:
             batch_op.f('ix_task_requests_standalone_id'),
             ['id'],
             unique=False,
-            postgresql_where=sa.text(_WHERE_STANDALONE),
-            sqlite_where=sa.text(_WHERE_STANDALONE),
+            postgresql_where=sa.text('task_sequence_request_id IS NULL'),
+            sqlite_where=sa.text('task_sequence_request_id IS NULL'),
+        )
+
+        batch_op.create_index(
+            batch_op.f('ix_task_requests_in_sequence_id'),
+            ['id'],
+            unique=False,
+            postgresql_where=sa.text('task_sequence_request_id IS NOT NULL'),
+            sqlite_where=sa.text('task_sequence_request_id IS NOT NULL'),
         )
 
 
