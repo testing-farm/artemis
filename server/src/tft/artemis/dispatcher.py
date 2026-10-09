@@ -7,6 +7,8 @@ from typing import Optional
 import gluetool.log
 import sqlalchemy
 import sqlalchemy.orm.session
+from returns.pipeline import is_successful
+from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 
 from . import Failure, Sentry, TracingOp, get_db, get_logger, get_worker_name, log_dict_yaml
 from .context import DATABASE, LOGGER, SESSION
@@ -30,6 +32,17 @@ KNOB_DISPATCHER_USE_LOWER_ISOLATION_LEVEL: Knob[bool] = Knob(
     envvar='ARTEMIS_DISPATCHER_USE_LOWER_ISOLATION_LEVEL',
     cast_from_str=gluetool.utils.normalize_bool_option,
     default=False,
+)
+
+KNOB_DISPATCHER_TICK: Knob[float] = Knob(
+    'dispatcher.tick',
+    """
+    If there are no tasks to dispatch, or there was an error, the dispatcher will sleep for this many seconds.
+    """,
+    has_db=False,
+    envvar='ARTEMIS_DISPATCHER_TICK',
+    cast_from_str=float,
+    default=10.0,
 )
 
 
@@ -176,7 +189,7 @@ def handle_task_sequence_request(
 def pick_task_request(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
-) -> bool:
+) -> _Result[int, Failure]:
     LOGGER.set(logger)
 
     DispatcherMetrics.inc_dispatched_task_invocations()
@@ -196,14 +209,12 @@ def pick_task_request(
             )
 
             if r_pending_task.is_error:
-                Failure.from_failure('failed to fetch pending task', r_pending_task.unwrap_error()).handle(logger)
-
-                return False
+                return _Error(Failure.from_failure('failed to fetch pending task', r_pending_task.unwrap_error()))
 
             task_request: Optional[TaskRequest] = r_pending_task.unwrap()
 
             if task_request is None:
-                return False
+                return _Ok(0)
 
             tracing_transaction.set_tag('taskname', task_request.taskname)
 
@@ -214,15 +225,15 @@ def pick_task_request(
         if not t.complete:
             assert t.failure is not None
 
-            t.failure.handle(logger)
+            return _Error(t.failure)
 
-        return t.complete
+        return _Ok(1)
 
 
 def pick_task_sequence_request(
     logger: gluetool.log.ContextAdapter,
     session: sqlalchemy.orm.session.Session,
-) -> bool:
+) -> _Result[int, Failure]:
     LOGGER.set(logger)
 
     DispatcherMetrics.inc_dispatched_task_sequence_invocations()
@@ -241,16 +252,16 @@ def pick_task_sequence_request(
             )
 
             if r_pending_task_sequence.is_error:
-                Failure.from_failure(
-                    'failed to fetch task sequence request', r_pending_task_sequence.unwrap_error()
-                ).handle(logger)
-
-                return False
+                return _Error(
+                    Failure.from_failure(
+                        'failed to fetch task sequence request', r_pending_task_sequence.unwrap_error()
+                    )
+                )
 
             task_sequence_request: Optional[TaskSequenceRequest] = r_pending_task_sequence.unwrap()
 
             if task_sequence_request is None:
-                return False
+                return _Ok(0)
 
             handle_task_sequence_request(logger, session, t, task_sequence_request)
 
@@ -259,9 +270,9 @@ def pick_task_sequence_request(
         if not t.complete:
             assert t.failure is not None
 
-            t.failure.handle(logger)
+            return _Error(t.failure)
 
-        return t.complete
+        return _Ok(1)
 
 
 def main() -> None:
@@ -280,13 +291,31 @@ def main() -> None:
         with db.get_session(logger, lower_isolation=KNOB_DISPATCHER_USE_LOWER_ISOLATION_LEVEL.value) as session:
             SESSION.set(session)
 
-            while pick_task_sequence_request(logger, session):
-                pass
+            failures, dispatched = [], 0
 
-            while pick_task_request(logger, session):
-                pass
+            r = pick_task_sequence_request(logger, session)
 
-        time.sleep(10)
+            if not is_successful(r):
+                failures.append(r.failure())
+
+            else:
+                dispatched += r.unwrap()
+
+            r = pick_task_request(logger, session)
+
+            if not is_successful(r):
+                failures.append(r.failure())
+
+            else:
+                dispatched += r.unwrap()
+
+            for failure in failures:
+                failure.handle(logger)
+
+            if dispatched > 0:
+                continue
+
+            time.sleep(KNOB_DISPATCHER_TICK.value)
 
 
 if __name__ == '__main__':
