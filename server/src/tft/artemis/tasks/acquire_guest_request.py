@@ -7,7 +7,7 @@ import gluetool.log
 import sqlalchemy.orm.session
 
 from .. import Failure, log_dict_yaml
-from ..db import DB
+from ..db import DB, SerializedPoolDataMapping, Transaction
 from ..drivers import KNOB_UPDATE_GUEST_REQUEST_TICK, PoolData, ProvisioningProgress, ProvisioningState
 from ..guest import GuestState
 from . import (
@@ -31,6 +31,44 @@ class Workspace(_Workspace):
     """
 
     TASKNAME = 'acquire-guest-request'
+
+    def _release_untracked_resources(
+        self,
+        transaction: Transaction,
+        provisioning_progress: ProvisioningProgress,
+        new_guest_values: GuestFieldStates,
+    ) -> None:
+        """
+        Release cloud resources that were just provisioned but could not be saved
+        into the guest request record (e.g. because a concurrent worker already
+        transitioned the request to the next state).
+
+        Without this cleanup the resources would become orphans -- tagged with the
+        correct ``ArtemisGuestName`` but invisible to Artemis because their IDs were
+        never stored in ``_pool_data``.
+        """
+
+        assert self.gr
+        assert self.pool
+
+        self._fail(
+            transaction,
+            Failure(
+                'state update failed after provisioning, releasing untracked resources',
+                pool_data=provisioning_progress.pool_data.serialize(),
+                address=provisioning_progress.address,
+            ),
+            'state-update-failed-after-acquire',
+            no_effect=True,
+        )
+
+        self.result = None
+        self.gr._pool_data = cast(SerializedPoolDataMapping, new_guest_values['_pool_data'])
+
+        r_release = self.pool.release_guest(self.logger, self.session, transaction, self.gr)
+
+        if r_release.is_error:
+            self._error(transaction, r_release, 'failed to release untracked resources after lost race')
 
     @step
     def run(self) -> None:
@@ -101,27 +139,7 @@ class Workspace(_Workspace):
                 )
 
                 if self.result:
-                    # State update failed - another worker likely won the race and already
-                    # transitioned this guest request.  The instance we just created is not
-                    # tracked anywhere; schedule its cleanup so it does not become an orphan.
-                    self._fail(
-                        transaction,
-                        Failure(
-                            'state update failed after provisioning, releasing untracked resources',
-                            pool_data=provisioning_progress.pool_data.serialize(),
-                        ),
-                        'state-update-failed-after-acquire',
-                        no_effect=True,
-                    )
-
-                    self.result = None
-                    self.gr._pool_data = new_guest_values['_pool_data']
-
-                    r_release = self.pool.release_guest(self.logger, self.session, transaction, self.gr)
-
-                    if r_release.is_error:
-                        self._error(transaction, r_release, 'failed to release untracked resources after lost race')
-
+                    self._release_untracked_resources(transaction, provisioning_progress, new_guest_values)
                     return None
 
                 self._progress(
@@ -191,28 +209,7 @@ class Workspace(_Workspace):
                     )
 
                 if self.result:
-                    # State update failed - another worker likely won the race and already
-                    # transitioned this guest request.  The instance we just created is not
-                    # tracked anywhere; schedule its cleanup so it does not become an orphan.
-                    self._fail(
-                        transaction,
-                        Failure(
-                            'state update failed after provisioning, releasing untracked resources',
-                            pool_data=provisioning_progress.pool_data.serialize(),
-                            address=provisioning_progress.address,
-                        ),
-                        'state-update-failed-after-acquire',
-                        no_effect=True,
-                    )
-
-                    self.result = None
-                    self.gr._pool_data = new_guest_values['_pool_data']
-
-                    r_release = self.pool.release_guest(self.logger, self.session, transaction, self.gr)
-
-                    if r_release.is_error:
-                        self._error(transaction, r_release, 'failed to release untracked resources after lost race')
-
+                    self._release_untracked_resources(transaction, provisioning_progress, new_guest_values)
                     return None
 
                 self._progress(transaction, 'successfully acquired')
