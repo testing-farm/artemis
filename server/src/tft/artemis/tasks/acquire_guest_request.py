@@ -104,6 +104,16 @@ class Workspace(_Workspace):
                     # State update failed - another worker likely won the race and already
                     # transitioned this guest request.  The instance we just created is not
                     # tracked anywhere; schedule its cleanup so it does not become an orphan.
+                    self._fail(
+                        transaction,
+                        Failure(
+                            'state update failed after provisioning, releasing untracked resources',
+                            pool_data=provisioning_progress.pool_data.serialize(),
+                        ),
+                        'state-update-failed-after-acquire',
+                        no_effect=True,
+                    )
+
                     self.result = None
                     self.gr._pool_data = new_guest_values['_pool_data']
 
@@ -184,6 +194,17 @@ class Workspace(_Workspace):
                     # State update failed - another worker likely won the race and already
                     # transitioned this guest request.  The instance we just created is not
                     # tracked anywhere; schedule its cleanup so it does not become an orphan.
+                    self._fail(
+                        transaction,
+                        Failure(
+                            'state update failed after provisioning, releasing untracked resources',
+                            pool_data=provisioning_progress.pool_data.serialize(),
+                            address=provisioning_progress.address,
+                        ),
+                        'state-update-failed-after-acquire',
+                        no_effect=True,
+                    )
+
                     self.result = None
                     self.gr._pool_data = new_guest_values['_pool_data']
 
