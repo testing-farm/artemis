@@ -784,6 +784,6 @@ def test_transaction_outbox_failure_is_not_raised(
 
     assert transaction.complete is True
 
-    assert_failure_log(caplog, 'failed to flush transaction outbox')
+    assert_failure_log(caplog, 'failed to run transaction on-resolve callbacks')
 
     assert _counter_names(session) == ['deferred']
