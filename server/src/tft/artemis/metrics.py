@@ -1530,7 +1530,7 @@ class PoolsMetrics(MetricsBase):
         reset_counter(self.POOL_COSTS)
         reset_counter(self.CLI_CALLS)
         reset_counter(self.CLI_CALLS_EXIT_CODES)
-        reset_counter(self.POOL_RESOURCES_INSTANCES)
+        reset_gauge(self.POOL_RESOURCES_INSTANCES)
         reset_histogram(self.CLI_CALLS_DURATIONS)
 
         for poolname, pool_metrics in self.pools.items():
