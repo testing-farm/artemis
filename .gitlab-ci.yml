@@ -10,6 +10,8 @@ variables:
   IMAGE: quay.io/testing-farm/artemis
 
 workflow:
+  auto_cancel:
+    on_new_commit: interruptible
   rules:
     # for merge requests
     - if: $CI_MERGE_REQUEST_ID
@@ -33,30 +35,35 @@ workflow:
     PRE_COMMIT_COLOR: "always"
 
 test/server/pre-commit:
+  interruptible: true
   extends: .tests
 
   script:
     - make -C server/ test-pre-commit
 
 test/server/unittests:
+  interruptible: true
   extends: .tests
 
   script:
     - make -C server/ test-units
 
 test/server/db-schema:
+  interruptible: true
   extends: .tests
 
   script:
     - make -C server/ test-db-schema-revisions
 
 test/cli/pre-commit:
+  interruptible: true
   extends: .tests
 
   script:
     - make -C cli/ test-pre-commit
 
 test/cli/unittests:
+  interruptible: true
   extends: .tests
 
   script:
@@ -66,8 +73,8 @@ test/cli/unittests:
   image: quay.io/buildah/stable:v1.29.0
 
   variables:
-    IMAGE_REF: $IMAGE:$CI_COMMIT_REF_NAME
-    IMAGE_REF_DEBUG: $IMAGE:$CI_COMMIT_REF_NAME.debug
+    IMAGE_REF: $IMAGE:$CI_COMMIT_REF_SLUG
+    IMAGE_REF_DEBUG: $IMAGE:$CI_COMMIT_REF_SLUG.debug
     IMAGE_SHA: $IMAGE:$CI_COMMIT_SHORT_SHA
     IMAGE_SHA_DEBUG: $IMAGE:$CI_COMMIT_SHORT_SHA.debug
     IMAGE_BRANCH: $IMAGE:$CI_COMMIT_BRANCH
@@ -78,6 +85,7 @@ test/cli/unittests:
     IMAGE_LATEST_DEBUG: $IMAGE:latest.debug
 
 build container:
+  interruptible: false
   extends: .container
 
   stage: publish
@@ -111,6 +119,7 @@ build container:
     - buildah push "$IMAGE_SHA_DEBUG"
 
 publish latest container:
+  interruptible: false
   extends: .container
 
   stage: promote
@@ -147,6 +156,7 @@ publish latest container:
     - buildah push "$IMAGE_LATEST_DEBUG";
 
 publish tagged container:
+  interruptible: false
   extends: .container
 
   stage: promote
@@ -212,6 +222,7 @@ publish tagged container:
 
 # The name must be "pages" for Gitlab to spot it, and upload the docs.
 pages:
+  interruptible: false
   stage: publish
   extends: .docs
   only:
@@ -230,6 +241,7 @@ pages:
 # value, which is different that the one for `main` branch - it is actually URL Gitlab uses when job saves
 # its artifacts, and Gitlab lets us browse them.
 pages:preview:
+  interruptible: false
   stage: publish
   extends: .docs
   except:
@@ -260,6 +272,7 @@ pages:preview:
 
 # And final step: when our parent MR is merged, this job takes care of removing the Gitlab environment \o/
 pages:preview:stop:
+  interruptible: false
   stage: publish
   except:
     - main
@@ -272,6 +285,7 @@ pages:preview:stop:
     - echo "bye"
 
 publish_cli:
+  interruptible: false
   stage: publish
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
