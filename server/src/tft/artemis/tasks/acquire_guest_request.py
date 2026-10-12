@@ -40,12 +40,8 @@ class Workspace(_Workspace):
     ) -> None:
         """
         Release cloud resources that were just provisioned but could not be saved
-        into the guest request record (e.g. because a concurrent worker already
-        transitioned the request to the next state).
-
-        Without this cleanup the resources would become orphans -- tagged with the
-        correct ``ArtemisGuestName`` but invisible to Artemis because their IDs were
-        never stored in ``_pool_data``.
+        into the guest request record because a concurrent worker already
+        transitioned the request to the next state.
         """
 
         assert self.gr
