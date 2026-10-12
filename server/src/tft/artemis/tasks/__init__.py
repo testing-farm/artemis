@@ -2037,7 +2037,18 @@ class Workspace:
         failure.handle(self.logger, label=label, sentry=True, guestname=self.guestname, **self.spice_details)
 
         if self.guestname:
-            GuestRequest.log_error_event_by_guestname(self.logger, transaction, self.guestname, label, failure)
+            guestname = self.guestname
+
+            def _log_error_event(event_transaction: Transaction) -> None:
+                GuestRequest.log_error_event_by_guestname(self.logger, event_transaction, guestname, label, failure)
+
+            if transaction.is_error:
+                # The transaction is tainted - very often by the very failure we are reporting here - and cannot
+                # accept new statements. Defer the event, it will be stored once the transaction rolls back.
+                transaction.on_resolve(_log_error_event)
+
+            else:
+                _log_error_event(transaction)
 
         else:
             self._event(label, failure=failure.get_event_details())

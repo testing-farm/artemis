@@ -664,3 +664,126 @@ def test_transaction_conflict_with_execute_dml(
         assert len(events) == 1
         assert events[0].guestname == 'dummy-guest'
         assert events[0].eventname == 'dummy-event'
+
+
+def _counter_names(session: sqlalchemy.orm.session.Session) -> list[str]:
+    return [
+        record.name  # type: ignore[misc]
+        for record in SafeQuery.from_session(session, Counters).order_by(Counters.name).all().unwrap()
+    ]
+
+
+@pytest.mark.usefixtures('skip_sqlite', 'schema_test_db_counters')
+def test_transaction_outbox_survives_rollback(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+) -> None:
+    """
+    Test whether deferred callbacks are executed - and committed - after the transaction rolled back.
+    """
+
+    with Transaction.go(logger, session) as transaction:
+        transaction.execute_dml(logger, sqlalchemy.insert(Counters).values(name='rolled-back', count=1))
+
+        # Duplicate primary key: the statement fails, and the transaction becomes tainted.
+        r_duplicate: DMLResult[Counters] = transaction.execute_dml(
+            logger, sqlalchemy.insert(Counters).values(name='rolled-back', count=2)
+        )
+
+        assert r_duplicate.is_error
+
+        # From now on, the transaction refuses any new statement...
+        r_rejected: DMLResult[Counters] = transaction.execute_dml(
+            logger, sqlalchemy.insert(Counters).values(name='rejected', count=3)
+        )
+
+        assert r_rejected.is_error
+        assert r_rejected.unwrap_error().message == 'cannot execute new statements in a broken transaction'
+
+        # ... but a deferred one is executed once the transaction settles.
+        transaction.on_resolve(
+            lambda deferred: deferred.execute_dml(  # type: ignore[arg-type]
+                logger, sqlalchemy.insert(Counters).values(name='deferred', count=4)
+            )
+        )
+
+    assert transaction.complete is False
+    assert transaction.is_error is True
+    assert transaction.on_resolve_callbacks == []
+
+    # The work done by the tainted transaction is gone, the deferred record is not.
+    assert _counter_names(session) == ['deferred']
+
+
+@pytest.mark.usefixtures('skip_sqlite', 'schema_test_db_counters')
+def test_transaction_outbox_survives_commit(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+) -> None:
+    """
+    Test whether deferred callbacks are executed after a successful transaction, too.
+    """
+
+    with Transaction.go(logger, session) as transaction:
+        transaction.execute_dml(logger, sqlalchemy.insert(Counters).values(name='committed', count=1))
+
+        transaction.on_resolve(
+            lambda deferred: deferred.execute_dml(logger, sqlalchemy.insert(Counters).values(name='deferred', count=2))  # type: ignore[arg-type]
+        )
+
+    assert transaction.complete is True
+
+    assert _counter_names(session) == ['committed', 'deferred']
+
+
+@pytest.mark.usefixtures('skip_sqlite', 'schema_test_db_counters')
+def test_transaction_outbox_does_not_recurse(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+) -> None:
+    """
+    Test whether a callback deferred by another deferred callback is dropped instead of chaining forever.
+    """
+
+    def _defer_again(deferred: Transaction) -> None:
+        deferred.execute_dml(logger, sqlalchemy.insert(Counters).values(name='deferred', count=1))
+
+        assert deferred.is_in_on_resolve_chain is True
+
+        deferred.on_resolve(
+            lambda nested: nested.execute_dml(  # type: ignore[arg-type]
+                logger, sqlalchemy.insert(Counters).values(name='deferred-again', count=2)
+            )
+        )
+
+    with Transaction.go(logger, session) as transaction:
+        transaction.on_resolve(_defer_again)
+
+    assert _counter_names(session) == ['deferred']
+
+
+@pytest.mark.usefixtures('skip_sqlite', 'schema_test_db_counters')
+def test_transaction_outbox_failure_is_not_raised(
+    caplog: _pytest.logging.LogCaptureFixture,
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+) -> None:
+    """
+    Test whether a failing callback is reported instead of replacing the failure that caused the deferral.
+    """
+
+    with Transaction.go(logger, session) as transaction:
+        transaction.execute_dml(logger, sqlalchemy.insert(Counters).values(name='deferred', count=1))
+
+        # Duplicate primary key again, this time hit by the deferred callback itself.
+        transaction.on_resolve(
+            lambda deferred: deferred.execute_dml(  # type: ignore[arg-type]
+                logger, sqlalchemy.insert(Counters).values(name='deferred', count=2)
+            )
+        )
+
+    assert transaction.complete is True
+
+    assert_failure_log(caplog, 'failed to run transaction on-resolve callbacks')
+
+    assert _counter_names(session) == ['deferred']

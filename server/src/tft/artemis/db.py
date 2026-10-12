@@ -448,6 +448,14 @@ class Transaction:
     failure: Optional['Failure'] = None
     failed_query: Optional[str] = None
 
+    #: Callbacks to run once this transaction settles, all of them in a single transaction of their own.
+    #: Reserved for diagnostics - error events - whose durability must not depend on the fate of the work
+    #: they describe. See :py:meth:`defer`.
+    on_resolve_callbacks: list[Callable[['Transaction'], None]] = dataclasses.field(default_factory=list)
+
+    #: Set on transactions created to flush another transaction's outbox, to stop the chain from recursing.
+    is_in_on_resolve_chain: bool = False
+
     @property
     def is_success(self) -> bool:
         return self.failure is None
@@ -455,6 +463,20 @@ class Transaction:
     @property
     def is_error(self) -> bool:
         return self.failure is not None
+
+    def on_resolve(self, fn: Callable[['Transaction'], None]) -> None:
+        """
+        Schedule a callback to run once this transaction settles.
+
+        Statements emitted by the callback are **not** part of this transaction: they are executed in a new
+        transaction, opened after this one has been committed or rolled back. This makes them survive a rollback
+        of this transaction, which is the whole point - a tainted transaction cannot accept new statements, and
+        even if it could, they would be lost in the following rollback.
+
+        :param fn: callable accepting the transaction to use for its statements.
+        """
+
+        self.on_resolve_callbacks.append(fn)
 
     def _on_success(self) -> None:
         from . import Sentry, TracingOp
@@ -560,6 +582,43 @@ class Transaction:
                 result._handle_exception(exc)
 
                 result._on_failure()
+
+        result._flush_on_resolve()
+
+    def _flush_on_resolve(self) -> None:
+        """
+        Run callbacks scheduled by :py:meth:`on_resolve`, in a transaction of their own.
+
+        Called once this transaction settled, i.e. after it has been either committed or rolled back. Never
+        raises - a failure to flush the outbox must not replace the failure that caused the deferral.
+        """
+
+        if not self.on_resolve_callbacks or self.is_in_on_resolve_chain:
+            return
+
+        from . import Failure
+
+        callbacks, self.on_resolve_callbacks = self.on_resolve_callbacks, []
+
+        failure: Optional[Failure] = None
+
+        try:
+            # Both `_on_success()` and `_on_failure()` left the session clean - committed or rolled back, and
+            # expunged - therefore it is safe to open a new transaction on it.
+            with Transaction.go(self.logger, self.session) as transaction:
+                transaction.is_in_on_resolve_chain = True
+
+                for callback in callbacks:
+                    callback(transaction)
+
+            if transaction.failure is not None:
+                failure = Failure.from_failure('failed to run transaction on-resolve callbacks', transaction.failure)
+
+        except Exception as exc:
+            failure = Failure.from_exc('failed to run transaction on-resolve callbacks', exc)
+
+        if failure is not None:
+            failure.handle(self.logger)
 
     def execute_dml(
         self,
