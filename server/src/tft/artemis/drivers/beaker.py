@@ -345,7 +345,7 @@ def _normalize_attribute_value(value: bs4._typing._AttributeValue) -> str:
 
 
 def _normalize_attribute(tag: bs4.Tag, name: str) -> str:
-    return _normalize_attribute_value(tag['name'])
+    return _normalize_attribute_value(tag[name])
 
 
 def parse_job_task_results(
