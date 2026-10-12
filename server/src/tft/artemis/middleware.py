@@ -731,7 +731,7 @@ class AgeLimit(dramatiq.middleware.age_limit.AgeLimit):
         raise dramatiq.middleware.SkipMessage('message exceeded its age limit')
 
 
-class HeartbeatMark(dramatiq.middleware.Middleware):  # type: ignore[misc]  # cannot subclass 'Middleware'
+class HeartbeatMark(dramatiq.middleware.Middleware):
     """
     On every received message, update a heartbeat file for this worker.
     """
@@ -773,7 +773,7 @@ class HeartbeatMark(dramatiq.middleware.Middleware):  # type: ignore[misc]  # ca
 
         self.filepath = filepath
 
-    def before_process_message(self, broker: dramatiq.broker.Broker, message: dramatiq.message.Message) -> None:
+    def before_process_message(self, broker: dramatiq.broker.Broker, message: dramatiq.MessageProxy) -> None:
         logger, _, _ = _message_tools(broker, message)
 
         if self.filepath is None:
