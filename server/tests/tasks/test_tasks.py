@@ -422,3 +422,69 @@ def test_update_guest_state_and_request_task_no_such_guest(
 
         assert guest.poolname is None
         assert guest.state == tft.artemis.guest.GuestState.SHELF_LOOKUP
+
+
+def _error_events(logger: gluetool.log.ContextAdapter, db: tft.artemis.db.DB) -> list[tft.artemis.db.GuestEvent]:
+    with db.get_session(logger) as new_session:
+        return list(
+            tft.artemis.db.SafeQuery.from_session(new_session, tft.artemis.db.GuestEvent)
+            .filter(tft.artemis.db.GuestEvent.eventname == 'error')
+            .all()
+            .unwrap()
+        )
+
+
+@pytest.mark.usefixtures('skip_sqlite', '_schema_initialized_actual')
+def test_fail_on_tainted_transaction(
+    logger: gluetool.log.ContextAdapter,
+    db: tft.artemis.db.DB,
+    session: sqlalchemy.orm.session.Session,
+    workspace: tft.artemis.tasks.Workspace,
+) -> None:
+    """
+    Test whether the error event survives the rollback of the transaction it would have been written to.
+    """
+
+    with tft.artemis.db.Transaction.go(logger, session) as transaction:
+        # Taint the transaction, just like a failing DML statement would.
+        transaction._handle_failure(tft.artemis.Failure('dummy DB failure'))
+
+        workspace._fail(transaction, tft.artemis.Failure('dummy failure'), 'dummy label')
+
+        # The event cannot be written now - the transaction would refuse the statement, and even if it did
+        # not, the following rollback would drop the event.
+        assert len(transaction.on_resolve_callbacks) == 1
+
+    assert transaction.complete is False
+
+    events = _error_events(logger, db)
+
+    assert len(events) == 1
+    assert events[0].guestname == 'dummy-guest'
+    assert events[0].details['error'] == 'dummy label'
+    assert events[0].details['failure']['message'] == 'dummy failure'
+
+
+@pytest.mark.usefixtures('skip_sqlite', '_schema_initialized_actual')
+def test_fail_on_healthy_transaction(
+    logger: gluetool.log.ContextAdapter,
+    db: tft.artemis.db.DB,
+    session: sqlalchemy.orm.session.Session,
+    workspace: tft.artemis.tasks.Workspace,
+) -> None:
+    """
+    Test whether a healthy transaction still carries the error event itself, without the detour.
+    """
+
+    with tft.artemis.db.Transaction.go(logger, session) as transaction:
+        workspace._fail(transaction, tft.artemis.Failure('dummy failure'), 'dummy label')
+
+        assert transaction.on_resolve_callbacks == []
+
+    assert transaction.complete is True
+
+    events = _error_events(logger, db)
+
+    assert len(events) == 1
+    assert events[0].guestname == 'dummy-guest'
+    assert events[0].details['error'] == 'dummy label'
