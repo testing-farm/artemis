@@ -1423,7 +1423,7 @@ def dispatch_group(
     try:
         messages = [task.message(*args) for task in tasks]
 
-        task_calls: list[TaskCall] = [TaskCall.from_call(task, *args, delay=delay) for task in tasks]
+        task_calls: list[TaskCall] = [TaskCall.from_message(BROKER, message, delay=delay) for message in messages]
 
         on_complete_task_call: Optional[TaskCall] = None
 
