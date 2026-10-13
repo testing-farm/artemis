@@ -3487,13 +3487,15 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
                 )
             )
             .lash(
-                lambda failure: _Error(failure)
-                if failure.recoverable
-                else _Ok(
-                    ProvisioningProgress(
-                        state=ProvisioningState.CANCEL,
-                        pool_data=guest_request.pool_data.mine_or_none(self, AWSPoolData) or AWSPoolData(),
-                        pool_failures=[failure],
+                lambda failure: (
+                    _Error(failure)
+                    if failure.recoverable
+                    else _Ok(
+                        ProvisioningProgress(
+                            state=ProvisioningState.CANCEL,
+                            pool_data=guest_request.pool_data.mine_or_none(self, AWSPoolData) or AWSPoolData(),
+                            pool_failures=[failure],
+                        )
                     )
                 )
             )
