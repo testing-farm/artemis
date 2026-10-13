@@ -1,9 +1,12 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
+import contextlib
+import contextvars
 import dataclasses
 import datetime
 import functools
+from collections.abc import Generator
 from typing import Any, Callable, Optional, cast
 
 import gluetool.log
@@ -352,13 +355,60 @@ def collect_pool_can_acquire(
     return Ok(can_acquire)
 
 
+#: Routing-run-scoped snapshot of pool metrics, keyed on pool name.
+#:
+#: Established by :py:func:`run_routing_policies` for the duration of a single routing attempt, and consulted
+#: by :py:func:`collect_pool_metrics`. ``None`` means "no routing attempt in progress", in which case metrics
+#: are collected without caching.
+_POOL_METRICS_SNAPSHOT: contextvars.ContextVar[Optional[dict[str, PoolMetrics]]] = contextvars.ContextVar(
+    'POOL_METRICS_SNAPSHOT', default=None
+)
+
+
+@contextlib.contextmanager
+def pool_metrics_snapshot() -> Generator[None, None, None]:
+    """
+    Let all :py:func:`collect_pool_metrics` calls made in this block share a single snapshot of pool metrics.
+
+    Each pool is synchronized at most once; policies running later in the chain reuse the containers collected
+    by the first policy that asked for them.
+
+    .. note::
+
+       Containers handed out by the snapshot are shared between policies, and policies must treat them
+       as read-only.
+    """
+
+    token = _POOL_METRICS_SNAPSHOT.set({})
+
+    try:
+        yield
+
+    finally:
+        _POOL_METRICS_SNAPSHOT.reset(token)
+
+
 def collect_pool_metrics(
     pools: list[PoolDriver[Any, Any]],
 ) -> Result[list[tuple[PoolDriver[Any, Any], PoolMetrics]], Failure]:
-    pool_metrics = [(pool, PoolMetrics(pool.poolname)) for pool in pools]
+    snapshot = _POOL_METRICS_SNAPSHOT.get()
 
-    for _, metrics in pool_metrics:
-        metrics.sync()
+    # Called outside of a routing attempt: use a throw-away snapshot, to keep a single code path.
+    if snapshot is None:
+        snapshot = {}
+
+    pool_metrics: list[tuple[PoolDriver[Any, Any], PoolMetrics]] = []
+
+    for pool in pools:
+        metrics = snapshot.get(pool.poolname)
+
+        if metrics is None:
+            metrics = PoolMetrics(pool.poolname)
+            metrics.sync()
+
+            snapshot[pool.poolname] = metrics
+
+        pool_metrics.append((pool, metrics))
 
     return Ok(pool_metrics)
 
@@ -1007,56 +1057,59 @@ def run_routing_policies(
     # changes made by various policies. Eventually, this ruling is the one we return.
     final_ruling = PolicyRuling.from_pools(pools)
 
-    for policy in policies:
-        with Sentry.start_span(TracingOp.FUNCTION, description='routing_policy') as tracing_span:
-            policy_name = cast(PolicyWrapperType, policy).policy_name
+    # Policies interested in pool metrics share a single snapshot: each pool is synchronized at most once
+    # per routing attempt, no matter how many policies ask for its metrics.
+    with pool_metrics_snapshot():
+        for policy in policies:
+            with Sentry.start_span(TracingOp.FUNCTION, description='routing_policy') as tracing_span:
+                policy_name = cast(PolicyWrapperType, policy).policy_name
 
-            tracing_span.set_tag('policyname', policy_name)
+                tracing_span.set_tag('policyname', policy_name)
 
-            r = policy(logger, session, [pool_ruling.pool for pool_ruling in final_ruling.pools], guest_request)
+                r = policy(logger, session, [pool_ruling.pool for pool_ruling in final_ruling.pools], guest_request)
 
-            RoutingMetrics.inc_policy_called(policy_name)
+                RoutingMetrics.inc_policy_called(policy_name)
 
-            if r.is_error:
-                history.append(RulingHistoryItem(policyname=policy_name, failure=r.unwrap_error()))
+                if r.is_error:
+                    history.append(RulingHistoryItem(policyname=policy_name, failure=r.unwrap_error()))
 
-                return Error(
-                    Failure.from_failure(
-                        'failed to route guest request',
-                        r.unwrap_error(),
-                        environment=guest_request.environment,
-                        history=_serialize_history(),
+                    return Error(
+                        Failure.from_failure(
+                            'failed to route guest request',
+                            r.unwrap_error(),
+                            environment=guest_request.environment,
+                            history=_serialize_history(),
+                        )
                     )
-                )
 
-            current_policy_ruling = r.unwrap()
+                current_policy_ruling = r.unwrap()
 
-            history.append(RulingHistoryItem(policyname=policy_name, ruling=current_policy_ruling))
+                history.append(RulingHistoryItem(policyname=policy_name, ruling=current_policy_ruling))
 
-            if current_policy_ruling.cancel:
-                # Mark all input pools are excluded
-                for pool in final_ruling.pools:
-                    RoutingMetrics.inc_pool_excluded(policy_name, pool.pool.poolname)
+                if current_policy_ruling.cancel:
+                    # Mark all input pools are excluded
+                    for pool in final_ruling.pools:
+                        RoutingMetrics.inc_pool_excluded(policy_name, pool.pool.poolname)
 
-                RoutingMetrics.inc_policy_canceled(policy_name)
+                    RoutingMetrics.inc_policy_canceled(policy_name)
 
-                final_ruling.pools = []
-                final_ruling.cancel = True
+                    final_ruling.pools = []
+                    final_ruling.cancel = True
 
-                _log_history()
+                    _log_history()
 
-                return Ok(final_ruling)
+                    return Ok(final_ruling)
 
-            # Store ruling metrics before we update ruling container with results from the policy.
-            for pool_ruling in current_policy_ruling.pools:
-                if pool_ruling.allowed:
-                    RoutingMetrics.inc_pool_allowed(policy_name, pool_ruling.pool.poolname)
+                # Store ruling metrics before we update ruling container with results from the policy.
+                for pool_ruling in current_policy_ruling.pools:
+                    if pool_ruling.allowed:
+                        RoutingMetrics.inc_pool_allowed(policy_name, pool_ruling.pool.poolname)
 
-                else:
-                    RoutingMetrics.inc_pool_excluded(policy_name, pool_ruling.pool.poolname)
+                    else:
+                        RoutingMetrics.inc_pool_excluded(policy_name, pool_ruling.pool.poolname)
 
-            # Now we can update our container with up-to-date results.
-            final_ruling.pools = [pool_ruling for pool_ruling in current_policy_ruling.pools if pool_ruling.allowed]
+                # Now we can update our container with up-to-date results.
+                final_ruling.pools = [pool_ruling for pool_ruling in current_policy_ruling.pools if pool_ruling.allowed]
 
     _log_history()
 
