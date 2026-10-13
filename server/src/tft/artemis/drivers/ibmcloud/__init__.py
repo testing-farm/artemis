@@ -404,24 +404,31 @@ class IBMCloudDriver(
         flavor_tag = r_flavor_tag.unwrap()
         flavor_tag_prefix = f'{flavor_tag}:'
 
+        r_flavors = self.get_pool_flavor_infos()
+        if r_flavors.is_error:
+            return Error(r_flavors.unwrap_error())
+
+        # IBMCloud lowercases tag values, so the name we read back is not necessarily the name we wrote. Map it
+        # back onto the name the flavor cache is keyed by, otherwise the usage lookup misses.
+        known_flavor_names = {flavor.name.lower(): flavor.name for flavor in r_flavors.unwrap()}
+
         r_instances_with_flavors = self.get_resources_by_filter(logger, f'tags:{flavor_tag}* AND type:{resource_type}')
 
         if r_instances_with_flavors.is_error:
             return Error(r_instances_with_flavors.unwrap_error())
 
-        return Ok(
-            {
-                instance['name']: next(
-                    (
-                        tag[len(flavor_tag_prefix) :]
-                        for tag in instance.get('tags', [])
-                        if tag.startswith(flavor_tag_prefix)
-                    ),
-                    UNKNOWN_FLAVOR,
-                )
-                for instance in r_instances_with_flavors.unwrap()
-            }
-        )
+        def _flavor_name(instance: IBMResourceInfoType) -> str:
+            for tag in instance.get('tags', []):
+                if not tag.startswith(flavor_tag_prefix):
+                    continue
+
+                tagged_name = tag[len(flavor_tag_prefix) :]
+
+                return known_flavor_names.get(tagged_name.lower(), tagged_name)
+
+            return UNKNOWN_FLAVOR
+
+        return Ok({instance['name']: _flavor_name(instance) for instance in r_instances_with_flavors.unwrap()})
 
     def _create_instance_request(
         self,
