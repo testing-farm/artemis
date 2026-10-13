@@ -60,6 +60,9 @@ properties:
   default-flavor:
     type: string
 
+  default-flavor-regex:
+    type: string
+
   default-region:
     type: string
 

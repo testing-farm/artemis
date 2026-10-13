@@ -13,6 +13,9 @@ properties:
   default-flavor:
     type: string
 
+  default-flavor-regex:
+    type: string
+
   capabilities:
     type: object
 
