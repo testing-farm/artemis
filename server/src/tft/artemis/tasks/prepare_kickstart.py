@@ -61,9 +61,8 @@ KS_LOGNAME = 'ks.cfg:dump'
 #: log with no explanation of why it is empty.
 KS_LOST_CONTENT = """# The kickstart script used for this installation was not preserved.
 #
-# The installation had already been started by another invocation of the `prepare-kickstart` task, and that
-# invocation did not store the rendered script. The script cannot be recovered from the guest either: it lived
-# in the root that `kexec` replaced when the installer took over.
+# Due to an internal error, the generated kickstart script was not stored, and could not be recovered from the guest
+# after starting system re-installation.
 """
 
 KNOB_PREPARE_KICKSTART_SSH_TIMEOUT: Knob[int] = Knob(
