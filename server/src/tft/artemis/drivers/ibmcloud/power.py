@@ -349,6 +349,13 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
 
                 return Ok(raw_instances)
 
+            r_instances_with_flavors = self.get_instances_with_flavor_tags_names(logger, 'pvm-instance')
+
+            if r_instances_with_flavors.is_error:
+                return Error(r_instances_with_flavors.unwrap_error())
+
+            instances_with_flavors = r_instances_with_flavors.unwrap()
+
             def _update_instance_usage(
                 logger: gluetool.log.ContextAdapter,
                 usage: PoolResourcesUsage,
@@ -363,24 +370,15 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
                 usage.cores += int(raw_instance.get('virtualCores', {}).get('assigned', 0))
                 # Instance memory is in GB
                 usage.memory += UNITS.Quantity(raw_instance['memory'], UNITS.gigabytes).to('bytes').magnitude
-                # Record actual flavor used
-                instance_flavor = flavor.name if flavor else UNKNOWN_FLAVOR
+                # Record actual flavor used. A tagged instance whose flavor is no longer in the cache
+                # (e.g. the flavor was dropped from configuration) still has its real name in the
+                # mapping, so prefer that over the UNKNOWN_FLAVOR sentinel.
+                instance_flavor = (
+                    flavor.name if flavor else instances_with_flavors.get(raw_instance['serverName'], UNKNOWN_FLAVOR)
+                )
                 usage.record_flavor(instance_flavor)
 
                 return Ok(None)
-
-            r_flavor_tag = self._instance_flavor_tag
-            if r_flavor_tag.is_error:
-                return Error(r_flavor_tag.unwrap_error())
-
-            r_instances_with_flavors = self.get_instances_with_flavor_tags_names(
-                logger, f'tags:{r_flavor_tag.unwrap()}* AND type:pvm-instance'
-            )
-
-            if r_instances_with_flavors.is_error:
-                return Error(r_instances_with_flavors.unwrap_error())
-
-            instances_with_flavors = r_instances_with_flavors.unwrap()
 
             r_instances_usage = self.do_fetch_pool_resources_metrics_flavor_usage(
                 logger,

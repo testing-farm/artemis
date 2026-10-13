@@ -154,6 +154,19 @@ _sanitize_tags = create_sanitize_tags(
 )
 
 
+def _sanitize_tag_name(name: str) -> str:
+    """
+    Sanitize a tag name the way IBMCloud would.
+
+    IBMCloud drops disallowed characters from tag keys and silently lowercases them, so a tag name coming from
+    Artemis configuration is not necessarily the tag name the cloud ends up storing.
+    """
+
+    sanitized_name, _ = next(iter(_sanitize_tags({name: ''})))
+
+    return sanitized_name.lower()
+
+
 def _serialize_tags(tags: Tags) -> list[str]:
     """
     Serialize tags to make them acceptable for IBM CLI.
@@ -263,6 +276,7 @@ class IBMCloudDriver(
         )
 
     @property
+    @override
     def _instance_flavor_tag(self) -> Result[str, Failure]:
         r_value = super()._instance_flavor_tag
 
@@ -270,13 +284,8 @@ class IBMCloudDriver(
             return Error(Failure.from_failure('Could not get instance flavor tag name', r_value.unwrap_error()))
 
         # IBMCloud strips certain characters and does not allow capital letters, so the default of ArtemisFlavor
-        # won't fly, need to apply that to the expected tag name from artemis config
-        # Additionally it will silently apply lower() to tags keys/values
-
-        # XXX Okay that is ugly, suggestions?
-        sanitized = [key.lower() for key, _ in _sanitize_tags({r_value.unwrap(): ''})]
-
-        return Ok(sanitized[0])
+        # won't fly, need to apply that to the expected tag name from artemis config.
+        return Ok(_sanitize_tag_name(r_value.unwrap()))
 
     @classmethod
     def timestamp_to_datetime(cls, timestamp: str) -> Result[datetime.datetime, Failure]:
@@ -329,7 +338,7 @@ class IBMCloudDriver(
         with IBMCloudSession(logger, self) as ibm_session:
             return self.tag_resource_sessionless(logger, ibm_session, resource_name, tags)
 
-    def get_resources_by_tags(
+    def get_resources_by_filter(
         self, logger: gluetool.log.ContextAdapter, resource_filter: str
     ) -> Result[list[IBMResourceInfoType], Failure]:
         """
@@ -361,7 +370,7 @@ class IBMCloudDriver(
         if not resources.get('items'):
             # No 'items' key discovered in the data that was sent
             return Error(
-                Failure(f'Unexpected output of ibmcloud resource show command for {resource_filter}: {resources}')
+                Failure(f'Unexpected output of ibmcloud resource search command for {resource_filter}: {resources}')
             )
 
         return Ok(resources['items'])
@@ -369,7 +378,7 @@ class IBMCloudDriver(
     def get_resource_tags(
         self, logger: gluetool.log.ContextAdapter, resource_filter: str
     ) -> Result[list[str], Failure]:
-        r_resources = self.get_resources_by_tags(logger, resource_filter)
+        r_resources = self.get_resources_by_filter(logger, resource_filter)
         if r_resources.is_error:
             return Error(r_resources.unwrap_error())
 
@@ -380,18 +389,22 @@ class IBMCloudDriver(
         return Ok(resources[0].get('tags', []))
 
     def get_instances_with_flavor_tags_names(
-        self, logger: gluetool.log.ContextAdapter, flavor_filter: str
+        self, logger: gluetool.log.ContextAdapter, resource_type: str
     ) -> Result[dict[str, str], Failure]:
         """
         As IBMCloud does not allow cheap (as in number of api calls) fetching of instances with tags,
-        let's make a single call for all ibmcloud resources that match required instances with flavor:* tag
-        defined, then form an instance_name: flavor mapping that will come handy in flavor usage metrics collection.
+        let's make a single call for all ibmcloud resources of the given type that match the instance
+        flavor:* tag, then form an instance_name: flavor mapping that will come handy in flavor usage
+        metrics collection.
         """
         r_flavor_tag = self._instance_flavor_tag
         if r_flavor_tag.is_error:
             return Error(r_flavor_tag.unwrap_error())
 
-        r_instances_with_flavors = self.get_resources_by_tags(logger, flavor_filter)
+        flavor_tag = r_flavor_tag.unwrap()
+        flavor_tag_prefix = f'{flavor_tag}:'
+
+        r_instances_with_flavors = self.get_resources_by_filter(logger, f'tags:{flavor_tag}* AND type:{resource_type}')
 
         if r_instances_with_flavors.is_error:
             return Error(r_instances_with_flavors.unwrap_error())
@@ -399,7 +412,11 @@ class IBMCloudDriver(
         return Ok(
             {
                 instance['name']: next(
-                    (tag.split(':')[-1] for tag in instance.get('tags', []) if tag.startswith(r_flavor_tag.unwrap())),
+                    (
+                        tag[len(flavor_tag_prefix) :]
+                        for tag in instance.get('tags', [])
+                        if tag.startswith(flavor_tag_prefix)
+                    ),
                     UNKNOWN_FLAVOR,
                 )
                 for instance in r_instances_with_flavors.unwrap()
