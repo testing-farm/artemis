@@ -47,6 +47,9 @@ properties:
   default-flavor:
     type: string
 
+  default-flavor-regex:
+    type: string
+
   default-location:
     type: string
 

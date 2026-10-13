@@ -3,6 +3,7 @@
 
 import dataclasses
 import functools
+import re
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Callable, Generic, Optional, Protocol, TypedDict, TypeVar, cast
 
@@ -230,14 +231,22 @@ def filter_flavors_prefer_default_flavor(
     if not flavors:
         return Ok(FilterRuling.from_flavors(image, flavors))
 
-    if not any(flavor.name == pool.pool_config['default-flavor'] for flavor in flavors):
+    if (default_flavor_regex := pool.pool_config.get('default-flavor-regex')) is not None:
+        default_flavor_patern = re.compile(default_flavor_regex)
+
+        matching_flavors = [flavor for flavor in flavors if default_flavor_patern.match(flavor.name)]
+
+        if matching_flavors:
+            return Ok(FilterRuling.from_flavors(image, matching_flavors))
+
         return Ok(FilterRuling.from_flavors(image, flavors))
 
-    return Ok(
-        FilterRuling.from_flavors(
-            image, flavors, matcher=lambda flavor: flavor.name == pool.pool_config['default-flavor']
-        )
-    )
+    matching_flavors = [flavor for flavor in flavors if flavor.name == pool.pool_config['default-flavor']]
+
+    if matching_flavors:
+        return Ok(FilterRuling.from_flavors(image, matching_flavors))
+
+    return Ok(FilterRuling.from_flavors(image, flavors))
 
 
 @image_flavor_filter

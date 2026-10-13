@@ -26,6 +26,9 @@ properties:
   default-flavor:
     type: string
 
+  default-flavor-regex:
+    type: string
+
   vpc-id:
     type: string
 
