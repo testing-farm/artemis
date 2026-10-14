@@ -793,16 +793,6 @@ def policy_one_attempt_forgiving(
     :py:data:`KNOB_ROUTE_POOL_FORGIVING_TIME`.
     """
 
-    r_events = guest_request.fetch_events(session, eventname='error')
-
-    if r_events.is_error:
-        return Error(r_events.unwrap_error())
-
-    events = r_events.unwrap()
-
-    if not events:
-        return Ok(PolicyRuling.from_pools(pools))
-
     r_time = KNOB_ROUTE_POOL_FORGIVING_TIME.get_value(session=session)
 
     if r_time.is_error:
@@ -810,10 +800,17 @@ def policy_one_attempt_forgiving(
 
     threshold = datetime.datetime.utcnow() - datetime.timedelta(seconds=r_time.unwrap())
 
+    # Let the database apply the forgiving window: older events are of no interest to us, and each one of them
+    # carries a complete serialized failure in its details.
+    r_events = guest_request.fetch_events(session, eventname='error', since=threshold)
+
+    if r_events.is_error:
+        return Error(r_events.unwrap_error())
+
+    events = r_events.unwrap()
+
     error_pools = [
-        event.details['failure'].get('poolname')
-        for event in events
-        if event.details and event.details.get('failure') and event.updated > threshold
+        event.details['failure'].get('poolname') for event in events if event.details and event.details.get('failure')
     ]
 
     return Ok(
@@ -835,24 +832,14 @@ def policy_timeout_reached(
     :py:data:`KNOB_ROUTE_REQUEST_MAX_TIME`.
     """
 
-    r_events = guest_request.fetch_events(session, eventname='created')
-
-    if r_events.is_error:
-        return Error(r_events.unwrap_error())
-
-    events = r_events.unwrap()
-
-    if not events:
-        return Ok(PolicyRuling.from_pools(pools))
-
     r_time = KNOB_ROUTE_REQUEST_MAX_TIME.get_value(session=session)
 
     if r_time.is_error:
         return Error(r_time.unwrap_error())
 
-    validity = events[0].updated + datetime.timedelta(seconds=r_time.unwrap())
+    validity = guest_request.ctime + datetime.timedelta(seconds=r_time.unwrap())
 
-    logger.info(f'event created {events[0].updated}, valid until {validity}')
+    logger.info(f'guest request created {guest_request.ctime}, valid until {validity}')
 
     if datetime.datetime.utcnow() > validity:
         return Ok(PolicyRuling(cancel=True))
@@ -1003,14 +990,14 @@ def policy_one_shot_only(
     if not guest_request.user_data.get(KNOB_ONE_SHOT_ONLY_LABEL.value):
         return Ok(PolicyRuling.from_pools(pools))
 
-    r_events = guest_request.fetch_events(session, eventname='acquisition-attempt')
+    # Only the existence of an attempt matters here, and each `acquisition-attempt` event carries a serialized
+    # flavor and image in its details - count the events instead of loading them.
+    r_count = guest_request.count_events(session, eventname='acquisition-attempt')
 
-    if r_events.is_error:
-        return Error(r_events.unwrap_error())
+    if r_count.is_error:
+        return Error(r_count.unwrap_error())
 
-    events = r_events.unwrap()
-
-    if not events:
+    if not r_count.unwrap():
         return Ok(PolicyRuling.from_pools(pools))
 
     return Ok(PolicyRuling(cancel=True))

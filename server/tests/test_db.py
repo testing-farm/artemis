@@ -787,3 +787,53 @@ def test_transaction_outbox_failure_is_not_raised(
     assert_failure_log(caplog, 'failed to run transaction on-resolve callbacks')
 
     assert _counter_names(session) == ['deferred']
+
+
+def _insert_guest_events(session: sqlalchemy.orm.session.Session, guestname: str, eventname: str, *ages: int) -> None:
+    now = datetime.datetime.utcnow()
+
+    for age in ages:
+        session.execute(
+            sqlalchemy.insert(GuestEvent).values(
+                updated=now - datetime.timedelta(seconds=age), guestname=guestname, eventname=eventname
+            )
+        )
+
+
+@pytest.mark.usefixtures('schema_actual')
+def test_guest_event_fetch_since(session: sqlalchemy.orm.session.Session) -> None:
+    """
+    Test whether :py:meth:`GuestEvent.fetch` applies the ``since`` bound given as a :py:class:`datetime.datetime`.
+    """
+
+    _insert_guest_events(session, 'dummy-guest', 'error', 10, 3600)
+    _insert_guest_events(session, 'other-guest', 'error', 10)
+    _insert_guest_events(session, 'dummy-guest', 'created', 10)
+
+    threshold = datetime.datetime.utcnow() - datetime.timedelta(seconds=60)
+
+    events = GuestEvent.fetch(session, guestname='dummy-guest', eventname='error', since=threshold).unwrap()
+
+    assert len(events) == 1
+    assert events[0].updated >= threshold
+
+
+@pytest.mark.usefixtures('schema_actual')
+def test_guest_event_count(session: sqlalchemy.orm.session.Session) -> None:
+    """
+    Test whether :py:meth:`GuestEvent.count` counts just the events matching the given criteria.
+    """
+
+    _insert_guest_events(session, 'dummy-guest', 'acquisition-attempt', 10, 20, 3600)
+    _insert_guest_events(session, 'other-guest', 'acquisition-attempt', 10)
+    _insert_guest_events(session, 'dummy-guest', 'error', 10)
+
+    assert GuestEvent.count(session, guestname='dummy-guest', eventname='acquisition-attempt').unwrap() == 3
+    assert GuestEvent.count(session, guestname='dummy-guest', eventname='no-such-event').unwrap() == 0
+
+    threshold = datetime.datetime.utcnow() - datetime.timedelta(seconds=60)
+
+    assert (
+        GuestEvent.count(session, guestname='dummy-guest', eventname='acquisition-attempt', since=threshold).unwrap()
+        == 2
+    )

@@ -620,19 +620,10 @@ def test_policy_least_crowded_one_pool_all_worthy(mockpatch: MockPatcher, mock_i
     do_test_policy_least_crowded(mockpatch, mock_inputs, one_crowded=False)
 
 
-def do_test_policy_timeout_reached(
-    mock_inputs: MockInputs, empty_events: bool = False, age: Optional[int] = None
-) -> None:
+def do_test_policy_timeout_reached(mock_inputs: MockInputs, age: Optional[int] = None) -> None:
     mock_logger, mock_session, _, mock_pools, mock_guest_request = mock_inputs
 
-    if empty_events:
-        mock_guest_request.fetch_events = lambda session, eventname: Ok([])
-
-    else:
-        event = tft.artemis.db.GuestEvent('created', 'dummy-guest')
-        event.updated = datetime.datetime.utcnow() - datetime.timedelta(seconds=(age or 0))
-
-        mock_guest_request.fetch_events = lambda session, eventname: Ok([event])
+    mock_guest_request.ctime = datetime.datetime.utcnow() - datetime.timedelta(seconds=(age or 0))
 
     r_ruling = tft.artemis.routing_policies.policy_timeout_reached(
         mock_logger, mock_session, mock_pools, mock_guest_request
@@ -648,7 +639,7 @@ def do_test_policy_timeout_reached(
         assert ruling.cancel is True
         assert ruling.allowed_pools == []
 
-    elif age == timeout_reached_age_too_young(mock_session) or empty_events:
+    elif age == timeout_reached_age_too_young(mock_session):
         assert ruling.cancel is False
         assert ruling.allowed_pools == mock_pools
 
@@ -661,23 +652,22 @@ def test_policy_timeout_reached_no_trigger(mock_inputs: MockInputs) -> None:
     do_test_policy_timeout_reached(mock_inputs, age=timeout_reached_age_too_young(mock_inputs.session))
 
 
-def test_policy_timeout_reached_no_events(mock_inputs: MockInputs) -> None:
-    do_test_policy_timeout_reached(mock_inputs, empty_events=True)
-
-
 def do_policy_one_attempt_forgiving(
     mock_inputs: MockInputs, empty_events: bool = False, age: Optional[int] = None
 ) -> None:
     mock_logger, mock_session, _, mock_pools, mock_guest_request = mock_inputs
 
     if empty_events:
-        mock_guest_request.fetch_events = lambda session, eventname: Ok([])
+        mock_guest_request.fetch_events = lambda session, eventname, since: Ok([])
 
     else:
         event = tft.artemis.db.GuestEvent('error', 'dummy-guest', failure={'poolname': 'dummy-pool'})
         event.updated = datetime.datetime.utcnow() - datetime.timedelta(seconds=(age or 0))
 
-        mock_guest_request.fetch_events = lambda session, eventname: Ok([event])
+        # Stand in for the `updated >= since` predicate the database applies on our behalf.
+        mock_guest_request.fetch_events = lambda session, eventname, since: Ok(
+            [event] if event.updated >= since else []
+        )
 
     r_ruling = tft.artemis.routing_policies.policy_one_attempt_forgiving(
         mock_logger, mock_session, mock_pools, mock_guest_request
@@ -710,6 +700,48 @@ def test_policy_one_attempt_forgiving_no_trigger(mock_inputs: MockInputs) -> Non
 
 def test_policy_one_attempt_forgiving_no_events(mock_inputs: MockInputs) -> None:
     do_policy_one_attempt_forgiving(mock_inputs, empty_events=True)
+
+
+def do_test_policy_one_shot_only(mock_inputs: MockInputs, labeled: bool = True, attempts: int = 0) -> None:
+    mock_logger, mock_session, _, mock_pools, mock_guest_request = mock_inputs
+
+    # Must be a real mapping: `MagicMock.get()` would return a truthy mock, and the policy would never
+    # recognize an unlabeled request.
+    mock_guest_request.user_data = (
+        {tft.artemis.routing_policies.KNOB_ONE_SHOT_ONLY_LABEL.value: 'yes'} if labeled else {}
+    )
+
+    mock_guest_request.count_events = lambda session, eventname: Ok(attempts)
+
+    r_ruling = tft.artemis.routing_policies.policy_one_shot_only(
+        mock_logger, mock_session, mock_pools, mock_guest_request
+    )
+
+    assert r_ruling.is_ok
+
+    ruling = r_ruling.unwrap()
+
+    assert isinstance(ruling, tft.artemis.routing_policies.PolicyRuling)
+
+    if labeled and attempts:
+        assert ruling.cancel is True
+        assert ruling.allowed_pools == []
+
+    else:
+        assert ruling.cancel is False
+        assert ruling.allowed_pools == mock_pools
+
+
+def test_policy_one_shot_only(mock_inputs: MockInputs) -> None:
+    do_test_policy_one_shot_only(mock_inputs, attempts=1)
+
+
+def test_policy_one_shot_only_no_attempt_yet(mock_inputs: MockInputs) -> None:
+    do_test_policy_one_shot_only(mock_inputs, attempts=0)
+
+
+def test_policy_one_shot_only_not_labeled(mock_inputs: MockInputs) -> None:
+    do_test_policy_one_shot_only(mock_inputs, labeled=False, attempts=1)
 
 
 def do_test_policy_enough_resources(
