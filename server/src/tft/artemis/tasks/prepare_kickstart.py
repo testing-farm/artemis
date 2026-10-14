@@ -136,7 +136,7 @@ class Workspace(_Workspace):
 
         log = r_guest_log.unwrap()
 
-        if log is not None and log.blobs:
+        if log is not None and log.blobs and any(blob.ctime >= self.gr.mtime for blob in log.blobs):
             # An earlier invocation did store the script, there is nothing to explain.
             return None
 
