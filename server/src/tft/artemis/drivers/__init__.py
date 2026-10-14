@@ -99,7 +99,7 @@ BackendFlavorT = TypeVar('BackendFlavorT')
 
 Tags = dict[str, str]
 
-UNKNOWN_FLAVOR = 'unknown flavor'
+UNKNOWN_FLAVOR_NAME = '<unknown>'
 
 # Types for configuration of custom/patched flavors
 #
