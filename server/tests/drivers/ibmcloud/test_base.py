@@ -2,10 +2,15 @@
 # SPDX-License-Identifier: Apache-2.0
 
 
+from typing import Any
+
+import gluetool.log
 import pytest
+from gluetool.result import Ok, Result
 
 import tft.artemis.drivers.ibmcloud
 import tft.artemis.drivers.ibmcloud.vpc
+from tft.artemis import Failure
 from tft.artemis.drivers import UNKNOWN_FLAVOR_NAME
 
 FLAVOR_TAG = 'ArtemisInstanceFlavor'
@@ -115,3 +120,33 @@ def test_map_flavor_names_collision_is_ambiguous() -> None:
 
     assert ambiguous == {collided}
     assert mapping[collided] == UNKNOWN_FLAVOR_NAME
+
+
+def test_flavor_tag_search_is_region_scoped(
+    monkeypatch: pytest.MonkeyPatch,
+    logger: gluetool.log.ContextAdapter,
+    ibmvpc_pool: tft.artemis.drivers.ibmcloud.vpc.IBMCloudVPCDriver,
+) -> None:
+    # Instance names are unique only within a region, while the underlying Global Search spans the whole
+    # account. The usage lookup must scope the search to the pool's region, otherwise a same-named instance
+    # in another region could overwrite the local one in the name-keyed mapping and mis-report its flavor.
+    ibmvpc_pool.pool_config['default-region'] = 'eu-de'
+
+    monkeypatch.setattr(type(ibmvpc_pool), '_instance_flavor_tag', property(lambda self: Ok('artemisflavor')))
+    monkeypatch.setattr(ibmvpc_pool, 'get_pool_flavor_infos', lambda: Ok([]))
+
+    captured_filters: list[str] = []
+
+    def _fake_search(_logger: gluetool.log.ContextAdapter, resource_filter: str) -> Result[list[Any], Failure]:
+        captured_filters.append(resource_filter)
+
+        return Ok([])
+
+    monkeypatch.setattr(ibmvpc_pool, 'get_resources_by_filter', _fake_search)
+
+    r_instances = ibmvpc_pool.get_instances_with_flavor_tags_names(logger, 'instance')
+
+    assert r_instances.is_ok
+    assert len(captured_filters) == 1
+    assert 'region:eu-de' in captured_filters[0]
+    assert 'type:instance' in captured_filters[0]
