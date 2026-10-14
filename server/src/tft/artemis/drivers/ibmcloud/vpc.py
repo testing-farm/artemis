@@ -18,7 +18,7 @@ from tmt.hardware import UNITS
 from typing_extensions import TypeAlias, override
 
 from tft.artemis.drivers import (
-    UNKNOWN_FLAVOR,
+    UNKNOWN_FLAVOR_NAME,
     PoolDriver,
     PoolImageCompatible,
     PoolImageInfo,
@@ -406,9 +406,9 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, 
                 usage.memory += UNITS.Quantity(raw_instance['memory'], UNITS.gigabytes).to('bytes').magnitude
                 # Record actual flavor used. A tagged instance whose flavor is no longer in the cache
                 # (e.g. the flavor was dropped from configuration) still has its real name in the
-                # mapping, so prefer that over the UNKNOWN_FLAVOR sentinel.
+                # mapping, so prefer that over the UNKNOWN_FLAVOR_NAME sentinel.
                 instance_flavor = (
-                    flavor.name if flavor else instances_with_flavors.get(raw_instance['name'], UNKNOWN_FLAVOR)
+                    flavor.name if flavor else instances_with_flavors.get(raw_instance['name'], UNKNOWN_FLAVOR_NAME)
                 )
                 usage.record_flavor(instance_flavor)
 
@@ -418,7 +418,7 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, 
                 logger,
                 resources.usage,
                 _fetch_instances,
-                lambda raw_instance: instances_with_flavors.get(raw_instance['name'], UNKNOWN_FLAVOR),
+                lambda raw_instance: instances_with_flavors.get(raw_instance['name'], UNKNOWN_FLAVOR_NAME),
                 _update_instance_usage,
             )
 
