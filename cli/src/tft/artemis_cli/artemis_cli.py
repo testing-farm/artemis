@@ -1689,7 +1689,13 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
             super().__init__(layout, layout_cell, title='Broker', title_align='left')
 
             self.enabled = bool(
-                cfg.tree and cfg.tree.broker and cfg.tree.broker.metrics
+                cfg.tree
+                and cfg.tree.broker
+                and cfg.tree.broker.metrics
+                and cfg.broker_management_hostname
+                and cfg.broker_management_port
+                and cfg.broker_management_username
+                and cfg.broker_management_password
             )
 
         def do_refresh(self) -> Any:
@@ -1970,7 +1976,7 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
         cast(AboutPanel, layout['header-top.right'].renderable),
         cast(WorkerPanel, layout['header-top.left.left'].renderable),
         cast(DBPanel, layout['header-top.left.right'].renderable),
-        cast(GuestsPanel, layout['header-bottom.broker'].renderable),
+        cast(BrokerPanel, layout['header-bottom.broker'].renderable),
         cast(TasksPanel, layout['content'].renderable),
     ]
 
