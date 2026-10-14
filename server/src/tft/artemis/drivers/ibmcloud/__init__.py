@@ -167,6 +167,53 @@ def _sanitize_tag_name(name: str) -> str:
     return sanitized_name.lower()
 
 
+def _sanitize_flavor_tag_value(flavor_tag: str, flavor_name: str) -> str:
+    """
+    Reproduce the tag value IBMCloud ends up storing for a given flavor name.
+
+    A flavor name is written as the value of a ``flavor_tag:<name>`` tag, so it goes through the very same
+    character replacement and length truncation as any other tag value - and the truncation depends on the
+    length of ``flavor_tag`` itself. On top of that IBMCloud silently lowercases tag values. To match the
+    value we read back off an instance against the name the flavor cache is keyed by, we must apply the
+    exact same transformation here.
+    """
+
+    _, tag_value = next(iter(_sanitize_tags({flavor_tag: flavor_name})))
+
+    return tag_value.lower()
+
+
+def _map_flavor_names_by_tag_value(flavor_tag: str, flavor_names: list[str]) -> tuple[dict[str, str], set[str]]:
+    """
+    Build a mapping from the tag value IBMCloud stores back onto the configured flavor name.
+
+    :returns: a tuple of the ``stored tag value -> flavor name`` mapping and the set of tag values that
+        more than one configured flavor name sanitizes to. Ambiguous tag values are mapped to
+        :py:data:`UNKNOWN_FLAVOR_NAME` in the returned mapping, since the original name cannot be recovered.
+    """
+
+    mapping: dict[str, str] = {}
+    ambiguous: set[str] = set()
+
+    for flavor_name in flavor_names:
+        tag_value = _sanitize_flavor_tag_value(flavor_tag, flavor_name)
+
+        if tag_value in ambiguous:
+            continue
+
+        existing = mapping.get(tag_value)
+
+        if existing is not None and existing != flavor_name:
+            ambiguous.add(tag_value)
+            mapping[tag_value] = UNKNOWN_FLAVOR_NAME
+
+            continue
+
+        mapping[tag_value] = flavor_name
+
+    return mapping, ambiguous
+
+
 def _serialize_tags(tags: Tags) -> list[str]:
     """
     Serialize tags to make them acceptable for IBM CLI.
@@ -408,9 +455,19 @@ class IBMCloudDriver(
         if r_flavors.is_error:
             return Error(r_flavors.unwrap_error())
 
-        # IBMCloud lowercases tag values, so the name we read back is not necessarily the name we wrote. Map it
-        # back onto the name the flavor cache is keyed by, otherwise the usage lookup misses.
-        known_flavor_names = {flavor.name.lower(): flavor.name for flavor in r_flavors.unwrap()}
+        # IBMCloud sanitizes and lowercases tag values, so the name we read back off an instance is not
+        # necessarily the name we wrote. Reproduce the write-time transformation to map the stored value back
+        # onto the name the flavor cache is keyed by, otherwise the usage lookup misses.
+        known_flavor_names, ambiguous_tag_values = _map_flavor_names_by_tag_value(
+            flavor_tag, [flavor.name for flavor in r_flavors.unwrap()]
+        )
+
+        for tag_value in ambiguous_tag_values:
+            Failure(
+                'multiple flavor names map to the same sanitized tag value',
+                flavor_tag=flavor_tag,
+                tag_value=tag_value,
+            ).handle(logger)
 
         r_instances_with_flavors = self.get_resources_by_filter(logger, f'tags:{flavor_tag}* AND type:{resource_type}')
 
