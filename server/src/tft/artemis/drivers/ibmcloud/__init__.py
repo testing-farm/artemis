@@ -18,7 +18,7 @@ from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from typing_extensions import override
 
 from tft.artemis.drivers import (
-    UNKNOWN_FLAVOR,
+    UNKNOWN_FLAVOR_NAME,
     BackendFlavorT,
     CLISessionPermanentDir,
     ConsoleUrlData,
@@ -426,7 +426,7 @@ class IBMCloudDriver(
 
                 return known_flavor_names.get(tagged_name.lower(), tagged_name)
 
-            return UNKNOWN_FLAVOR
+            return UNKNOWN_FLAVOR_NAME
 
         return Ok({instance['name']: _flavor_name(instance) for instance in r_instances_with_flavors.unwrap()})
 
