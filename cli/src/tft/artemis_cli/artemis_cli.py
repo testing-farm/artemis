@@ -9,7 +9,6 @@ import math
 import os.path
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 import time
@@ -77,6 +76,42 @@ stackprinter.set_excepthook(
 )
 
 click_completion.init()
+
+
+def broker_management_request(
+    cfg: Configuration,
+    path: str,
+    method: str = 'GET',
+    json_body: Optional[Dict[str, Any]] = None,
+) -> Any:
+    """
+    Query the RabbitMQ management HTTP API and return the decoded JSON response.
+
+    Replaces shelling out to ``rabbitmqadmin``: ``list queues`` maps to
+    ``GET /api/queues``, and ``get queue=...`` maps to
+    ``POST /api/queues/<vhost>/<queue>/get``.
+    """
+
+    assert cfg.broker_management_hostname
+    assert cfg.broker_management_port
+    assert cfg.broker_management_username
+    assert cfg.broker_management_password
+
+    url = (
+        f'http://{cfg.broker_management_hostname}:{cfg.broker_management_port}'
+        f'/api/{path}'
+    )
+
+    response = cfg.http_session.request(
+        method,
+        url,
+        auth=(cfg.broker_management_username, cfg.broker_management_password),
+        json=json_body,
+    )
+
+    response.raise_for_status()
+
+    return response.json()
 
 
 API_FEATURE_VERSIONS = {
@@ -1676,25 +1711,7 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
             with status('Updating broker stats...'):
                 response = fetch_artemis(cfg, '', url=str(cfg.tree.broker.metrics))
 
-                raw_queues = json.loads(
-                    subprocess.check_output(
-                        [
-                            'rabbitmqadmin',
-                            '--format',
-                            'pretty_json',
-                            '--host',
-                            cfg.broker_management_hostname,
-                            '--port',
-                            str(cfg.broker_management_port),
-                            '--username',
-                            cfg.broker_management_username,
-                            '--password',
-                            cfg.broker_management_password,
-                            'list',
-                            'queues',
-                        ]
-                    ).decode()
-                )
+                raw_queues = broker_management_request(cfg, 'queues')
 
                 queues = {queue['name']: queue for queue in raw_queues}
 
@@ -2010,24 +2027,8 @@ def cmd_status_broker(
     assert cfg.broker_management_username
     assert cfg.broker_management_password
 
-    rabbitmqadm_command: List[str] = [
-        'rabbitmqadmin',
-        '--format',
-        'pretty_json',
-        '--host',
-        cfg.broker_management_hostname,
-        '--port',
-        str(cfg.broker_management_port),
-        '--username',
-        cfg.broker_management_username,
-        '--password',
-        cfg.broker_management_password,
-    ]
-
     with cfg.console.status('Updating broker task list...', spinner='dots') as status:
-        queues = json.loads(
-            subprocess.check_output(rabbitmqadm_command + ['list', 'queues']).decode()
-        )
+        queues = broker_management_request(cfg, 'queues')
 
         while True:
             status.update('Updating broker task list...')
@@ -2037,16 +2038,18 @@ def cmd_status_broker(
                     if queue['name'].endswith('.XQ') and not include_dead_letters:
                         continue
 
-                    output = json.loads(
-                        subprocess.check_output(
-                            rabbitmqadm_command
-                            + [
-                                'get',
-                                f'queue={queue["name"]}',
-                                'ackmode=ack_requeue_true',
-                                'count=999999',
-                            ]
-                        )
+                    vhost = urllib.parse.quote('/', safe='')
+                    name = urllib.parse.quote(queue['name'], safe='')
+
+                    output = broker_management_request(
+                        cfg,
+                        f'queues/{vhost}/{name}/get',
+                        method='POST',
+                        json_body={
+                            'count': 999999,
+                            'ackmode': 'ack_requeue_true',
+                            'encoding': 'auto',
+                        },
                     )
 
                     for message in output:

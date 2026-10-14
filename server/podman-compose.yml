@@ -16,6 +16,8 @@ services:
     image: "docker.io/bitnamilegacy/rabbitmq:4.0.7"
     ports:
       - "5672:5672"
+      - "15672:15672"
+      - "15692:15692"
     environment:
       RABBITMQ_DEFAULT_USER: artemis
       RABBITMQ_DEFAULT_PASS: artemis
