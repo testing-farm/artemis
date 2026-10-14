@@ -469,7 +469,16 @@ class IBMCloudDriver(
                 tag_value=tag_value,
             ).handle(logger)
 
-        r_instances_with_flavors = self.get_resources_by_filter(logger, f'tags:{flavor_tag}* AND type:{resource_type}')
+        # `ibmcloud resource search` queries IBMCloud Global Search, which spans every region in the account,
+        # while the usage metrics are collected per pool (i.e. per region). Instance names are unique only
+        # within a region, so without a region filter a same-named instance in another region could overwrite
+        # the local one in the name-keyed mapping below and its flavor would be mis-reported. Restrict the
+        # search to the pool's region to keep the mapping scoped to the instances we actually account for.
+        region = self.pool_config['default-region']
+
+        r_instances_with_flavors = self.get_resources_by_filter(
+            logger, f'tags:{flavor_tag}* AND type:{resource_type} AND region:{region}'
+        )
 
         if r_instances_with_flavors.is_error:
             return Error(r_instances_with_flavors.unwrap_error())
