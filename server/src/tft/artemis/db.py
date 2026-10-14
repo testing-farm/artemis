@@ -972,8 +972,8 @@ class GuestEvent(Base):
         page_size: Optional[int] = None,
         sort_field: str = 'updated',
         sort_order: str = 'desc',
-        since: Optional[str] = None,
-        until: Optional[str] = None,
+        since: Optional[Union[str, datetime.datetime]] = None,
+        until: Optional[Union[str, datetime.datetime]] = None,
     ) -> Result[list['GuestEvent'], 'Failure']:
         query = SafeQuery.from_session(session, GuestEvent)
 
@@ -1006,6 +1006,38 @@ class GuestEvent(Base):
                 query = query.offset((page - 1) * page_size)
 
         return query.all()
+
+    @classmethod
+    def count(
+        cls,
+        session: sqlalchemy.orm.session.Session,
+        eventname: Optional[str] = None,
+        guestname: Optional[str] = None,
+        since: Optional[Union[str, datetime.datetime]] = None,
+        until: Optional[Union[str, datetime.datetime]] = None,
+    ) -> Result[int, 'Failure']:
+        """
+        Count events matching given criteria.
+
+        Unlike :py:meth:`fetch`, no event is loaded from the database. Use this method when only the number
+        of events - or their mere existence - matters, to avoid transferring their ``_details`` blobs.
+        """
+
+        query = SafeQuery.from_session(session, GuestEvent)
+
+        if guestname is not None:
+            query = query.filter(cls.guestname == guestname)
+
+        if eventname:
+            query = query.filter(cls.eventname == eventname)
+
+        if since:
+            query = query.filter(cls.updated >= since)
+
+        if until:
+            query = query.filter(cls.updated <= until)
+
+        return query.count()
 
 
 UserDataType = dict[str, Optional[str]]
@@ -1439,8 +1471,8 @@ class GuestRequest(Base):
         page_size: Optional[int] = None,
         sort_field: str = 'updated',
         sort_order: str = 'desc',
-        since: Optional[str] = None,
-        until: Optional[str] = None,
+        since: Optional[Union[str, datetime.datetime]] = None,
+        until: Optional[Union[str, datetime.datetime]] = None,
     ) -> Result[list['GuestEvent'], 'Failure']:
         return GuestEvent.fetch(
             session,
@@ -1450,6 +1482,21 @@ class GuestRequest(Base):
             page_size=page_size,
             sort_field=sort_field,
             sort_order=sort_order,
+            since=since,
+            until=until,
+        )
+
+    def count_events(
+        self,
+        session: sqlalchemy.orm.session.Session,
+        eventname: Optional[str] = None,
+        since: Optional[Union[str, datetime.datetime]] = None,
+        until: Optional[Union[str, datetime.datetime]] = None,
+    ) -> Result[int, 'Failure']:
+        return GuestEvent.count(
+            session,
+            guestname=self.guestname,
+            eventname=eventname,
             since=since,
             until=until,
         )
