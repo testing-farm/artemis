@@ -1651,7 +1651,7 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
         def __init__(self, layout: Layout, layout_cell: str, **kwargs: Any) -> None:
             super().__init__(
                 Align(
-                    '[red]Here will be a content...[/red]',
+                    '[red]Here will be content...[/red]',
                     align='center',
                     vertical='middle',
                 ),
