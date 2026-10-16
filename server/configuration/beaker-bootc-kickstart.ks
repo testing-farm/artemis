@@ -14,10 +14,7 @@ reboot
 
 {% snippet 'password' %}
 
-zerombr
-clearpart --all --initlabel
-
-autopart
+{% snippet 'rhts_partitions' %}
 
 %pre --log=/dev/console
 {% snippet 'rhts_pre' %}
@@ -28,4 +25,5 @@ autopart
 %end
 
 {% snippet 'onerror' %}
+{{ ks_appends|join('\n') }}
 {% snippet 'postinstall_done' %}

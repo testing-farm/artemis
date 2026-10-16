@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 
 import bs4
 import gluetool.utils
+import jinja2.sandbox
 import pytest
 import sqlalchemy.orm.session
 from gluetool.log import ContextAdapter
@@ -732,6 +733,60 @@ def test_merge_beaker_filters(filters: list[str], expected: str) -> None:
     final_filter = r_final_filter.unwrap()
 
     assert str(final_filter) == expected
+
+
+def test_inline_ks_appends() -> None:
+    # TFT-4430: Beaker ignores `<ks_append/>` snippets of a recipe with a custom `<kickstart/>` template.
+    snippets = [
+        'part / --fstype=xfs --grow --ondisk="mpatha"',
+        '%pre --log=/dev/console\necho "{{ not rendered }}" \'%}\'\n%end',
+        'rootpw \\ünicode',
+    ]
+
+    job = bs4.BeautifulSoup(
+        textwrap.dedent(
+            """
+            <job>
+              <recipeSet>
+                <recipe>
+                  <kickstart><![CDATA[text
+            {{ ks_appends|join('\\n') }}
+            reboot]]></kickstart>
+                  <ks_appends>
+                    {}
+                  </ks_appends>
+                </recipe>
+              </recipeSet>
+            </job>
+            """
+        )
+        .strip()
+        .replace('{}', ''.join(f'<ks_append><![CDATA[{snippet}]]></ks_append>' for snippet in snippets)),
+        'xml',
+    )
+
+    tft.artemis.drivers.beaker.inline_ks_appends(job)
+
+    # Round-trip through the serialization used when submitting the job.
+    submitted = bs4.BeautifulSoup(job.prettify(), 'xml')
+
+    assert submitted.find('ks_appends') is None
+
+    template = jinja2.sandbox.SandboxedEnvironment(trim_blocks=True).from_string(submitted.find('kickstart').get_text())
+
+    assert template.render(ks_appends=[]).strip() == '\n'.join(['text', *snippets, 'reboot'])
+
+
+def test_inline_ks_appends_no_custom_kickstart() -> None:
+    job_xml = (
+        '<job><recipeSet><recipe><ks_appends><ks_append>reboot</ks_append></ks_appends></recipe></recipeSet></job>'
+    )
+
+    job = bs4.BeautifulSoup(job_xml, 'xml')
+
+    tft.artemis.drivers.beaker.inline_ks_appends(job)
+
+    assert job == bs4.BeautifulSoup(job_xml, 'xml')
 
 
 @pytest.mark.parametrize(

@@ -4,6 +4,7 @@
 import dataclasses
 import datetime
 import enum
+import json
 import os
 import re
 import shlex
@@ -1101,6 +1102,38 @@ def merge_beaker_filters(filters: list[bs4.BeautifulSoup]) -> Result[bs4.Beautif
     return _prune_beaker_filter(container)
 
 
+def inline_ks_appends(job: bs4.BeautifulSoup) -> None:
+    """
+    Move kickstart snippets of recipes with a custom kickstart template into the template itself.
+
+    Beaker hands ``<ks_append/>`` snippets to its own kickstart templates only. A recipe with a custom
+    ``<kickstart/>`` template gets an empty ``ks_appends`` list, and the snippets never reach the installer.
+    To work around it, the snippets are prepended to the template as a Jinja ``set`` statement, restoring
+    the ``ks_appends`` variable for the template to render.
+
+    The snippets are encoded as Jinja string literals. Like Beaker does with its own templates, any Jinja
+    syntax they contain is left unrendered.
+
+    :param job: Beaker job XML to modify in place.
+    """
+
+    for recipe in job.find_all('recipe'):
+        kickstart = recipe.find('kickstart', recursive=False)
+        ks_appends = recipe.find('ks_appends', recursive=False)
+
+        if kickstart is None or ks_appends is None:
+            continue
+
+        snippets = [ks_append.get_text() for ks_append in ks_appends.find_all('ks_append')]
+
+        kickstart.string = (
+            f'{{% set ks_appends = {json.dumps(snippets, ensure_ascii=False)} %}}\n'  # noqa: FS003
+            f'{kickstart.get_text()}'
+        )
+
+        ks_appends.decompose()
+
+
 def create_beaker_filter(
     environment: Environment,
     guest_request: GuestRequest,
@@ -1707,6 +1740,8 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
 
         except Exception as exc:
             return Error(Failure.from_exc('failed to parse job XML', exc, command_output=bkr_output.process_output))
+
+        inline_ks_appends(job_xml)
 
         if beaker_filter is None:
             return Ok((job_xml, is_bootc))
