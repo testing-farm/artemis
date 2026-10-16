@@ -207,6 +207,7 @@ class Configuration:
     artemis_api_url: Optional[str] = None
     artemis_api_version: Optional[semver.VersionInfo] = None
 
+    broker_management_scheme: str = 'http'
     broker_management_hostname: Optional[str] = None
     broker_management_port: Optional[str] = None
     broker_management_username: Optional[str] = None
