@@ -99,7 +99,8 @@ def broker_management_request(
     assert cfg.broker_management_password
 
     url = (
-        f'http://{cfg.broker_management_hostname}:{cfg.broker_management_port}'
+        f'{cfg.broker_management_scheme}://'
+        f'{cfg.broker_management_hostname}:{cfg.broker_management_port}'
         f'/api/{path}'
     )
 
@@ -266,6 +267,7 @@ def cli_root(
     # "management API not configured" instead of crashing the whole CLI.
     management = (cfg.raw_config.get('broker') or {}).get('management') or {}
 
+    cfg.broker_management_scheme = management.get('scheme', 'http')
     cfg.broker_management_hostname = management.get('hostname')
     cfg.broker_management_port = management.get('port')
     cfg.broker_management_username = management.get('username')
