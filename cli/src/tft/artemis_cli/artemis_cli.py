@@ -19,6 +19,7 @@ from typing import Any, Callable, Dict, Generator, Iterator, List, Optional, Tup
 
 import click
 import click_completion
+import requests
 import pydantic
 import rich.console
 import rich.panel
@@ -1715,38 +1716,89 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
             assert cfg.broker_management_password
 
             with status('Updating broker stats...'):
-                response = fetch_artemis(cfg, '', url=str(cfg.tree.broker.metrics))
+                # The metrics exporter and the management API are separate
+                # services that may be unreachable (down, wrong credentials,
+                # only reachable from inside the cluster). Neither failure must
+                # take down the whole TUI, so handle their errors here and
+                # degrade the panel instead.
+                #
+                # ``allow_statuses`` is widened so ``fetch_artemis`` returns the
+                # response instead of calling ``logger.error`` (which exits the
+                # process) on a non-2xx reply from the exporter.
+                try:
+                    response = fetch_artemis(
+                        cfg,
+                        '',
+                        url=str(cfg.tree.broker.metrics),
+                        allow_statuses=list(range(100, 600)),
+                    )
 
-                raw_queues = broker_management_request(cfg, 'queues')
+                except requests.RequestException:
+                    response = None
 
-                queues = {queue['name']: queue for queue in raw_queues}
+                try:
+                    raw_queues = broker_management_request(cfg, 'queues')
+
+                except requests.RequestException:
+                    raw_queues = None
+
+            if response is None or not response.ok:
+                return Align(
+                    '[red]Broker metrics not available[/red]',
+                    align='center',
+                    vertical='middle',
+                )
 
             metrics = parse_metrics(response.text)
 
             ready = extract_metric(metrics, 'rabbitmq_queue_messages_ready')
             unacked = extract_metric(metrics, 'rabbitmq_queue_messages_unacked')
 
-            def _format_queue(name: str) -> str:
-                return (
-                    '/'.join(
-                        [
-                            f'[blue]{queues[name]["messages"]}[/blue]',
-                            f'[blue]{queues[name + ".DQ"]["messages"]}[/blue]',
-                            f'{queues[name + ".XQ"]["messages"]}',
-                        ]
+            columns = [
+                f'[yellow]{ready:.0f} ready[/yellow]',
+                f'[red]{unacked:.0f} unacked[/red]',
+            ]
+
+            if raw_queues is None:
+                columns.append('[red]Broker management API not available[/red]')
+
+            else:
+                # GET /api/queues returns queues from every vhost the user can
+                # see, so key by (vhost, name) - two vhosts may hold a queue of
+                # the same name and keying by name alone lets them overwrite each
+                # other. Artemis' queues live in the default vhost '/'.
+                queues = {
+                    (queue['vhost'], queue['name']): queue for queue in raw_queues
+                }
+
+                def _messages(name: str) -> Any:
+                    # A queue may be missing from /api/queues (declared lazily,
+                    # or no worker consumes it) or present without a 'messages'
+                    # count yet (management plugin hasn't sampled it). Show a
+                    # placeholder instead of raising KeyError and killing the TUI.
+                    return queues.get(('/', name), {}).get('messages', '-')
+
+                def _format_queue(name: str) -> str:
+                    return (
+                        '/'.join(
+                            [
+                                f'[blue]{_messages(name)}[/blue]',
+                                f'[blue]{_messages(name + ".DQ")}[/blue]',
+                                f'{_messages(name + ".XQ")}',
+                            ]
+                        )
+                        + f' [yellow]{name}/DQ/XQ[/yellow]'
                     )
-                    + f' [yellow]{name}/DQ/XQ[/yellow]'
+
+                columns.extend(
+                    [
+                        _format_queue('default'),
+                        _format_queue('periodic'),
+                        _format_queue('pool-data-refresh'),
+                    ]
                 )
 
-            return ' | '.join(
-                [
-                    f'[yellow]{ready:.0f} ready[/yellow]',
-                    f'[red]{unacked:.0f} unacked[/red]',
-                    _format_queue('default'),
-                    _format_queue('periodic'),
-                    _format_queue('pool-data-refresh'),
-                ]
-            )
+            return ' | '.join(columns)
 
     class WorkerPanel(RefreshablePanel):
         def __init__(self, layout: Layout, layout_cell: str) -> None:
@@ -2044,7 +2096,7 @@ def cmd_status_broker(
                     if queue['name'].endswith('.XQ') and not include_dead_letters:
                         continue
 
-                    vhost = urllib.parse.quote('/', safe='')
+                    vhost = urllib.parse.quote(queue['vhost'], safe='')
                     name = urllib.parse.quote(queue['name'], safe='')
 
                     output = broker_management_request(
