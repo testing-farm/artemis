@@ -259,17 +259,17 @@ def cli_root(
     )
     assert cfg.artemis_api_url is not None
 
-    if 'broker' in cfg.raw_config:
-        cfg.broker_management_hostname = cfg.raw_config['broker']['management'][
-            'hostname'
-        ]
-        cfg.broker_management_port = cfg.raw_config['broker']['management']['port']
-        cfg.broker_management_username = cfg.raw_config['broker']['management'][
-            'username'
-        ]
-        cfg.broker_management_password = cfg.raw_config['broker']['management'][
-            'password'
-        ]
+    # The broker config and its management block are optional and not covered
+    # by the config schema, so read defensively: a config may define `broker`
+    # with only `metrics` (for the ready/unacked counts) and no `management`
+    # block. Missing keys leave the credentials as None, which callers treat as
+    # "management API not configured" instead of crashing the whole CLI.
+    management = (cfg.raw_config.get('broker') or {}).get('management') or {}
+
+    cfg.broker_management_hostname = management.get('hostname')
+    cfg.broker_management_port = management.get('port')
+    cfg.broker_management_username = management.get('username')
+    cfg.broker_management_password = management.get('password')
 
     if 'authentication' in cfg.raw_config:
         cfg.authentication_method = cfg.raw_config['authentication']['method']
