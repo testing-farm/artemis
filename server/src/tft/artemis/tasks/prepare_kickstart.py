@@ -458,14 +458,7 @@ class Workspace(_Workspace):
 
             self.logger.debug('successfuly executed the installer')
 
-            r_delay = KNOB_PREPARE_KICKSTART_WAIT_INITIAL_DELAY.get_value(
-                session=self.session, entityname=self.pool.poolname
-            )
-
-            if r_delay.is_error:
-                return self._error(r_delay, 'failed to load the delay for installation check task')
-
-            self.request_task(transaction, prepare_kickstart_wait, self.guestname, delay=r_delay.unwrap(), guestname=self.guestname)
+            return self._request_installation_check(transaction)
 
     @classmethod
     def create(

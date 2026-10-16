@@ -1538,7 +1538,7 @@ def _request_task(
         else:
             GuestRequest.log_event_by_guestname(
                 logger,
-                session,
+                transaction,
                 guestname,
                 'task-requested',
                 **failure_details,
@@ -1555,7 +1555,7 @@ def _request_task(
         else:
             GuestRequest.log_event_by_guestname(
                 logger,
-                session,
+                transaction,
                 guestname,
                 'task-requested',
                 **failure_details,
@@ -2322,7 +2322,7 @@ class Workspace:
         r = _request_task(self.logger, transaction, task, *task_arguments, delay=delay, guestname=guestname)
 
         if r.is_error:
-            self._error(r, 'failed to create task request')
+            self._error(transaction, r, 'failed to create task request')
 
     def request_task_sequence(
         self,
@@ -2338,20 +2338,6 @@ class Workspace:
 
         if r.is_error:
             self._error(transaction, r, 'failed to create task request')
-
-    def request_task_sequence(
-        self,
-        transaction: Transaction,
-        tasks: list[tuple[Actor, tuple[ActorArgumentType, ...]]],
-        delay: Optional[int] = None,
-    ) -> None:
-        if self.result:
-            return
-
-        r = _request_task_sequence(self.logger, transaction, tasks, delay=delay)
-
-        if r.is_error:
-            self._error(transaction, r, 'failed to create task sequence request')
 
     def run_hook(self, hook_name: str, **kwargs: Any) -> Result[Any, Failure]:
         r_engine = hook_engine(hook_name)

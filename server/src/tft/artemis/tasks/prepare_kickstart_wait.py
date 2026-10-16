@@ -281,7 +281,11 @@ class Workspace(_Workspace):
                     return self._error(transaction, r_delay, 'failed to load task retry delay')
 
                 self.request_task(
-                    transaction, prepare_kickstart_wait, self.guestname, delay=r_delay.unwrap(), guestname=self.guestname
+                    transaction,
+                    prepare_kickstart_wait,
+                    self.guestname,
+                    delay=r_delay.unwrap(),
+                    guestname=self.guestname,
                 )
 
                 return None
