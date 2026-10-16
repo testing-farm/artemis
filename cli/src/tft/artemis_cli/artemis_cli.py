@@ -19,8 +19,8 @@ from typing import Any, Callable, Dict, Generator, Iterator, List, Optional, Tup
 
 import click
 import click_completion
-import requests
 import pydantic
+import requests
 import rich.console
 import rich.panel
 import rich.table
@@ -1689,11 +1689,16 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
         def __init__(self, layout: Layout, layout_cell: str) -> None:
             super().__init__(layout, layout_cell, title='Broker', title_align='left')
 
+            # The panel only needs the metrics exporter to show ready/unacked
+            # counts. The management API (for the per-queue breakdown) is
+            # optional - when it is not configured the panel just omits those
+            # columns, so it must not gate the whole panel.
             self.enabled = bool(
-                cfg.tree
-                and cfg.tree.broker
-                and cfg.tree.broker.metrics
-                and cfg.broker_management_hostname
+                cfg.tree and cfg.tree.broker and cfg.tree.broker.metrics
+            )
+
+            self.management_enabled = bool(
+                cfg.broker_management_hostname
                 and cfg.broker_management_port
                 and cfg.broker_management_username
                 and cfg.broker_management_password
@@ -1710,10 +1715,6 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
             assert cfg.tree
             assert cfg.tree.broker
             assert cfg.tree.broker.metrics
-            assert cfg.broker_management_hostname
-            assert cfg.broker_management_port
-            assert cfg.broker_management_username
-            assert cfg.broker_management_password
 
             with status('Updating broker stats...'):
                 # The metrics exporter and the management API are separate
@@ -1736,10 +1737,17 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
                 except requests.RequestException:
                     response = None
 
-                try:
-                    raw_queues = broker_management_request(cfg, 'queues')
+                # The management API is optional; only query it when fully
+                # configured. ``broker_management_request`` asserts on the
+                # credentials, and an AssertionError would not be caught below.
+                if self.management_enabled:
+                    try:
+                        raw_queues = broker_management_request(cfg, 'queues')
 
-                except requests.RequestException:
+                    except requests.RequestException:
+                        raw_queues = None
+
+                else:
                     raw_queues = None
 
             if response is None or not response.ok:
@@ -1759,7 +1767,10 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
                 f'[red]{unacked:.0f} unacked[/red]',
             ]
 
-            if raw_queues is None:
+            if not self.management_enabled:
+                columns.append('[yellow]management API not configured[/yellow]')
+
+            elif raw_queues is None:
                 columns.append('[red]Broker management API not available[/red]')
 
             else:
