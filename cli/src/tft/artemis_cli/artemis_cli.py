@@ -9,7 +9,6 @@ import math
 import os.path
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 import time
@@ -21,6 +20,7 @@ from typing import Any, Callable, Dict, Generator, Iterator, List, Optional, Tup
 import click
 import click_completion
 import pydantic
+import requests
 import rich.console
 import rich.panel
 import rich.table
@@ -77,6 +77,43 @@ stackprinter.set_excepthook(
 )
 
 click_completion.init()
+
+
+def broker_management_request(
+    cfg: Configuration,
+    path: str,
+    method: str = 'GET',
+    json_body: Optional[Dict[str, Any]] = None,
+) -> Any:
+    """
+    Query the RabbitMQ management HTTP API and return the decoded JSON response.
+
+    Replaces shelling out to ``rabbitmqadmin``: ``list queues`` maps to
+    ``GET /api/queues``, and ``get queue=...`` maps to
+    ``POST /api/queues/<vhost>/<queue>/get``.
+    """
+
+    assert cfg.broker_management_hostname
+    assert cfg.broker_management_port
+    assert cfg.broker_management_username
+    assert cfg.broker_management_password
+
+    url = (
+        f'{cfg.broker_management_scheme}://'
+        f'{cfg.broker_management_hostname}:{cfg.broker_management_port}'
+        f'/api/{path}'
+    )
+
+    response = cfg.broker_http_session.request(
+        method,
+        url,
+        auth=(cfg.broker_management_username, cfg.broker_management_password),
+        json=json_body,
+    )
+
+    response.raise_for_status()
+
+    return response.json()
 
 
 API_FEATURE_VERSIONS = {
@@ -223,17 +260,18 @@ def cli_root(
     )
     assert cfg.artemis_api_url is not None
 
-    if 'broker' in cfg.raw_config:
-        cfg.broker_management_hostname = cfg.raw_config['broker']['management'][
-            'hostname'
-        ]
-        cfg.broker_management_port = cfg.raw_config['broker']['management']['port']
-        cfg.broker_management_username = cfg.raw_config['broker']['management'][
-            'username'
-        ]
-        cfg.broker_management_password = cfg.raw_config['broker']['management'][
-            'password'
-        ]
+    # The broker config and its management block are optional and not covered
+    # by the config schema, so read defensively: a config may define `broker`
+    # with only `metrics` (for the ready/unacked counts) and no `management`
+    # block. Missing keys leave the credentials as None, which callers treat as
+    # "management API not configured" instead of crashing the whole CLI.
+    management = (cfg.raw_config.get('broker') or {}).get('management') or {}
+
+    cfg.broker_management_scheme = management.get('scheme', 'http')
+    cfg.broker_management_hostname = management.get('hostname')
+    cfg.broker_management_port = management.get('port')
+    cfg.broker_management_username = management.get('username')
+    cfg.broker_management_password = management.get('password')
 
     if 'authentication' in cfg.raw_config:
         cfg.authentication_method = cfg.raw_config['authentication']['method']
@@ -1616,7 +1654,7 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
         def __init__(self, layout: Layout, layout_cell: str, **kwargs: Any) -> None:
             super().__init__(
                 Align(
-                    '[red]Here will be a content...[/red]',
+                    '[red]Here will be content...[/red]',
                     align='center',
                     vertical='middle',
                 ),
@@ -1653,8 +1691,19 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
         def __init__(self, layout: Layout, layout_cell: str) -> None:
             super().__init__(layout, layout_cell, title='Broker', title_align='left')
 
+            # The panel only needs the metrics exporter to show ready/unacked
+            # counts. The management API (for the per-queue breakdown) is
+            # optional - when it is not configured the panel just omits those
+            # columns, so it must not gate the whole panel.
             self.enabled = bool(
                 cfg.tree and cfg.tree.broker and cfg.tree.broker.metrics
+            )
+
+            self.management_enabled = bool(
+                cfg.broker_management_hostname
+                and cfg.broker_management_port
+                and cfg.broker_management_username
+                and cfg.broker_management_password
             )
 
         def do_refresh(self) -> Any:
@@ -1670,19 +1719,98 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
             assert cfg.tree.broker.metrics
 
             with status('Updating broker stats...'):
-                response = fetch_artemis(cfg, '', url=str(cfg.tree.broker.metrics))
+                # The metrics exporter and the management API are separate
+                # services that may be unreachable (down, wrong credentials,
+                # only reachable from inside the cluster). Neither failure must
+                # take down the whole TUI, so handle their errors here and
+                # degrade the panel instead.
+                #
+                # Both are polled through ``broker_http_session`` (no retries,
+                # fail fast) rather than the retrying main-API session, so a
+                # slow or wrong-scheme endpoint surfaces an error in seconds
+                # instead of freezing the refresh loop and starving the other
+                # panels.
+                try:
+                    response: Optional[requests.Response] = cfg.broker_http_session.get(
+                        str(cfg.tree.broker.metrics)
+                    )
+
+                except requests.RequestException:
+                    response = None
+
+                # The management API is optional; only query it when fully
+                # configured. ``broker_management_request`` asserts on the
+                # credentials, and an AssertionError would not be caught below.
+                if self.management_enabled:
+                    try:
+                        raw_queues = broker_management_request(cfg, 'queues')
+
+                    except requests.RequestException:
+                        raw_queues = None
+
+                else:
+                    raw_queues = None
+
+            if response is None or not response.ok:
+                return Align(
+                    '[red]Broker metrics not available[/red]',
+                    align='center',
+                    vertical='middle',
+                )
 
             metrics = parse_metrics(response.text)
 
             ready = extract_metric(metrics, 'rabbitmq_queue_messages_ready')
             unacked = extract_metric(metrics, 'rabbitmq_queue_messages_unacked')
 
-            return ' | '.join(
-                [
-                    f'[yellow]{ready:.0f} ready[/yellow]',
-                    f'[red]{unacked:.0f} unacked[/red]',
-                ]
-            )
+            columns = [
+                f'[yellow]{ready:.0f} ready[/yellow]',
+                f'[red]{unacked:.0f} unacked[/red]',
+            ]
+
+            if not self.management_enabled:
+                columns.append('[yellow]management API not configured[/yellow]')
+
+            elif raw_queues is None:
+                columns.append('[red]Broker management API not available[/red]')
+
+            else:
+                # GET /api/queues returns queues from every vhost the user can
+                # see, so key by (vhost, name) - two vhosts may hold a queue of
+                # the same name and keying by name alone lets them overwrite each
+                # other. Artemis' queues live in the default vhost '/'.
+                queues = {
+                    (queue['vhost'], queue['name']): queue for queue in raw_queues
+                }
+
+                def _messages(name: str) -> Any:
+                    # A queue may be missing from /api/queues (declared lazily,
+                    # or no worker consumes it) or present without a 'messages'
+                    # count yet (management plugin hasn't sampled it). Show a
+                    # placeholder instead of raising KeyError and killing the TUI.
+                    return queues.get(('/', name), {}).get('messages', '-')
+
+                def _format_queue(name: str) -> str:
+                    return (
+                        '/'.join(
+                            [
+                                f'[blue]{_messages(name)}[/blue]',
+                                f'[blue]{_messages(name + ".DQ")}[/blue]',
+                                f'{_messages(name + ".XQ")}',
+                            ]
+                        )
+                        + f' [yellow]{name}/DQ/XQ[/yellow]'
+                    )
+
+                columns.extend(
+                    [
+                        _format_queue('default'),
+                        _format_queue('periodic'),
+                        _format_queue('pool-data-refresh'),
+                    ]
+                )
+
+            return ' | '.join(columns)
 
     class WorkerPanel(RefreshablePanel):
         def __init__(self, layout: Layout, layout_cell: str) -> None:
@@ -1860,7 +1988,16 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
 
         layout.split_column(
             Layout(name='header-top', size=3),
-            Layout(GuestsPanel(layout, 'header-bottom'), name='header-bottom', size=3),
+            Layout(
+                BrokerPanel(layout, 'header-bottom.broker'),
+                name='header-bottom.broker',
+                size=3,
+            ),
+            Layout(
+                GuestsPanel(layout, 'header-bottom.guests'),
+                name='header-bottom.guests',
+                size=3,
+            ),
             Layout(TasksPanel(layout, 'content'), name='content'),
             Layout(f'Updating state every {tick} seconds...', name='footer', size=1),
         )
@@ -1873,10 +2010,6 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
         layout['header-top.left'].split_row(
             Layout(
                 WorkerPanel(layout, 'header-top.left.left'), name='header-top.left.left'
-            ),
-            Layout(
-                BrokerPanel(layout, 'header-top.left.middle'),
-                name='header-top.left.middle',
             ),
             Layout(
                 DBPanel(layout, 'header-top.left.right'), name='header-top.left.right'
@@ -1906,13 +2039,13 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
     fast_panels: List[RefreshablePanel] = [
         cast(AboutPanel, layout['header-top.right'].renderable),
         cast(WorkerPanel, layout['header-top.left.left'].renderable),
-        cast(BrokerPanel, layout['header-top.left.middle'].renderable),
         cast(DBPanel, layout['header-top.left.right'].renderable),
+        cast(BrokerPanel, layout['header-bottom.broker'].renderable),
         cast(TasksPanel, layout['content'].renderable),
     ]
 
     slow_panels: List[RefreshablePanel] = [
-        cast(GuestsPanel, layout['header-bottom'].renderable)
+        cast(GuestsPanel, layout['header-bottom.guests'].renderable)
     ]
 
     with Live(layout, screen=True, auto_refresh=True):
@@ -1964,24 +2097,8 @@ def cmd_status_broker(
     assert cfg.broker_management_username
     assert cfg.broker_management_password
 
-    rabbitmqadm_command: List[str] = [
-        'rabbitmqadmin',
-        '--format',
-        'pretty_json',
-        '--host',
-        cfg.broker_management_hostname,
-        '--port',
-        str(cfg.broker_management_port),
-        '--username',
-        cfg.broker_management_username,
-        '--password',
-        cfg.broker_management_password,
-    ]
-
     with cfg.console.status('Updating broker task list...', spinner='dots') as status:
-        queues = json.loads(
-            subprocess.check_output(rabbitmqadm_command + ['list', 'queues']).decode()
-        )
+        queues = broker_management_request(cfg, 'queues')
 
         while True:
             status.update('Updating broker task list...')
@@ -1991,16 +2108,18 @@ def cmd_status_broker(
                     if queue['name'].endswith('.XQ') and not include_dead_letters:
                         continue
 
-                    output = json.loads(
-                        subprocess.check_output(
-                            rabbitmqadm_command
-                            + [
-                                'get',
-                                f'queue={queue["name"]}',
-                                'ackmode=ack_requeue_true',
-                                'count=999999',
-                            ]
-                        )
+                    vhost = urllib.parse.quote(queue['vhost'], safe='')
+                    name = urllib.parse.quote(queue['name'], safe='')
+
+                    output = broker_management_request(
+                        cfg,
+                        f'queues/{vhost}/{name}/get',
+                        method='POST',
+                        json_body={
+                            'count': 999999,
+                            'ackmode': 'ack_requeue_true',
+                            'encoding': 'auto',
+                        },
                     )
 
                     for message in output:

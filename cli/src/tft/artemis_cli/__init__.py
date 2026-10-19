@@ -165,6 +165,7 @@ class BasicAuthConfiguration(BaseConfigurationModel):
 
 
 class BrokerManagementConfiguration(BaseConfigurationModel):
+    scheme: str = 'http'
     hostname: str
     port: int
     username: str
@@ -207,6 +208,7 @@ class Configuration:
     artemis_api_url: Optional[str] = None
     artemis_api_version: Optional[semver.VersionInfo] = None
 
+    broker_management_scheme: str = 'http'
     broker_management_hostname: Optional[str] = None
     broker_management_port: Optional[str] = None
     broker_management_username: Optional[str] = None
@@ -218,6 +220,11 @@ class Configuration:
     provisioning_poll_interval: float = 10
 
     http_session: requests.Session = dataclasses.field(default_factory=requests.Session)
+
+    # Dedicated session for the broker metrics exporter and management API
+    broker_http_session: requests.Session = dataclasses.field(
+        default_factory=requests.Session
+    )
 
     def install_http_retries(
         self, timeout: int, retries: int, retry_backoff_factor: int
@@ -241,6 +248,13 @@ class Configuration:
 
         self.http_session.mount('https://', timeout_adapter)
         self.http_session.mount('http://', timeout_adapter)
+
+        # No retries for the broker session - fail fast and let the panel
+        # degrade instead of blocking the refresh loop.
+        broker_adapter = TimeoutHTTPAdapter(timeout=timeout, max_retries=0)
+
+        self.broker_http_session.mount('https://', broker_adapter)
+        self.broker_http_session.mount('http://', broker_adapter)
 
 
 def _yaml_to_string(data: Any, indent: Optional[int] = 2) -> str:
