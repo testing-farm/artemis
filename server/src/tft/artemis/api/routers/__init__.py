@@ -495,6 +495,11 @@ def _environment_compat(environment: dict[str, Optional[Any]]) -> dict[str, Opti
     if 'kickstart' not in environment:
         environment['kickstart'] = {}
 
+    # COMPAT: v0.0.90: `spot_instance` was dropped from the environment, replaced by the
+    # `route.policies.use-spot.label` user data tag. Older APIs and clients still send it,
+    # but `Environment` no longer accepts it - drop it to keep them working.
+    environment.pop('spot_instance', None)
+
     return environment
 
 

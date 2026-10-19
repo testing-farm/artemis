@@ -4,7 +4,7 @@
 import base64
 import re
 from re import Pattern
-from typing import cast
+from typing import Any, Optional, cast
 from unittest.mock import MagicMock
 
 import _pytest.monkeypatch
@@ -733,6 +733,67 @@ def test_validate_environment(
     else:
         with pytest.raises(tft.artemis.api.errors.BadRequestError):
             tft.artemis.api.routers._validate_environment(logger, environment.serialize(), schema, {})
+
+
+def test_environment_compat_drops_spot_instance() -> None:
+    environment: dict[str, Optional[Any]] = {
+        'hw': {'arch': 'x86_64'},
+        'os': {'compose': 'foo'},
+        'kickstart': {},
+        'spot_instance': None,
+    }
+
+    assert tft.artemis.api.routers._environment_compat(environment) == {
+        'hw': {'arch': 'x86_64'},
+        'os': {'compose': 'foo'},
+        'kickstart': {},
+    }
+
+
+def test_spot_instance_environment_backward_compat(
+    logger: gluetool.log.ContextAdapter,
+    schemas: dict[str, tft.artemis.JSONSchemaType],
+) -> None:
+    def _environment() -> dict[str, Optional[Any]]:
+        return {
+            'hw': {'arch': 'x86_64'},
+            'os': {'compose': 'foo'},
+            'kickstart': {},
+            'spot_instance': None,
+        }
+
+    # Older API versions still accept `spot_instance`, and the compat layer drops it before parsing
+    # so that old clients and stored requests keep working.
+    validated = tft.artemis.api.routers._validate_environment(logger, _environment(), schemas['v0.0.89'], {})
+    assert 'spot_instance' not in validated
+
+    parsed = tft.artemis.api.routers._parse_environment(logger, validated, {})
+    assert parsed.hw.arch == 'x86_64'
+
+    # The current API version rejects the dropped field.
+    with pytest.raises(tft.artemis.api.errors.BadRequestError):
+        tft.artemis.api.routers._validate_environment(logger, _environment(), schemas['v0.0.90'], {})
+
+
+def test_guest_request_environment_drops_spot_instance() -> None:
+    # Stored `_environment` blobs may still contain the dropped `spot_instance` field.
+    guest_request = tft.artemis.db.GuestRequest(
+        guestname='dummy-guest',
+        _environment={
+            'hw': {'arch': 'x86_64'},
+            'os': {'compose': 'foo'},
+            'kickstart': {},
+            'pool': None,
+            'snapshots': False,
+            'spot_instance': None,
+        },
+        ownername='dummy-user',
+    )
+
+    environment = guest_request.environment
+
+    assert environment.hw.arch == 'x86_64'
+    assert 'spot_instance' not in guest_request._environment
 
 
 @pytest.fixture(name='schema_pools')
