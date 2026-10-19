@@ -373,12 +373,11 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
                 # Record actual flavor used. A tagged instance whose flavor is no longer in the cache
                 # (e.g. the flavor was dropped from configuration) still has its real name in the
                 # mapping, so prefer that over the UNKNOWN_FLAVOR_NAME sentinel.
-                instance_flavor = (
+                usage.record_flavor(
                     flavor.name
                     if flavor
                     else instances_with_flavors.get(raw_instance['serverName'], UNKNOWN_FLAVOR_NAME)
                 )
-                usage.record_flavor(instance_flavor)
 
                 return Ok(None)
 
