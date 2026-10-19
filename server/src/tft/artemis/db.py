@@ -1105,6 +1105,11 @@ class GuestRequest(Base):
         if 'kickstart' not in self._environment:
             self._environment['kickstart'] = {}
 
+        # v0.0.90: dropped `spot_instance` from the environment, replaced by the
+        # `route.policies.use-spot.label` user data tag. Stored requests may still contain it,
+        # but `Environment` no longer accepts this field - drop it for backward compatibility.
+        self._environment.pop('spot_instance', None)
+
         return Environment.unserialize(self._environment)
 
     @property
