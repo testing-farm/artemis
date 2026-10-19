@@ -2098,10 +2098,6 @@ class Environment(SerializableContainer):
     # Deprecated, is kept for backward compatibility with older APIs.
     snapshots: bool = False
 
-    #: If set, the request limits the instance to be either a spot instance, or a regular one. If left unset,
-    #: the request does not care, and any kind of instance can be used.
-    spot_instance: Optional[bool] = None
-
     @property
     def has_hw_constraints(self) -> bool:
         """
