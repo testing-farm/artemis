@@ -104,7 +104,7 @@ def broker_management_request(
         f'/api/{path}'
     )
 
-    response = cfg.http_session.request(
+    response = cfg.broker_http_session.request(
         method,
         url,
         auth=(cfg.broker_management_username, cfg.broker_management_password),
@@ -1725,15 +1725,14 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
                 # take down the whole TUI, so handle their errors here and
                 # degrade the panel instead.
                 #
-                # ``allow_statuses`` is widened so ``fetch_artemis`` returns the
-                # response instead of calling ``logger.error`` (which exits the
-                # process) on a non-2xx reply from the exporter.
+                # Both are polled through ``broker_http_session`` (no retries,
+                # fail fast) rather than the retrying main-API session, so a
+                # slow or wrong-scheme endpoint surfaces an error in seconds
+                # instead of freezing the refresh loop and starving the other
+                # panels.
                 try:
-                    response = fetch_artemis(
-                        cfg,
-                        '',
-                        url=str(cfg.tree.broker.metrics),
-                        allow_statuses=list(range(100, 600)),
+                    response: Optional[requests.Response] = cfg.broker_http_session.get(
+                        str(cfg.tree.broker.metrics)
                     )
 
                 except requests.RequestException:
