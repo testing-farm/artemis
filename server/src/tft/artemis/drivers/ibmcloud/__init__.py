@@ -462,22 +462,21 @@ class IBMCloudDriver(
             flavor_tag, [flavor.name for flavor in r_flavors.unwrap()]
         )
 
-        for tag_value in ambiguous_tag_values:
-            Failure(
-                'multiple flavor names map to the same sanitized tag value',
-                flavor_tag=flavor_tag,
-                tag_value=tag_value,
-            ).handle(logger)
+        if ambiguous_tag_values:
+            # If after applying IBMCloud transformation we end up with 2 different flavors per configuration mapped to
+            # the same actual one - that is a big problem, so let's fail hard until fixed.
+            return Error(
+                Failure(
+                    'multiple flavor names map to the same sanitized tag value',
+                    ambiguous_tag_values=ambiguous_tag_values,
+                    recoverable=False,
+                )
+            )
 
-        # `ibmcloud resource search` queries IBMCloud Global Search, which spans every region in the account,
-        # while the usage metrics are collected per pool (i.e. per region). Instance names are unique only
-        # within a region, so without a region filter a same-named instance in another region could overwrite
-        # the local one in the name-keyed mapping below and its flavor would be mis-reported. Restrict the
-        # search to the pool's region to keep the mapping scoped to the instances we actually account for.
-        region = self.pool_config['default-region']
-
+        # Resource search is global, let's restrict it to the pool's region to keep the mapping scoped
+        # to the instances we actually account for.
         r_instances_with_flavors = self.get_resources_by_filter(
-            logger, f'tags:{flavor_tag}* AND type:{resource_type} AND region:{region}'
+            logger, f'tags:{flavor_tag}* AND type:{resource_type} AND region:{self.pool_config["default-region"]}'
         )
 
         if r_instances_with_flavors.is_error:
