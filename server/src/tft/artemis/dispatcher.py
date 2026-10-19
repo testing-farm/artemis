@@ -179,7 +179,9 @@ def handle_task_sequence_request(
         )
 
         if r_sequence_delete.is_error:
-            return _log_failure('failed to remove task sequence request', r_sequence_delete.unwrap_error())
+            return _log_failure(
+                Failure.from_failure('failed to remove task sequence request', r_sequence_delete.unwrap_error())
+            )
 
         DispatcherMetrics.inc_successful_dispatched_task_sequence(
             [task_call.actor.actor_name for task_call in task_calls]
