@@ -165,6 +165,7 @@ class BasicAuthConfiguration(BaseConfigurationModel):
 
 
 class BrokerManagementConfiguration(BaseConfigurationModel):
+    scheme: str = 'http'
     hostname: str
     port: int
     username: str
