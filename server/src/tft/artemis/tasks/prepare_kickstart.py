@@ -458,7 +458,7 @@ class Workspace(_Workspace):
 
             self.logger.debug('successfuly executed the installer')
 
-            self._request_installation_check(transaction)
+            return self._request_installation_check(transaction)
 
     @classmethod
     def create(
