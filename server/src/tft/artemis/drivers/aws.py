@@ -2396,10 +2396,13 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
             if key is not None:
                 actual_keys.add(key)
 
-        expected_keys: set[SecurityGroupRuleKey] = {
-            _rule_key(rule.type, rule.protocol, rule.port_min, rule.port_max, rule.cidr)
-            for rule in [*security_group_request.rules.ingress, *security_group_request.rules.egress]
-        }
+        expected_keys: set[SecurityGroupRuleKey] = set()
+        for rule in [*security_group_request.rules.ingress, *security_group_request.rules.egress]:
+            key = _rule_key(rule.type, rule.protocol, rule.port_min, rule.port_max, rule.cidr)
+            # Config rules carry an already-validated CIDR (SecurityGroupRule.__post_init__), so _rule_key can never
+            # fail here. A None means a genuinely broken expected rule - surface it loudly rather than silently drop it.
+            assert key is not None, f'unexpected invalid security group rule: {rule}'
+            expected_keys.add(key)
 
         # AWS adds its default rules on its own; ignore them on both sides so they never force a recreate.
         defaults = AWS_DEFAULT_SECURITY_GROUP_RULE_KEYS
