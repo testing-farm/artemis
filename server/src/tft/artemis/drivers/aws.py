@@ -296,6 +296,15 @@ JQ_QUERY_SECURITY_GROUP_IDS = jq.compile('.SecurityGroups | .[] | .GroupId')
 #: Canonical, comparable identity of a security group rule: (direction, protocol, port_min, port_max, cidr).
 SecurityGroupRuleKey: TypeAlias = tuple[str, str, Optional[int], Optional[int], str]
 
+#: Rules AWS attaches to every freshly created security group on its own: an allow-all egress rule (all protocols)
+#: for each IP family the VPC carries - 0.0.0.0/0 always, and ::/0 as well in a dual-stack (IPv6-enabled) VPC. We
+#: never request these, so they are stripped from both the expected and the actual rule sets before comparing,
+#: letting a group be reused even though it carries them.
+AWS_DEFAULT_SECURITY_GROUP_RULE_KEYS: set[SecurityGroupRuleKey] = {
+    ('egress', '-1', None, None, '0.0.0.0/0'),
+    ('egress', '-1', None, None, '::/0'),
+}
+
 
 KNOB_SPOT_OPEN_TIMEOUT: Knob[int] = Knob(
     'aws.spot-open-timeout',
@@ -2326,13 +2335,14 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
         self, security_group_request: SecurityGroupCreationRequest, security_group: SecurityGroup
     ) -> bool:
         """
-        A leftover per-guest security group may only be reused if it already carries every rule the request expects.
-        A group that is missing an expected rule is stale (e.g. left over after the pool rules or the guest request
-        changed) and must be cleaned up and recreated rather than silently topped up.
+        A leftover per-guest security group may only be reused if its rules match exactly what the request expects.
+        A group that is missing an expected rule, or carries an unexpected extra one, is stale (e.g. left over after
+        the pool rules or the guest request changed) and must be cleaned up and recreated rather than silently
+        topped up or reused with drift.
 
-        Extra rules present on the group are tolerated - AWS always adds a default allow-all egress rule to a fresh
-        group, and any shared pool rules are attached separately - so only the expected rules being a subset of the
-        actual ones matters here.
+        The sole tolerated difference is the set of rules AWS attaches on its own to every fresh group
+        (:py:data:`AWS_DEFAULT_SECURITY_GROUP_RULE_KEYS`): they are stripped from both sides before comparing, so a
+        group that only differs by those is still reusable.
         """
         r_actual_rules = self._aws_command(
             [
@@ -2386,13 +2396,14 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
             if key is not None:
                 actual_keys.add(key)
 
-        expected_rules = security_group_request.expected_rules
-        for rule in [*expected_rules.ingress, *expected_rules.egress]:
-            key = _rule_key(rule.type, rule.protocol, rule.port_min, rule.port_max, rule.cidr)
-            if key is None or key not in actual_keys:
-                return False
+        expected_keys: set[SecurityGroupRuleKey] = {
+            _rule_key(rule.type, rule.protocol, rule.port_min, rule.port_max, rule.cidr)
+            for rule in [*security_group_request.expected_rules.ingress, *security_group_request.expected_rules.egress]
+        }
 
-        return True
+        # AWS adds its default rules on its own; ignore them on both sides so they never force a recreate.
+        defaults = AWS_DEFAULT_SECURITY_GROUP_RULE_KEYS
+        return expected_keys - defaults == actual_keys - defaults
 
     def _assign_security_group_rules(
         self, logger: ContextAdapter, guest_request: GuestRequest, guest_security_group_id: str
