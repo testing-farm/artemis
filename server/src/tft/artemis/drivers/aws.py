@@ -571,7 +571,7 @@ class SecurityGroupCreationRequest(ResourceCreationRequest):
     tags: Tags
     #: Full set of rules the per-guest security group is expected to carry (guest custom rules merged with any
     #: pool ``security-group-rules``). Used to decide whether an existing group may be reused.
-    expected_rules: SecurityGroupRules
+    rules: SecurityGroupRules
 
 
 @dataclasses.dataclass
@@ -2398,7 +2398,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
 
         expected_keys: set[SecurityGroupRuleKey] = {
             _rule_key(rule.type, rule.protocol, rule.port_min, rule.port_max, rule.cidr)
-            for rule in [*security_group_request.expected_rules.ingress, *security_group_request.expected_rules.egress]
+            for rule in [*security_group_request.rules.ingress, *security_group_request.rules.egress]
         }
 
         # AWS adds its default rules on its own; ignore them on both sides so they never force a recreate.
@@ -2626,7 +2626,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
 
         return _Ok(
             SecurityGroupCreationRequest(
-                vpc_id=self.pool_config['vpc-id'], tags=r_base_tags.unwrap(), expected_rules=r_expected_rules.unwrap()
+                vpc_id=self.pool_config['vpc-id'], tags=r_base_tags.unwrap(), rules=r_expected_rules.unwrap()
             )
         )
 
@@ -2673,6 +2673,14 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
         security_group_request: SecurityGroupCreationRequest,
         security_group: SecurityGroup,
     ) -> _Result[SecurityGroupCreationOutcome, Failure]:
+        # Refresh the tags on the reused group so it carries the current request's tags (e.g. the guest name/label),
+        # which may differ from whatever it was tagged with when first created. create-tags overwrites by key, so we
+        # just apply the expected set without inspecting the existing one.
+        if security_group_request.tags:
+            r_tag = self._tag_resources([security_group.id], security_group_request.tags)
+            if r_tag.is_error:
+                return _Error(Failure.from_failure('failed to tag reused security group', r_tag.unwrap_error()))
+
         return _Ok(SecurityGroupCreationOutcome(resource=security_group))
 
     @staticmethod
