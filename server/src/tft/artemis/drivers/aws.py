@@ -451,6 +451,9 @@ class AWSInstance(Instance):
     spot_instance_id: Optional[str] = None
     #: Per-guest security group id, if one was created for this instance.
     security_group: Optional[str] = None
+    #: Ids of the security groups actually attached to the instance (as reported by AWS). Used to detect drift when
+    #: deciding whether the instance may be reused. Empty for a spot request not yet backed by an instance.
+    attached_security_groups: list[str] = dataclasses.field(default_factory=list)
     flavor_name: Optional[str] = None
 
     def __post_init__(self) -> None:
@@ -2331,7 +2334,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
 
     def _can_reuse_security_group(
         self, security_group_request: SecurityGroupCreationRequest, security_group: SecurityGroup
-    ) -> bool:
+    ) -> _Result[bool, Failure]:
         """
         A leftover per-guest security group may only be reused if its rules match exactly what the request expects.
         A group that is missing an expected rule, or carries an unexpected extra one, is stale (e.g. left over after
@@ -2354,13 +2357,16 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
         )
 
         if r_actual_rules.is_error:
-            Failure.from_failure(
-                'failed to list security group rules, cannot verify reuse',
-                r_actual_rules.unwrap_error(),
-                security_group_id=security_group.id,
-            ).handle(self.logger)
-            # Be conservative: if we cannot confirm the rules match, do not reuse the group.
-            return False
+            # The reuse check could not be carried out. Surface it as a failure so the acquire is retried, rather than
+            # silently treating the group as non-reusable: recreating it would strand a reused instance on the old
+            # group while pool data points at a new, unattached one.
+            return _Error(
+                Failure.from_failure(
+                    'failed to list security group rules, cannot verify reuse',
+                    r_actual_rules.unwrap_error(),
+                    security_group_id=security_group.id,
+                )
+            )
 
         def _rule_key(
             direction: str, protocol: str, port_min: Optional[int], port_max: Optional[int], cidr: str
@@ -2384,7 +2390,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
             # (PrefixListId). Artemis only ever creates CIDR rules, so any such rule is drift that widens access -
             # refuse to reuse the group (it will be recreated), exactly as an unexpected extra CIDR rule would.
             if cidr is None:
-                return False
+                return _Ok(False)
 
             key = _rule_key(
                 'egress' if raw.get('IsEgress') else 'ingress',
@@ -2406,7 +2412,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
 
         # AWS adds its default rules on its own; ignore them on both sides so they never force a recreate.
         defaults = AWS_DEFAULT_SECURITY_GROUP_RULE_KEYS
-        return expected_keys - defaults == actual_keys - defaults
+        return _Ok(expected_keys - defaults == actual_keys - defaults)
 
     def _guest_security_group_ids(self, guest_security_group_id: str) -> list[str]:
         """
@@ -2776,6 +2782,9 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
                     name=tags.get('ArtemisGuestLabel', ''),
                     status=raw_instance['State']['Name'],
                     created_at=r_created_at.unwrap(),
+                    attached_security_groups=[
+                        group['GroupId'] for group in raw_instance.get('SecurityGroups', []) if group.get('GroupId')
+                    ],
                     flavor_name=tags.get(flavor_tag),
                 )
 
@@ -3099,10 +3108,24 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
             )
         )
 
-    def _can_reuse_instance(self, instance_request: InstanceCreationRequest, instance: AWSInstance) -> bool:
+    def _can_reuse_instance(
+        self, instance_request: InstanceCreationRequest, instance: AWSInstance
+    ) -> _Result[bool, Failure]:
         # A leftover instance whose spot lifecycle no longer matches the request must not be reused - e.g. a spot
         # instance provisioned before the pool was reconfigured to non-spot (or vice versa).
-        return instance.is_spot == instance_request.use_spot
+        if instance.is_spot != instance_request.use_spot:
+            return _Ok(False)
+
+        # The per-guest security group may have been recreated since this instance was launched (its rules were edited,
+        # or a previous reuse check forced a recreate). A reused instance keeps whatever groups are attached to its NIC
+        # - we do not re-attach on a running instance - so if the expected per-guest group is not among them, the
+        # instance is carrying stale rules and must be recreated rather than reused. Only meaningful for an instance
+        # that actually exists; a spot request not yet backed by an instance has nothing attached yet.
+        guest_security_group = instance_request.guest_security_group
+        if guest_security_group and instance.id and guest_security_group not in instance.attached_security_groups:
+            return _Ok(False)
+
+        return _Ok(True)
 
     def _reuse_instance(
         self,

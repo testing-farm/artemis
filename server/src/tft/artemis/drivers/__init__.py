@@ -4182,12 +4182,15 @@ RMResourceNameCallback = Callable[
 #: When invoked, decide whether an existing resource may be reused to satisfy the given creation request.
 #: A resource that is otherwise reusable (pending/ready) but incompatible with the request - e.g. a spot
 #: instance for a request that no longer wants spot - must not be reused, and is cleaned up instead.
+#: Returns a ``Result``: ``Ok(True)``/``Ok(False)`` for a definite reuse decision, or ``Error`` when the check
+#: itself could not be carried out (e.g. a transient backend failure). An ``Error`` aborts the acquire so it is
+#: retried, rather than being misread as "not reusable" and triggering a needless (and possibly harmful) recreate.
 RMCanReuseResourceCallback = Callable[
     [
         ResourceCreationRequestT,
         ResourceT,
     ],
-    bool,
+    _Result[bool, Failure],
 ]
 
 
@@ -4270,9 +4273,14 @@ class ResourceManager(Generic[ResourceT, ResourceCreationRequestT, ResourceCreat
         # left over from a previous attempt while the pool (or request) no longer asks for spot. Such resources must
         # not be reused; treat them as leftovers so they get cleaned up and a fresh, compatible one is created.
         if self.can_reuse_resource is not None:
-            pending_reusability = [
-                (resource, self.can_reuse_resource(resource_request, resource)) for resource in pending_resources
-            ]
+            pending_reusability: list[tuple[ResourceT, bool]] = []
+            for resource in pending_resources:
+                r_reusable = self.can_reuse_resource(resource_request, resource)
+                # A failed check (e.g. transient backend error) must not be read as "not reusable": abort and retry
+                # the whole acquire instead of discarding/recreating a resource that may well be fine.
+                if not is_successful(r_reusable):
+                    return _Error(r_reusable.failure().update(**failure_details))
+                pending_reusability.append((resource, r_reusable.unwrap()))
             incompatible_resources = [resource for resource, is_reusable in pending_reusability if not is_reusable]
             pending_resources = [resource for resource, is_reusable in pending_reusability if is_reusable]
         else:
