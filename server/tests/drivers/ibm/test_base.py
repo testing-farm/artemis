@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 
+from types import SimpleNamespace
 from typing import Any
 
 import gluetool.log
@@ -110,7 +111,8 @@ def test_map_flavor_names_duplicate_not_ambiguous() -> None:
 
 def test_map_flavor_names_collision_is_ambiguous() -> None:
     # Two distinct configured names that sanitize and lowercase onto the same stored value cannot be told
-    # apart, so the stored value must resolve to the unknown-flavor sentinel rather than silently to one.
+    # apart, so the stored value is flagged ambiguous and resolves to the unknown-flavor sentinel rather
+    # than silently to one of them.
     names = ['Foo/Bar', 'foo_bar']
 
     collided = _simulate_cloud_stored_flavor_value(FLAVOR_TAG, names[0])
@@ -148,5 +150,37 @@ def test_flavor_tag_search_is_region_scoped(
 
     assert r_instances.is_ok
     assert len(captured_filters) == 1
-    assert 'region:eu-de' in captured_filters[0]
+    # Trailing '*' is required: VPC stores a zone (e.g. eu-de-2) in the region field, so the region prefix
+    # must match as a wildcard rather than exactly.
+    assert 'region:eu-de*' in captured_filters[0]
     assert 'type:instance' in captured_filters[0]
+
+
+def test_flavor_tag_ambiguity_does_not_abort(
+    monkeypatch: pytest.MonkeyPatch,
+    logger: gluetool.log.ContextAdapter,
+    ibmvpc_pool: tft.artemis.drivers.ibmcloud.vpc.IBMCloudVPCDriver,
+) -> None:
+    # A flavor naming mistake must not abort the whole metrics refresh (cores, memory, limits, usage) that
+    # routing and provisioning depend on. The lookup reports the collision but still succeeds, resolving the
+    # ambiguous instances to the unknown-flavor sentinel.
+    ibmvpc_pool.pool_config['default-region'] = 'eu-de'
+
+    monkeypatch.setattr(type(ibmvpc_pool), '_instance_flavor_tag', property(lambda self: Ok('artemisflavor')))
+    monkeypatch.setattr(
+        ibmvpc_pool,
+        'get_pool_flavor_infos',
+        lambda: Ok([SimpleNamespace(name='Foo/Bar'), SimpleNamespace(name='foo_bar')]),
+    )
+
+    collided = tft.artemis.drivers.ibmcloud._sanitize_flavor_tag_value('artemisflavor', 'Foo/Bar')
+
+    def _fake_search(_logger: gluetool.log.ContextAdapter, _resource_filter: str) -> Result[list[Any], Failure]:
+        return Ok([{'name': 'guest-1', 'tags': [f'artemisflavor:{collided}']}])
+
+    monkeypatch.setattr(ibmvpc_pool, 'get_resources_by_filter', _fake_search)
+
+    r_instances = ibmvpc_pool.get_instances_with_flavor_tags_names(logger, 'instance')
+
+    assert r_instances.is_ok
+    assert r_instances.unwrap() == {'guest-1': UNKNOWN_FLAVOR_NAME}
