@@ -1380,7 +1380,7 @@ def dispatch_task(
     # The underlying Dramatiq code treats delay as miliseconds, hence the multiplication.
     actual_delay = _randomize_delay(delay) * 1000 if delay is not None else None
 
-    task_call = TaskCall.from_call(task, *args, delay=delay, task_request_id=task_request_id)
+    task_call = TaskCall.from_message(BROKER, message, delay=delay, task_request_id=task_request_id)
 
     with Sentry.start_span(
         TracingOp.QUEUE_SUBMIT,
@@ -1431,7 +1431,7 @@ def dispatch_group(
 
         if on_complete:
             on_complete_message = on_complete.message(*args)
-            on_complete_task_call = TaskCall.from_call(on_complete, *args)
+            on_complete_task_call = TaskCall.from_message(BROKER, on_complete_message, *args)
 
             group.add_completion_callback(on_complete_message)  # type: ignore[no-untyped-call]
 
