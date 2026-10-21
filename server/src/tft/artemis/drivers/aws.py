@@ -291,8 +291,6 @@ JQ_QUERY_FLAVOR_SUPPORTED_BOOT_MODES = jq.compile('.SupportedBootModes | .[]')
 #: Extract supported boot mode of an instance, as available from ``describe-images``.
 JQ_QUERY_IMAGE_SUPPORTED_BOOT_MODE = jq.compile('.BootMode')
 
-JQ_QUERY_SECURITY_GROUP_IDS = jq.compile('.SecurityGroups | .[] | .GroupId')
-
 #: Canonical, comparable identity of a security group rule: (direction, protocol, port_min, port_max, cidr).
 SecurityGroupRuleKey: TypeAlias = tuple[str, str, Optional[int], Optional[int], str]
 
@@ -2543,30 +2541,6 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
 
         return Ok(res_security_groups)
 
-    def _find_security_group_id(
-        self, logger: ContextAdapter, security_group: str, vpc: str
-    ) -> Result[Optional[str], Failure]:
-        r_security_group_info = self._aws_command(
-            [
-                'ec2',
-                'describe-security-groups',
-                '--filters',
-                f'Name=group-name,Values={security_group}',
-                f'Name=vpc-id,Values={vpc}',
-            ],
-            commandname='aws.ec2-describe-security-groups',
-        )
-
-        if r_security_group_info.is_error:
-            return Error(r_security_group_info.unwrap_error())
-
-        security_group_ids: list[str] = list(JQ_QUERY_SECURITY_GROUP_IDS.input(r_security_group_info.unwrap()).all())
-
-        if not security_group_ids:
-            return Ok(None)
-
-        return Ok(security_group_ids[0])
-
     def _render_security_group_name(self, guest_request: GuestRequest) -> _Result[str, Failure]:
         r_security_group_template = KNOB_GUEST_SECURITY_GROUP_NAME_TEMPLATE.get_value(entityname=self.poolname)
         if r_security_group_template.is_error:
@@ -2606,7 +2580,9 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
 
         return _Ok(
             [
-                SecurityGroup(name=sg['GroupName'], id=sg['GroupId'], is_shared=False)
+                SecurityGroup(
+                    name=sg['GroupName'], id=sg['GroupId'], is_shared=sg['GroupId'] in self._pool_security_groups
+                )
                 for sg in cast(list[dict[str, str]], r_security_groups.unwrap())
                 if sg['GroupName'].startswith(expected_name)
             ]
