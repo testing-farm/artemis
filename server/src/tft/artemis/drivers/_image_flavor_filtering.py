@@ -3,13 +3,12 @@
 
 import dataclasses
 import functools
-from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Callable, Generic, Optional, Protocol, TypedDict, TypeVar, cast
+from collections.abc import Callable, Sequence
+from typing import TYPE_CHECKING, Any, Generic, Optional, Protocol, Self, TypeAlias, TypedDict, TypeVar, cast
 
 import gluetool.log
 import sqlalchemy
 from gluetool.result import Error, Ok, Result
-from typing_extensions import Self, TypeAlias
 
 from .. import Failure, SerializableContainer
 from ..db import GuestRequest

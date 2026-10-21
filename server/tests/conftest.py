@@ -7,8 +7,8 @@ import datetime
 import json
 import logging
 import os
-from collections.abc import Generator
-from typing import Any, Callable, Optional, cast
+from collections.abc import Callable, Generator
+from typing import Any, Optional, cast
 from unittest.mock import MagicMock
 
 import _pytest.config.argparsing

@@ -43,6 +43,7 @@ repos:
     hooks:
       - id: pyupgrade
         args:
+          # TODO: Should be `--py312-plus`, but the amount of changes is so large it deserves its own MR.
           - "--py37-plus"
 
   - repo: local

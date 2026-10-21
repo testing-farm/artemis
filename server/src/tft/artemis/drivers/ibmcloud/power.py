@@ -7,7 +7,7 @@ import enum
 import functools
 import re
 from collections.abc import Sequence
-from typing import Any, Optional, TypedDict, cast
+from typing import Any, Optional, TypeAlias, TypedDict, cast, override
 
 import gluetool.log
 import sqlalchemy.orm.session
@@ -15,7 +15,6 @@ from gluetool.result import Error, Ok, Result
 from returns.pipeline import is_successful
 from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
-from typing_extensions import TypeAlias, override
 
 from tft.artemis.drivers import CLISessionPermanentDir, PoolDriver, PoolImageCompatible, PoolImageInfo, create_tempfile
 from tft.artemis.drivers.ibmcloud import (

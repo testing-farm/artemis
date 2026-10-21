@@ -11,7 +11,8 @@ import subprocess
 import sys
 import threading
 import time
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any, Optional
 
 import colorama
 

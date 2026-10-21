@@ -12,8 +12,8 @@ import inspect
 import os
 import random
 import threading
-from collections.abc import Generator
-from typing import Any, Callable, Literal, Optional, TypeVar, Union, cast
+from collections.abc import Callable, Generator
+from typing import Any, Literal, Optional, Protocol, Self, TypeVar, Union, cast
 
 import dramatiq
 import dramatiq.broker
@@ -29,7 +29,7 @@ import sqlalchemy.orm.session
 import stackprinter
 from gluetool.result import Error, Ok, Result
 from returns.result import Result as _Result
-from typing_extensions import Protocol, Self, TypedDict
+from typing_extensions import TypedDict
 
 from .. import (
     Failure,
@@ -493,7 +493,7 @@ class TaskCall(SerializableContainer):
         """
 
         if self._named_args is None:
-            self._named_args = dict(zip(self.arg_names, self.args))
+            self._named_args = dict(zip(self.arg_names, self.args, strict=True))
 
         return self._named_args
 
@@ -1431,7 +1431,7 @@ def dispatch_group(
 
         if on_complete:
             on_complete_message = on_complete.message(*args)
-            on_complete_task_call = TaskCall.from_message(BROKER, on_complete_message, *args)
+            on_complete_task_call = TaskCall.from_message(BROKER, on_complete_message)
 
             group.add_completion_callback(on_complete_message)  # type: ignore[no-untyped-call]
 
@@ -1484,7 +1484,7 @@ def dispatch_sequence(
         TaskCall.from_message(
             BROKER, message, task_request_id=task_request_id, task_sequence_request_id=task_sequence_request_id
         )
-        for (task_request_id, _, _), message in zip(tasks, messages)
+        for (task_request_id, _, _), message in zip(tasks, messages, strict=True)
     ]
 
     on_complete_task_call: Optional[TaskCall] = None

@@ -124,7 +124,7 @@ filterwarnings = [
 line-length = 120
 indent-width = 4
 src = ["src", "tests"]
-target-version = "py39"
+target-version = "py312"
 # The following comes from the tmt project - pretty much everything is disabled for now, and we
 # will enable them one by one or in groups, to keep patches reviewable.
 lint.select = [
@@ -181,6 +181,7 @@ lint.ignore = [
     "RET503",   # Missing explicit `return` at the end of function able to return non-`None` value
     # Conflicts with our use of other linters that ruff does not recognize.
     "RUF100",   # unused-noqa	Unused noqa directive
+    "TC003",    # Move standard library import `foo` into a type-checking block
     # Allow using non-string type expressions in cast
     "TC006",    # Add quotes to type expression in `typing.cast()`
     # We use relative imports everywhere
@@ -190,6 +191,12 @@ lint.ignore = [
     "TRY003",   # raise-vanilla-args
     # `logger.error` is preferred over `logger.exception`.
     "TRY400",   # error-instead-of-exception
+    # Very verbose - we want this, but separate patch
+    "UP007",    # Use `X | Y` for type annotations
+    "UP040",    # Type alias `foo` uses `TypeAlias` annotation instead of the `type` keyword
+    "UP045",    # Use `X | None` for type annotations
+    "UP046",    # Generic class `Foo` uses `Generic` subclass instead of type parameters
+    "UP047",    # Generic function `foo` should use type parameters
     ]
 lint.external = [
     "FS002",  # flake8 f-string linter, "'.format' used"

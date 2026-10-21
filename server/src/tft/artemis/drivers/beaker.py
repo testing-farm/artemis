@@ -8,9 +8,9 @@ import os
 import re
 import shlex
 import stat
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from re import Pattern
-from typing import Any, Callable, Optional, cast
+from typing import Any, Optional, cast, override
 
 import bs4
 import bs4._typing
@@ -25,7 +25,7 @@ from gluetool.utils import ProcessOutput
 from returns.pipeline import is_successful
 from returns.result import Result as _Result, Success as _Ok
 from tmt.hardware import Operator
-from typing_extensions import TypedDict, override
+from typing_extensions import TypedDict
 
 from .. import (
     Failure,

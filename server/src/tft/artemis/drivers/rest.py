@@ -4,7 +4,7 @@
 import base64
 import dataclasses
 import json
-from typing import Any, Optional
+from typing import Any, Optional, override
 
 import gluetool.log
 import gluetool.utils
@@ -13,7 +13,6 @@ import requests.exceptions
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 from returns.result import Result as _Result, Success as _Ok
-from typing_extensions import override
 
 from .. import Failure
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, Transaction

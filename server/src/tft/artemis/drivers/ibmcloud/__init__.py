@@ -8,14 +8,13 @@ import functools
 import os
 import shutil
 import string
-from typing import Any, Generic, Optional, TypedDict, TypeVar, cast
+from typing import Any, Generic, Optional, TypedDict, TypeVar, cast, override
 
 import gluetool.log
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 from returns.pipeline import is_successful
 from returns.result import Failure as _Error, Result as _Result, Success as _Ok
-from typing_extensions import override
 
 from tft.artemis.drivers import (
     BackendFlavorT,

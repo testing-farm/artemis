@@ -33,7 +33,8 @@ prevent most of the issues.
 
 import contextvars
 import functools
-from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, Optional, TypeVar
 
 import dramatiq.broker
 import gluetool.log

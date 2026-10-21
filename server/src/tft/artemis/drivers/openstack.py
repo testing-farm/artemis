@@ -9,7 +9,7 @@ import operator
 import re
 import sys
 from collections.abc import Iterator
-from typing import Any, Optional, TypedDict, Union, cast
+from typing import Any, Optional, TypedDict, Union, cast, override
 
 import glanceclient
 import gluetool.log
@@ -24,7 +24,6 @@ from novaclient import client as nocl
 from returns.pipeline import is_successful
 from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
-from typing_extensions import override
 
 from .. import Failure, JSONType, rewrap_from_gluetool, rewrap_to_gluetool, safe_call
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, Transaction
