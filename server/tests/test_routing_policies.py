@@ -201,7 +201,7 @@ def test_collect_pool_capabilities(mock_inputs: MockInputs, mockpatch: MockPatch
 
     mock_capabilities = [MagicMock(name=f'{pool.poolname}.capabilities<mock>') for pool in mock_pools]
 
-    for pool, capabilities in zip(mock_pools, mock_capabilities):
+    for pool, capabilities in zip(mock_pools, mock_capabilities, strict=True):
         mockpatch(pool, 'capabilities').return_value = _Ok(capabilities)
 
     r = tft.artemis.routing_policies.collect_pool_capabilities(mock_pools)
@@ -484,7 +484,7 @@ def do_test_policy_least_crowded(
         mock_metrics = mock_metrics[:pool_count]
 
     mockpatch(tft.artemis.routing_policies, 'collect_pool_metrics').return_value = Ok(
-        [(_pool, _metrics) for _pool, _metrics in zip(mock_pools, mock_metrics)]
+        [(_pool, _metrics) for _pool, _metrics in zip(mock_pools, mock_metrics, strict=True)]
     )
 
     r_ruling = tft.artemis.routing_policies.policy_least_crowded(
@@ -645,7 +645,7 @@ def do_test_policy_enough_resources(
         mock_metrics = mock_metrics[:pool_count]
 
     mockpatch(tft.artemis.routing_policies, 'collect_pool_metrics').return_value = Ok(
-        [(_pool, _metrics) for _pool, _metrics in zip(mock_pools, mock_metrics)]
+        [(_pool, _metrics) for _pool, _metrics in zip(mock_pools, mock_metrics, strict=True)]
     )
 
     r_ruling = tft.artemis.routing_policies.policy_enough_resources(
