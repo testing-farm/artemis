@@ -322,18 +322,6 @@ class IBMCloudDriver(
             reuse_resource=self._reuse_instance,
         )
 
-    @property
-    @override
-    def _instance_flavor_tag(self) -> Result[str, Failure]:
-        r_value = super()._instance_flavor_tag
-
-        if r_value.is_error:
-            return Error(Failure.from_failure('Could not get instance flavor tag name', r_value.unwrap_error()))
-
-        # IBMCloud strips certain characters and does not allow capital letters, so the default of ArtemisFlavor
-        # won't fly, need to apply that to the expected tag name from artemis config.
-        return Ok(_sanitize_tag_name(r_value.unwrap()))
-
     @classmethod
     def timestamp_to_datetime(cls, timestamp: str) -> Result[datetime.datetime, Failure]:
         try:
@@ -448,7 +436,9 @@ class IBMCloudDriver(
         if r_flavor_tag.is_error:
             return Error(r_flavor_tag.unwrap_error())
 
-        flavor_tag = r_flavor_tag.unwrap()
+        # IBMCloud strips certain characters and does not allow capital letters, so the default of ArtemisFlavor
+        # won't fly, need to apply that to the expected tag name from artemis config.
+        flavor_tag = _sanitize_tag_name(r_flavor_tag.unwrap())
         flavor_tag_prefix = f'{flavor_tag}:'
 
         r_flavors = self.get_pool_flavor_infos()
@@ -463,15 +453,15 @@ class IBMCloudDriver(
         )
 
         if ambiguous_tag_values:
-            # If after applying IBMCloud transformation we end up with 2 different flavors per configuration mapped to
-            # the same actual one - that is a big problem, so let's fail hard until fixed.
-            return Error(
-                Failure(
-                    'multiple flavor names map to the same sanitized tag value',
-                    ambiguous_tag_values=ambiguous_tag_values,
-                    recoverable=False,
-                )
-            )
+            # Two configured flavors collapsing to the same sanitized tag value is a configuration mistake we
+            # cannot resolve: the stored value no longer identifies a single flavor. Failing here would abort
+            # the whole metrics refresh (cores, memory, limits, usage), which routing and provisioning depend
+            # on, so report it loudly instead and carry on with the ambiguous flavors resolved to
+            # UNKNOWN_FLAVOR_NAME.
+            Failure(
+                'multiple flavor names map to the same sanitized tag value',
+                ambiguous_tag_values=sorted(ambiguous_tag_values),
+            ).handle(logger)
 
         # Resource search is global, let's restrict it to the pool's region to keep the mapping scoped
         # to the instances we actually account for.
