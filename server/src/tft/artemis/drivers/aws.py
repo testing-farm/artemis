@@ -2549,10 +2549,11 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
                     )
 
                 if not r_rule.unwrap():
+                    # This runs only on freshly created groups (rules are never re-applied to a reused group), where
+                    # the sole pre-existing rules are the AWS defaults. A duplicate here just means a requested rule
+                    # coincides with a default (intra-request duplicates are already removed by _dedup) - harmless and
+                    # expected, so log it but do not raise the duplicate-rule error metric.
                     logger.info(f'security group rule already exists, skipping: {rule.serialize()}')
-                    # NOTE(ivasilev) Not an eyebrow raising error, but we'd still like to track that event and there is
-                    # no separate metric for harmless-yet-worth-keeping-track-of occasions, so inc_error it is.
-                    PoolMetrics.inc_error(self.poolname, AWSErrorCauses.DUPLICATE_SECURITY_GROUP_RULE)
 
         return Ok(None)
 
