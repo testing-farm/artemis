@@ -2750,12 +2750,29 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
                 )
 
             instance_id = spot_request.get('InstanceId', '')
+
+            # Security groups requested for the instance. Artemis attaches them via network interfaces
+            # (NetworkInterfaces[].Groups), so read those; also read the top-level SecurityGroups for completeness.
+            # Both are GroupIdentifier objects carrying a GroupId. Needed by the reuse drift check
+            # (_can_reuse_instance) - without them a fulfilled spot instance looks like it has no groups and is wrongly
+            # rejected as drifted.
+            launch_specification = spot_request.get('LaunchSpecification', {})
+            attached_security_groups = [
+                group['GroupId'] for group in launch_specification.get('SecurityGroups', []) if group.get('GroupId')
+            ] + [
+                group['GroupId']
+                for nic in launch_specification.get('NetworkInterfaces', [])
+                for group in nic.get('Groups', [])
+                if group.get('GroupId')
+            ]
+
             instance = AWSInstance(
                 id=instance_id,
                 name=tags.get('ArtemisGuestLabel', ''),
                 status=spot_request['State'],
                 created_at=r_created_at.unwrap(),
                 spot_instance_id=spot_request['SpotInstanceRequestId'],
+                attached_security_groups=attached_security_groups,
                 flavor_name=tags.get(flavor_tag),
             )
 
