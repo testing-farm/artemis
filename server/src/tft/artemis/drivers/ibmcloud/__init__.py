@@ -475,8 +475,9 @@ class IBMCloudDriver(
 
         # Resource search is global, let's restrict it to the pool's region to keep the mapping scoped
         # to the instances we actually account for.
+        # Need * in region for vpc match to work as vpc has zones (!) in region field, like region: us-east-3..
         r_instances_with_flavors = self.get_resources_by_filter(
-            logger, f'tags:{flavor_tag}* AND type:{resource_type} AND region:{self.pool_config["default-region"]}'
+            logger, f'tags:{flavor_tag}* AND type:{resource_type} AND region:{self.pool_config["default-region"]}*'
         )
 
         if r_instances_with_flavors.is_error:
