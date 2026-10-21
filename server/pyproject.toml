@@ -230,6 +230,9 @@ extend-allowed-calls = [
     # `gluetool.result.Result` generic constructors, which might be used to wrap a bool (`Result[bool]`)
     "gluetool.result.Error",
     "gluetool.result.Ok",
+    # Same, for `returns.result.Result` constructors (imported as `_Ok`/`_Error`)
+    "returns.result.Success",
+    "returns.result.Failure",
 ]
 
 [tool.ruff.lint.flake8-quotes]
