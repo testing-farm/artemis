@@ -5,14 +5,13 @@ import dataclasses
 import logging
 import operator
 import re
-from collections.abc import Iterable
-from typing import Any, Callable, Optional
+from collections.abc import Callable, Iterable
+from typing import Any, Optional, Protocol
 from unittest.mock import MagicMock
 
 import _pytest.logging
 import _pytest.monkeypatch
 import jinja2
-from typing_extensions import Protocol
 
 # Since this is our entry point when running tests, we must take care of injecting additional filters
 # into defaults before we start messing with Jinja. Otherwise, the template below would initialize

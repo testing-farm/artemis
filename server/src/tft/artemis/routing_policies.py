@@ -6,8 +6,8 @@ import contextvars
 import dataclasses
 import datetime
 import functools
-from collections.abc import Generator
-from typing import Any, Callable, Optional, cast
+from collections.abc import Callable, Generator
+from typing import Any, Optional, Protocol, cast
 
 import gluetool.log
 import gluetool.utils
@@ -16,7 +16,7 @@ from gluetool.log import log_table
 from gluetool.result import Error, Ok, Result
 from returns.pipeline import is_successful
 from returns.result import Failure as _Error, Result as _Result, Success as _Ok
-from typing_extensions import Protocol, TypedDict
+from typing_extensions import TypedDict
 
 from . import Failure, Sentry, SerializableContainer, TracingOp, partition
 from .db import GuestRequest, Transaction

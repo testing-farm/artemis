@@ -7,8 +7,8 @@ import json
 import os
 import re
 import time
-from collections.abc import Awaitable
-from typing import Callable, Optional
+from collections.abc import Awaitable, Callable
+from typing import Optional
 
 import sentry_sdk
 from fastapi import FastAPI, HTTPException, Request, Response, status as http_status

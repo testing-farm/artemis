@@ -4,8 +4,9 @@
 import importlib.machinery
 import importlib.util
 import os
+from collections.abc import Callable
 from types import ModuleType
-from typing import Any, Callable
+from typing import Any
 
 import gluetool.utils
 from gluetool.result import Error, Ok, Result

@@ -24,7 +24,8 @@ import os
 import platform
 import threading
 import time
-from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar, Union, cast
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, Optional, TypeVar, Union, cast
 
 import dramatiq.worker
 import gluetool.log

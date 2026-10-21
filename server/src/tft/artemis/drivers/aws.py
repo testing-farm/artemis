@@ -12,13 +12,16 @@ import operator
 import os
 import re
 import string
-from collections.abc import Iterator, MutableSequence, Sequence
+from collections.abc import Callable, Iterator, MutableSequence, Sequence
 from typing import (
     Any,
-    Callable,
+    Literal,
+    NotRequired,
     Optional,
+    TypeAlias,
     Union,
     cast,
+    override,
 )
 
 import gluetool.log
@@ -32,7 +35,7 @@ from jinja2 import Template
 from returns.pipeline import is_successful
 from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS, Operator
-from typing_extensions import Literal, NotRequired, TypeAlias, TypedDict, override
+from typing_extensions import TypedDict
 
 from .. import (
     Failure,

@@ -9,8 +9,8 @@ Helpful building blocks for cache operations.
 
 import datetime
 import uuid
-from collections.abc import Generator
-from typing import Any, Callable, Optional, Protocol, TypeVar, Union, cast
+from collections.abc import Callable, Generator
+from typing import Any, Optional, Protocol, TypeVar, Union, cast
 
 import gluetool.log
 import redis

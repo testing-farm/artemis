@@ -14,14 +14,16 @@ import functools
 import itertools
 import operator
 import re
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     ClassVar,
+    Literal,
     NamedTuple,
     Optional,
+    Self,
+    TypeAlias,
     TypeVar,
     Union,
     cast,
@@ -32,7 +34,6 @@ import gluetool.utils
 from gluetool.result import Error, Ok, Result
 from tmt.hardware import UNITS, Operator
 from tmt.hardware.constraints import OPERATOR_SIGN_TO_OPERATOR, OPERATOR_TO_HANDLER, OperatorHandlerType, Spec
-from typing_extensions import Literal, Self, TypeAlias
 
 from . import Failure, SerializableContainer
 

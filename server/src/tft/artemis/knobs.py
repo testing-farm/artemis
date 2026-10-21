@@ -7,8 +7,9 @@ import logging
 import operator
 import os
 import re
+from collections.abc import Callable
 from re import Pattern
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, Generic, Optional, TypeVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, Optional, TypeVar, cast
 
 import gluetool.log
 import gluetool.utils

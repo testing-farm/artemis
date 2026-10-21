@@ -18,18 +18,21 @@ import string
 import sys
 import tempfile
 import time
-from collections.abc import Generator, Iterable, Iterator, Mapping
+from collections.abc import Callable, Generator, Iterable, Iterator, Mapping
 from re import Pattern
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     ClassVar,
     Generic,
+    Literal,
     Optional,
+    Protocol,
+    Self,
     TypeVar,
     Union,
     cast,
+    final,
 )
 
 import gluetool
@@ -42,7 +45,7 @@ from pint import Unit
 from returns.pipeline import is_successful
 from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
-from typing_extensions import Literal, Protocol, Self, TypedDict, final
+from typing_extensions import TypedDict
 
 from .. import (
     Failure,
