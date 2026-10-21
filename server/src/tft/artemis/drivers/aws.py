@@ -2406,10 +2406,10 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
         defaults = AWS_DEFAULT_SECURITY_GROUP_RULE_KEYS
         return expected_keys - defaults == actual_keys - defaults
 
-    def _assign_security_group_rules(
-        self, logger: ContextAdapter, guest_request: GuestRequest, guest_security_group_id: str
-    ) -> Result[list[str], Failure]:
+    def _guest_security_group_ids(self, guest_security_group_id: str) -> list[str]:
         """
+        Build the list of security group ids to attach to the instance, the created-per-guest group first.
+
         Ideally there should be a dedicated stage in the artemis lifecycle, when upon startup the artemis config's
         security-group-rules are matched against existing rules in the security-group (with correction
         applied if something doesn't match). Then this security group is attached to the guest and another one
@@ -2426,9 +2426,9 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
           from guest request will go into a created-per-guest security group. The guest will end up with just 1
           custom security group. In the event of cancellation this group will be cleaned up.
 
-        This helper performs all the necessary setting of the security groups involved and returns a list of security
-        group ids to be used during actual instance creation. The created-per-guest security group will be the first
-        in the resulted list.
+        The actual rules are applied once, when the per-guest group is created (see
+        :py:meth:`_apply_security_group_rules`); a reused group already carries the expected rules, verified by
+        :py:meth:`_can_reuse_security_group`, so nothing is applied here.
         """
         res_security_groups = [guest_security_group_id]
 
@@ -2436,13 +2436,20 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
             # 2 security groups per guest case
             res_security_groups.extend(self._pool_security_groups)
 
-        # 1 security group per guest case merges custom and pool rules into one secgroup; either way the expected
-        # rule set is what we apply here.
-        r_guest_secgroup_rules = self._expected_guest_security_group_rules(guest_request)
-        if r_guest_secgroup_rules.is_error:
-            return Error(r_guest_secgroup_rules.unwrap_error())
+        return res_security_groups
 
-        guest_secgroup_rules = r_guest_secgroup_rules.unwrap()
+    def _apply_security_group_rules(
+        self, logger: ContextAdapter, guest_request: GuestRequest, group_id: str, rules: SecurityGroupRules
+    ) -> Result[None, Failure]:
+        """
+        Apply the full expected rule set to a freshly created per-guest security group.
+
+        Only ever called on creation. A reused group has already been confirmed by
+        :py:meth:`_can_reuse_security_group` to carry exactly these rules, so re-applying them would only produce a
+        storm of ``InvalidPermission.Duplicate`` rejections (and bogus duplicate-rule metric increments) on every
+        acquire. A group whose rules were applied only partway (e.g. a crash mid-apply) fails that exact-match check
+        on the next attempt and gets recreated rather than silently topped up.
+        """
 
         def _create_ip_permissions_payload(rules: list[SecurityGroupRule]) -> str:
             ip_permissions = []
@@ -2468,7 +2475,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
                     'ec2',
                     f'authorize-security-group-{rule_type}',
                     '--group-id',
-                    guest_security_group_id,
+                    group_id,
                     '--ip-permissions',
                     _create_ip_permissions_payload(rules),
                 ],
@@ -2506,15 +2513,15 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
         # Apply the rules in bulk (two calls, one per direction). AWS authorize-security-group-* is atomic, so a single
         # duplicate rejects the whole batch - in that case reapply the batch rule by rule, skipping the duplicates.
         rules_map = {
-            'ingress': _dedup(guest_secgroup_rules.ingress),
-            'egress': _dedup(guest_secgroup_rules.egress),
+            'ingress': _dedup(rules.ingress),
+            'egress': _dedup(rules.egress),
         }
 
-        for rule_type, rules in rules_map.items():
-            if not rules:
+        for rule_type, direction_rules in rules_map.items():
+            if not direction_rules:
                 continue
 
-            r_bulk = _apply_sg_rules(rule_type, rules)
+            r_bulk = _apply_sg_rules(rule_type, direction_rules)
 
             if r_bulk.is_error:
                 return Error(Failure.from_failure('security group rules update failed', r_bulk.unwrap_error()))
@@ -2523,7 +2530,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
                 continue
 
             # Something in the batch already exists - reapply rule by rule, skipping duplicates.
-            for rule in rules:
+            for rule in direction_rules:
                 r_rule = _apply_sg_rules(rule_type, [rule])
 
                 if r_rule.is_error:
@@ -2539,7 +2546,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
                     # no separate metric for harmless-yet-worth-keeping-track-of occasions, so inc_error it is.
                     PoolMetrics.inc_error(self.poolname, AWSErrorCauses.DUPLICATE_SECURITY_GROUP_RULE)
 
-        return Ok(res_security_groups)
+        return Ok(None)
 
     def _render_security_group_name(self, guest_request: GuestRequest) -> _Result[str, Failure]:
         r_security_group_template = KNOB_GUEST_SECURITY_GROUP_NAME_TEMPLATE.get_value(entityname=self.poolname)
@@ -2638,10 +2645,14 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
         if r_create_sg.is_error:
             return _Error(Failure.from_failure('failed to create a security group', r_create_sg.unwrap_error()))
 
+        group_id = cast(str, r_create_sg.unwrap())
+
+        r_apply = self._apply_security_group_rules(logger, guest_request, group_id, security_group_request.rules)
+        if r_apply.is_error:
+            return _Error(Failure.from_failure('failed to apply security group rules', r_apply.unwrap_error()))
+
         return _Ok(
-            SecurityGroupCreationOutcome(
-                resource=SecurityGroup(name=security_group_name, id=cast(str, r_create_sg.unwrap()), is_shared=False)
-            )
+            SecurityGroupCreationOutcome(resource=SecurityGroup(name=security_group_name, id=group_id, is_shared=False))
         )
 
     def _reuse_security_group(
@@ -2817,17 +2828,9 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
 
             guest_security_group = r_guest_sg.unwrap().resource.id
 
-            # Assign rules and obtain the full list of security groups to attach to the instance. This is idempotent,
-            # so it is safe to run on both freshly created and reused security groups.
-            r_security_group_ids = self._assign_security_group_rules(logger, guest_request, guest_security_group)
-            if r_security_group_ids.is_error:
-                return _Error(
-                    Failure.from_failure(
-                        'failed to setup guest security group rules properly', r_security_group_ids.unwrap_error()
-                    )
-                )
-
-            security_group_ids = r_security_group_ids.unwrap()
+            # The ResourceManager has already created (with rules applied) or reused a rule-matching group; here we
+            # only assemble the full list of security groups to attach to the instance.
+            security_group_ids = self._guest_security_group_ids(guest_security_group)
         else:
             security_group_ids = self._pool_security_groups
 
