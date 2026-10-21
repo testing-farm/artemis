@@ -2380,9 +2380,11 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
         actual_keys: set[SecurityGroupRuleKey] = set()
         for raw in cast(list[dict[str, Any]], r_actual_rules.unwrap()):
             cidr = raw.get('CidrIpv4') or raw.get('CidrIpv6')
-            # Rules referencing another group or a prefix list have no CIDR - they are not something we manage here.
+            # A rule with no CIDR references another security group (ReferencedGroupInfo) or a prefix list
+            # (PrefixListId). Artemis only ever creates CIDR rules, so any such rule is drift that widens access -
+            # refuse to reuse the group (it will be recreated), exactly as an unexpected extra CIDR rule would.
             if cidr is None:
-                continue
+                return False
 
             key = _rule_key(
                 'egress' if raw.get('IsEgress') else 'ingress',
