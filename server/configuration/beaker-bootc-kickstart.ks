@@ -14,7 +14,10 @@ reboot
 
 {% snippet 'password' %}
 
-{% snippet 'rhts_partitions' %}
+zerombr
+clearpart --all --initlabel
+
+autopart
 
 %pre --log=/dev/console
 {% snippet 'rhts_pre' %}
