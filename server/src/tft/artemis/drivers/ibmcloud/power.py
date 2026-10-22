@@ -370,6 +370,7 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
                 usage.cores += int(raw_instance.get('virtualCores', {}).get('assigned', 0))
                 # Instance memory is in GB
                 usage.memory += UNITS.Quantity(raw_instance['memory'], UNITS.gigabytes).to('bytes').magnitude
+
                 # Record actual flavor used. A tagged instance whose flavor is no longer in the cache
                 # (e.g. the flavor was dropped from configuration) still has its real name in the
                 # mapping, so prefer that over the UNKNOWN_FLAVOR_NAME sentinel.
