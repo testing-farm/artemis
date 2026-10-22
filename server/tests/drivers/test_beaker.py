@@ -1,6 +1,7 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
+import pathlib
 import textwrap
 from typing import Any, Optional
 from unittest.mock import MagicMock
@@ -735,7 +736,12 @@ def test_merge_beaker_filters(filters: list[str], expected: str) -> None:
     assert str(final_filter) == expected
 
 
-def test_inline_ks_appends() -> None:
+def test_create_kickstart_template(
+    mockpatch: MockPatcher,
+    tmp_path: pathlib.Path,
+    dummy_image_info: MagicMock,
+    pool: tft.artemis.drivers.beaker.BeakerDriver,
+) -> None:
     # TFT-4430: Beaker ignores `<ks_append/>` snippets of a recipe with a custom `<kickstart/>` template.
     snippets = [
         'part / --fstype=xfs --grow --ondisk="mpatha"',
@@ -743,50 +749,43 @@ def test_inline_ks_appends() -> None:
         'rootpw \\ünicode',
     ]
 
-    job = bs4.BeautifulSoup(
-        textwrap.dedent(
-            """
-            <job>
-              <recipeSet>
-                <recipe>
-                  <kickstart><![CDATA[text
-            {{ ks_appends|join('\\n') }}
-            reboot]]></kickstart>
-                  <ks_appends>
-                    {}
-                  </ks_appends>
-                </recipe>
-              </recipeSet>
-            </job>
-            """
-        )
-        .strip()
-        .replace('{}', ''.join(f'<ks_append><![CDATA[{snippet}]]></ks_append>' for snippet in snippets)),
-        'xml',
+    kickstart = tft.artemis.environment.Kickstart(
+        **{'script': snippets[0], 'pre-install': snippets[1], 'post-install': snippets[2]}
     )
 
-    tft.artemis.drivers.beaker.inline_ks_appends(job)
+    template_filepath = tmp_path / 'kickstart.ks'
+    template_filepath.write_text("text\n{{ ks_appends|join('\\n') }}\nreboot\n", encoding='utf-8')
 
-    # Round-trip through the serialization used when submitting the job.
-    submitted = bs4.BeautifulSoup(job.prettify(), 'xml')
-
-    assert submitted.find('ks_appends') is None
-
-    template = jinja2.sandbox.SandboxedEnvironment(trim_blocks=True).from_string(submitted.find('kickstart').get_text())
-
-    assert template.render(ks_appends=[]).strip() == '\n'.join(['text', *snippets, 'reboot'])
-
-
-def test_inline_ks_appends_no_custom_kickstart() -> None:
-    job_xml = (
-        '<job><recipeSet><recipe><ks_appends><ks_append>reboot</ks_append></ks_appends></recipe></recipeSet></job>'
+    mockpatch(tft.artemis.drivers.beaker.KNOB_KICKSTART_TEMPLATE_BOOTC_FILEPATH, 'get_value').return_value = Ok(
+        str(template_filepath)
     )
 
-    job = bs4.BeautifulSoup(job_xml, 'xml')
+    dummy_image_info.bootc_image = 'registry.example.com/rhel-bootc:dummy'
 
-    tft.artemis.drivers.beaker.inline_ks_appends(job)
+    r_template = pool._create_kickstart_template(kickstart, dummy_image_info)
 
-    assert job == bs4.BeautifulSoup(job_xml, 'xml')
+    assert r_template.is_ok
+
+    template = r_template.unwrap()
+
+    assert template is not None
+
+    # Beaker renders custom templates with a sandboxed environment, passing an empty `ks_appends` list.
+    rendered = jinja2.sandbox.SandboxedEnvironment(trim_blocks=True).from_string(template).render(ks_appends=[])
+
+    assert rendered.strip() == '\n'.join(['text', *snippets, 'reboot'])
+
+
+def test_create_kickstart_template_not_bootc(
+    dummy_image_info: MagicMock,
+    pool: tft.artemis.drivers.beaker.BeakerDriver,
+) -> None:
+    r_template = pool._create_kickstart_template(
+        tft.artemis.environment.Kickstart(script='part / --grow'), dummy_image_info
+    )
+
+    assert r_template.is_ok
+    assert r_template.unwrap() is None
 
 
 @pytest.mark.parametrize(
@@ -1056,6 +1055,13 @@ def test_bkr_ks_options(pool: tft.artemis.drivers.beaker.BeakerDriver, env: str,
     r_wow_options = tft.artemis.drivers.beaker.BeakerDriver._create_bkr_kickstart_options(pool, environment.kickstart)
 
     assert r_wow_options == expected
+
+    # With a custom kickstart template, the snippets are part of the template instead.
+    r_wow_options = tft.artemis.drivers.beaker.BeakerDriver._create_bkr_kickstart_options(
+        pool, environment.kickstart, ks_appends=False
+    )
+
+    assert r_wow_options == expected[: expected.index('--ks-append')]
 
 
 @pytest.mark.parametrize(
