@@ -2557,7 +2557,9 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
 
         return Ok(None)
 
-    def _render_security_group_name(self, guest_request: GuestRequest) -> _Result[str, Failure]:
+    def _render_security_group_name(
+        self, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
+    ) -> _Result[str, Failure]:
         r_security_group_template = KNOB_GUEST_SECURITY_GROUP_NAME_TEMPLATE.get_value(entityname=self.poolname)
         if r_security_group_template.is_error:
             return _Error(
@@ -2566,16 +2568,29 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
                 )
             )
 
+        template = r_security_group_template.unwrap()
+
+        # The name template may reference tags (TAGS.<key>). Building the tags costs a couple of DB reads and this
+        # renders on every acquire (both to name a new group and to match existing ones), so only pay that cost when
+        # the template actually uses TAGS - the default template does not.
+        tags: Tags = {}
+        if 'TAGS' in template:
+            r_tags = self.get_guest_tags(self.logger, session, guest_request)
+            if r_tags.is_error:
+                return _Error(Failure.from_failure('Could not get guest tags', r_tags.unwrap_error()))
+            tags = r_tags.unwrap()
+
         return render_template(
-            r_security_group_template.unwrap(),
+            template,
             GUESTNAME=guest_request.guestname,
             ENVIRONMENT=guest_request.environment,
+            TAGS=tags,
         ).alt(lambda failure: Failure.from_failure('Could not render guest security group name template', failure))
 
     def _query_security_groups_by_guest_request(
-        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> _Result[list[SecurityGroup], Failure]:
-        r_expected_name = self._render_security_group_name(guest_request)
+        r_expected_name = self._render_security_group_name(session, guest_request)
         if not is_successful(r_expected_name):
             return _Error(Failure.from_failure('failed to get expected security group name', r_expected_name.failure()))
         expected_name = r_expected_name.unwrap()
@@ -2688,7 +2703,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
         return {tag['Key']: tag['Value'] for tag in raw_tags or []}
 
     def _query_instances_by_guest_request(
-        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> _Result[list[AWSInstance], Failure]:
         """
         Fetch the list of instances - both on-demand and spot - belonging to a given guest request.

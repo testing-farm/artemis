@@ -306,13 +306,13 @@ class OpenStackDriver(
             return _Error(Failure.from_exc('failed to fetch list of instances', exc))
 
     def _query_backend_instances_by_guest_request(
-        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> _Result[list[OpenStackInstance], Failure]:
         return (
             _Result.do(
                 [instance for instance in instances if instance.name.startswith(expected_name)]
                 for instances in self._query_backend_instances(logger)
-                for expected_name in self._render_instance_name(guest_request)
+                for expected_name in self._render_instance_name(session, guest_request)
             )
             .map(lambda instances: sorted(instances, key=lambda x: x.created_at))
             .alt(

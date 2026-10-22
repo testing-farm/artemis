@@ -349,13 +349,13 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, 
         return Ok(res)
 
     def _query_instances_by_guest_request(
-        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> _Result[list[GCPInstance], Failure]:
         r_instances_list = self.list_instances(logger)
         if r_instances_list.is_error:
             return _Error(Failure.from_failure('failed to list instances', r_instances_list.unwrap_error()))
 
-        r_expected_name = self._render_instance_name(guest_request)
+        r_expected_name = self._render_instance_name(session, guest_request)
         if not is_successful(r_expected_name):
             return _Error(Failure.from_failure('failed to get expected instance name', r_expected_name.failure()))
         expected_name = r_expected_name.unwrap()

@@ -1774,7 +1774,9 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
 
         return Ok(r_value.unwrap())
 
-    def _render_instance_name(self, guest_request: GuestRequest) -> _Result[str, Failure]:
+    def _render_instance_name(
+        self, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
+    ) -> _Result[str, Failure]:
         r_instance_name_template = KNOB_INSTANCE_NAME_TEMPLATE.get_value(entityname=self.poolname)
         if r_instance_name_template.is_error:
             return _Error(
@@ -2286,7 +2288,7 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
 
         tags['ArtemisGuestName'] = guest_request.guestname
 
-        r_guest_name = self._render_instance_name(guest_request)
+        r_guest_name = self._render_instance_name(session, guest_request)
         if not is_successful(r_guest_name):
             return Error(Failure.from_failure('failed to get expected instance name', r_guest_name.failure()))
 
@@ -4126,6 +4128,7 @@ class ResourceCreationOutcome(Generic[ResourceT]):
 RMListResourcesCallback = Callable[
     [
         gluetool.log.ContextAdapter,
+        sqlalchemy.orm.session.Session,
         GuestRequest,
     ],
     _Result[list[ResourceT], Failure],
@@ -4173,6 +4176,7 @@ RMReuseResourceCallback = Callable[
 #: When invoked, provide name of the resource for the given guest request.
 RMResourceNameCallback = Callable[
     [
+        sqlalchemy.orm.session.Session,
         GuestRequest,
     ],
     _Result[str, Failure],
@@ -4236,7 +4240,7 @@ class ResourceManager(Generic[ResourceT, ResourceCreationRequestT, ResourceCreat
         resource_request = r_resource_request.unwrap()
         failure_details['resource_request'] = resource_request.serialize()
 
-        r_resource_name = self.resource_name(guest_request)
+        r_resource_name = self.resource_name(session, guest_request)
         if not is_successful(r_resource_name):
             return _Error(
                 Failure.from_failure('Could not get resource name', r_resource_name.failure(), **failure_details)
@@ -4248,7 +4252,7 @@ class ResourceManager(Generic[ResourceT, ResourceCreationRequestT, ResourceCreat
 
         guest_request.log_event(logger, transaction, 'resource-acquisition-attempt', **failure_details)
 
-        r_existing_resources = self.list_resources(logger, guest_request)
+        r_existing_resources = self.list_resources(logger, session, guest_request)
         if not is_successful(r_existing_resources):
             return _Error(
                 Failure.from_failure(
