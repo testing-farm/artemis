@@ -533,8 +533,8 @@ class AzureDriver(
         if not is_successful(r_expected_name):
             return _Error(Failure.from_failure('failed to get expected resouce group name', r_expected_name.failure()))
 
-        with AzureSession(logger, self) as session:
-            r_resource_groups_list = session.run(
+        with AzureSession(logger, self) as az_session:
+            r_resource_groups_list = az_session.run(
                 logger,
                 ['group', 'list', '--query', f"[?starts_with(name, '{r_expected_name.unwrap()}')]"],
                 commandname='az.resource-groups-list',
