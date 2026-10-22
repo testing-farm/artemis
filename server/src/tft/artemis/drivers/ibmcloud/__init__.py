@@ -379,7 +379,7 @@ class IBMCloudDriver(
         return _Ok(instance_request)
 
     def _query_instances_by_guest_request(
-        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> _Result[list[IBMCloudInstanceT], Failure]:
         """
         Fetch list of instances for a given guest request from the backend infrastructure.
@@ -392,7 +392,7 @@ class IBMCloudDriver(
             return _Error(Failure.from_failure('failed to list instances', r_instances_list.unwrap_error()))
 
         # Let's get expected name to match against
-        r_expected_name = self._render_instance_name(guest_request)
+        r_expected_name = self._render_instance_name(session, guest_request)
         if not is_successful(r_expected_name):
             return _Error(Failure.from_failure('failed to get expected instance name', r_expected_name.failure()))
         expected_name = r_expected_name.unwrap()
