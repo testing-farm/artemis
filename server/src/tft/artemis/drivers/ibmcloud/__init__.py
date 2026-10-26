@@ -471,7 +471,8 @@ class IBMCloudDriver(
         )
 
         if r_instances_with_flavors.is_error:
-            return Error(r_instances_with_flavors.unwrap_error())
+            r_instances_with_flavors.unwrap_error().handle(logger, label='failed to fetch instance flavor tags')
+            return Ok({})
 
         def _flavor_name(instance: IBMResourceInfoType) -> str:
             for tag in instance.get('tags', []):
