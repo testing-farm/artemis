@@ -51,6 +51,9 @@ properties:
       Example: n1-standard-1
     type: string
 
+  default-flavor-name:
+    type: string
+
   default-flavor-regex:
     type: string
 
@@ -78,4 +81,12 @@ properties:
 
 additionalProperties: false
 
-required: [service-account-info, zone, project, image-project, network-resource-url, default-flavor]
+required: [service-account-info, zone, project, image-project, network-resource-url]
+
+oneOf:
+  - required:
+    - default-flavor
+  - required:
+    - default-flavor-name
+  - required:
+    - default-flavor-regex

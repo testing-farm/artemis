@@ -26,6 +26,9 @@ properties:
   default-flavor:
     type: string
 
+  default-flavor-name:
+    type: string
+
   default-flavor-regex:
     type: string
 
@@ -122,7 +125,6 @@ allOf:
   - glance-version
   - nova-version
   - master-key-name
-  - default-flavor
   - network-regex
   - ip-version
   - security-group
@@ -131,3 +133,11 @@ allOf:
     - project-domain-id
   - required:
     - project-domain-name
+
+oneOf:
+  - required:
+    - default-flavor
+  - required:
+    - default-flavor-name
+  - required:
+    - default-flavor-regex

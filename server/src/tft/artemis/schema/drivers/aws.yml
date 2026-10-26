@@ -26,6 +26,9 @@ properties:
   default-flavor:
     type: string
 
+  default-flavor-name:
+    type: string
+
   default-flavor-regex:
     type: string
 
@@ -158,7 +161,6 @@ required:
 - access-key-id
 - availability-zone
 - command
-- default-flavor
 - default-region
 - master-key-name
 - secret-access-key
@@ -170,3 +172,11 @@ oneOf:
     - security-group
   - required:
     - security-group-rules
+
+oneOf:
+  - required:
+    - default-flavor
+  - required:
+    - default-flavor-name
+  - required:
+    - default-flavor-regex

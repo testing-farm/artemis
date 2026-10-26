@@ -231,20 +231,35 @@ def filter_flavors_prefer_default_flavor(
     if not flavors:
         return Ok(FilterRuling.from_flavors(image, flavors))
 
+    default_flavor_regex: Optional[str]
+    default_flavor_name: Optional[str]
+
     if (default_flavor_regex := pool.pool_config.get('default-flavor-regex')) is not None:
-        default_flavor_patern = re.compile(default_flavor_regex)
+        try:
+            default_flavor_pattern = re.compile(default_flavor_regex)
 
-        matching_flavors = [flavor for flavor in flavors if default_flavor_patern.match(flavor.name)]
+        except re.error as exc:
+            return Error(Failure.from_exc('failed to compile default-flavor-regex pattern', exc))
 
-        if matching_flavors:
-            return Ok(FilterRuling.from_flavors(image, matching_flavors))
+        def _is_default_by_regex(flavor: FlavorT) -> bool:
+            return default_flavor_pattern.match(flavor.name) is not None
 
-        return Ok(FilterRuling.from_flavors(image, flavors))
+        if any(_is_default_by_regex(flavor) for flavor in flavors):
+            return Ok(FilterRuling.from_flavors(image, flavors, matcher=_is_default_by_regex))
 
-    matching_flavors = [flavor for flavor in flavors if flavor.name == pool.pool_config['default-flavor']]
+    if 'default-flavor' in pool.pool_config:
+        default_flavor_name = pool.pool_config['default-flavor']
 
-    if matching_flavors:
-        return Ok(FilterRuling.from_flavors(image, matching_flavors))
+    elif 'default-flavor-name' in pool.pool_config:
+        default_flavor_name = pool.pool_config['default-flavor-name']
+
+    if default_flavor_name is not None:
+
+        def _is_default_by_name(flavor: FlavorT) -> bool:
+            return bool(flavor.name == default_flavor_name)
+
+        if any(_is_default_by_name(flavor) for flavor in flavors):
+            return Ok(FilterRuling.from_flavors(image, flavors, matcher=_is_default_by_name))
 
     return Ok(FilterRuling.from_flavors(image, flavors))
 
@@ -264,19 +279,46 @@ def filter_flavors_default_fallback(
     if not pool.pool_config.get('use-default-flavor-when-no-suitable', True):
         return Ok(FilterRuling.from_flavors(image, flavors))
 
-    r_default_flavor = pool._map_environment_to_flavor_info_by_cache_by_name_or_none(
-        logger, pool.pool_config['default-flavor']
-    )
+    default_flavor_regex: Optional[str]
+    default_flavor_name: Optional[str]
 
-    if r_default_flavor.is_error:
-        return Error(r_default_flavor.unwrap_error())
+    if (default_flavor_regex := pool.pool_config.get('default-flavor-regex')) is not None:
+        try:
+            default_flavor_pattern = re.compile(default_flavor_regex)
 
-    flavor = r_default_flavor.unwrap()
+        except re.error as exc:
+            return Error(Failure.from_exc('failed to compile default-flavor-regex pattern', exc))
 
-    if flavor is None:
-        return Ok(FilterRuling(rulings=[]))
+        r_default_flavors_by_pattern = pool._map_environment_to_flavor_info_by_cache_by_name_pattern_or_none(
+            logger, default_flavor_pattern
+        )
 
-    return Ok(FilterRuling(rulings=[PairRuling(image=image, flavor=flavor, match=True)]))
+        if r_default_flavors_by_pattern.is_error:
+            return Error(r_default_flavors_by_pattern.unwrap_error())
+
+        default_flavors = r_default_flavors_by_pattern.unwrap()
+
+        if default_flavors:
+            return Ok(FilterRuling.from_flavors(image, flavors, matcher=lambda flavor: flavor in default_flavors))
+
+    if 'default-flavor' in pool.pool_config:
+        default_flavor_name = pool.pool_config['default-flavor']
+
+    elif 'default-flavor-name' in pool.pool_config:
+        default_flavor_name = pool.pool_config['default-flavor-name']
+
+    if default_flavor_name is not None:
+        r_default_flavor = pool._map_environment_to_flavor_info_by_cache_by_name_or_none(logger, default_flavor_name)
+
+        if r_default_flavor.is_error:
+            return Error(r_default_flavor.unwrap_error())
+
+        default_flavor = r_default_flavor.unwrap()
+
+        if default_flavor is not None:
+            return Ok(FilterRuling(rulings=[PairRuling(image=image, flavor=default_flavor, match=True)]))
+
+    return Ok(FilterRuling.from_flavors(image, flavors))
 
 
 def run_image_flavor_filters(

@@ -60,6 +60,9 @@ properties:
   default-flavor:
     type: string
 
+  default-flavor-name:
+    type: string
+
   default-flavor-regex:
     type: string
 
@@ -114,8 +117,15 @@ additionalProperties: false
 required:
 - api-key
 - zone
-- default-flavor
 - default-region
 - subnet-id
 - master-key-name
 - installed-plugins-dir
+
+oneOf:
+  - required:
+    - default-flavor
+  - required:
+    - default-flavor-name
+  - required:
+    - default-flavor-regex

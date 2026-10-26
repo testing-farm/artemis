@@ -3000,6 +3000,22 @@ class FlavorBasedPoolDriver(
 
         return r_flavor
 
+    def _map_environment_to_flavor_info_by_cache_by_name_pattern_or_none(
+        self, logger: gluetool.log.ContextAdapter, flavorname_pattern: Pattern[str]
+    ) -> Result[list[FlavorT], Failure]:
+        """
+        Find a flavor matching the given name pattern.
+
+        :returns: a list of matching flavors.
+        """
+
+        r_flavors = get_cached_mapping_values(CACHE.get(), self.flavor_info_cache_key, self.flavor_info_class)
+
+        if r_flavors.is_error:
+            return Error(r_flavors.unwrap_error())
+
+        return Ok([flavor for flavor in r_flavors.unwrap() if flavorname_pattern.match(flavor.name)])
+
     def _map_environment_to_flavor_info_by_cache_by_name(
         self, logger: gluetool.log.ContextAdapter, flavorname: str
     ) -> Result[FlavorT, Failure]:
