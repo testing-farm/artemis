@@ -243,6 +243,105 @@ def test_collect_pool_capabilities_error(
     assert failure.caused_by == cast(MagicMock, mock_pools[1]).capabilities.return_value.failure()
 
 
+def test_collect_pool_metrics(mock_inputs: MockInputs, mockpatch: MockPatcher) -> None:
+    _, _, _, mock_pools, _ = mock_inputs
+
+    mock_sync = mockpatch(PoolMetrics, 'sync')
+
+    r_first = tft.artemis.routing_policies.collect_pool_metrics(mock_pools)
+    r_second = tft.artemis.routing_policies.collect_pool_metrics(mock_pools)
+
+    assert r_first.is_ok
+    assert r_second.is_ok
+
+    first = r_first.unwrap()
+    second = r_second.unwrap()
+
+    for i, mock_pool in enumerate(mock_pools):
+        assert first[i][0] is mock_pool
+        assert first[i][1].poolname == mock_pool.poolname
+
+    # Without a snapshot in place, each call collects its own, freshly synchronized containers.
+    assert mock_sync.call_count == 2 * len(mock_pools)
+    assert all(metrics1 is not metrics2 for (_, metrics1), (_, metrics2) in zip(first, second))
+
+
+def test_collect_pool_metrics_snapshot(mock_inputs: MockInputs, mockpatch: MockPatcher) -> None:
+    _, _, _, mock_pools, _ = mock_inputs
+
+    mock_sync = mockpatch(PoolMetrics, 'sync')
+
+    with tft.artemis.routing_policies.pool_metrics_snapshot():
+        r_first = tft.artemis.routing_policies.collect_pool_metrics(mock_pools)
+        r_second = tft.artemis.routing_policies.collect_pool_metrics(mock_pools)
+
+    assert r_first.is_ok
+    assert r_second.is_ok
+
+    first = r_first.unwrap()
+    second = r_second.unwrap()
+
+    for i, mock_pool in enumerate(mock_pools):
+        assert first[i][0] is mock_pool
+        assert first[i][1].poolname == mock_pool.poolname
+
+    # Each pool synchronized just once, and both calls got the very same containers, not just equal ones.
+    assert mock_sync.call_count == len(mock_pools)
+    assert all(metrics1 is metrics2 for (_, metrics1), (_, metrics2) in zip(first, second))
+
+
+def test_collect_pool_metrics_snapshot_does_not_leak(mock_inputs: MockInputs, mockpatch: MockPatcher) -> None:
+    _, _, _, mock_pools, _ = mock_inputs
+
+    mock_sync = mockpatch(PoolMetrics, 'sync')
+
+    with tft.artemis.routing_policies.pool_metrics_snapshot():
+        tft.artemis.routing_policies.collect_pool_metrics(mock_pools)
+
+    tft.artemis.routing_policies.collect_pool_metrics(mock_pools)
+
+    # Once the snapshot is gone, metrics are collected from scratch again.
+    assert mock_sync.call_count == 2 * len(mock_pools)
+
+
+def test_run_routing_policies_shares_pool_metrics(mock_inputs: MockInputs, mockpatch: MockPatcher) -> None:
+    mock_logger, mock_session, mock_transaction, mock_pools, mock_guest_request = mock_inputs
+
+    mock_sync = mockpatch(PoolMetrics, 'sync')
+
+    def policy_collecting_metrics(
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        pools: list[PoolDriver[Any, Any]],
+        guest_request: tft.artemis.db.GuestRequest,
+    ) -> tft.artemis.routing_policies.PolicyReturnType:
+        r_pool_metrics = tft.artemis.routing_policies.collect_pool_metrics(pools)
+
+        assert r_pool_metrics.is_ok
+
+        return Ok(tft.artemis.routing_policies.PolicyRuling.from_pools(pools))
+
+    policies = [
+        MagicMock(name='policy_foo<mock>', policy_name='policy-foo', side_effect=policy_collecting_metrics),
+        MagicMock(name='policy_bar<mock>', policy_name='policy-bar', side_effect=policy_collecting_metrics),
+    ]
+
+    r_ruling = tft.artemis.routing_policies.run_routing_policies(
+        mock_logger,
+        mock_session,
+        mock_transaction,
+        mock_guest_request,
+        mock_pools,
+        cast(list[tft.artemis.routing_policies.PolicyType], policies),
+    )
+
+    assert r_ruling.is_ok
+    assert r_ruling.unwrap().allowed_pools == mock_pools
+
+    # Both policies asked for pool metrics, yet each pool was synchronized just once.
+    assert mock_sync.call_count == len(mock_pools)
+
+
 def test_run_routing_policies(
     mock_inputs: MockInputs, mock_policies: list[tft.artemis.routing_policies.PolicyType]
 ) -> None:
