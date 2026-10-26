@@ -18,6 +18,7 @@ from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from typing_extensions import override
 
 from tft.artemis.drivers import (
+    UNKNOWN_FLAVOR_NAME,
     BackendFlavorT,
     CLISessionPermanentDir,
     ConsoleUrlData,
@@ -151,6 +152,66 @@ _sanitize_tags = create_sanitize_tags(
     delim_len=1,
     delim_optional=True,
 )
+
+
+def _sanitize_tag_name(name: str) -> str:
+    """
+    Sanitize a tag name the way IBMCloud would.
+
+    IBMCloud drops disallowed characters from tag keys and silently lowercases them, so a tag name coming from
+    Artemis configuration is not necessarily the tag name the cloud ends up storing.
+    """
+
+    sanitized_name, _ = next(iter(_sanitize_tags({name: ''})))
+
+    return sanitized_name.lower()
+
+
+def _sanitize_flavor_tag_value(flavor_tag: str, flavor_name: str) -> str:
+    """
+    Reproduce the tag value IBMCloud ends up storing for a given flavor name.
+
+    A flavor name is written as the value of a ``flavor_tag:<name>`` tag, so it goes through the very same
+    character replacement and length truncation as any other tag value - and the truncation depends on the
+    length of ``flavor_tag`` itself. On top of that IBMCloud silently lowercases tag values. To match the
+    value we read back off an instance against the name the flavor cache is keyed by, we must apply the
+    exact same transformation here.
+    """
+
+    _, tag_value = next(iter(_sanitize_tags({flavor_tag: flavor_name})))
+
+    return tag_value.lower()
+
+
+def _map_flavor_names_by_tag_value(flavor_tag: str, flavor_names: list[str]) -> tuple[dict[str, str], set[str]]:
+    """
+    Build a mapping from the tag value IBMCloud stores back onto the configured flavor name.
+
+    :returns: a tuple of the ``stored tag value -> flavor name`` mapping and the set of tag values that
+        more than one configured flavor name sanitizes to. Ambiguous tag values are mapped to
+        :py:data:`UNKNOWN_FLAVOR_NAME` in the returned mapping, since the original name cannot be recovered.
+    """
+
+    mapping: dict[str, str] = {}
+    ambiguous: set[str] = set()
+
+    for flavor_name in flavor_names:
+        tag_value = _sanitize_flavor_tag_value(flavor_tag, flavor_name)
+
+        if tag_value in ambiguous:
+            continue
+
+        existing = mapping.get(tag_value)
+
+        if existing is not None and existing != flavor_name:
+            ambiguous.add(tag_value)
+            mapping[tag_value] = UNKNOWN_FLAVOR_NAME
+
+            continue
+
+        mapping[tag_value] = flavor_name
+
+    return mapping, ambiguous
 
 
 def _serialize_tags(tags: Tags) -> list[str]:
@@ -312,9 +373,9 @@ class IBMCloudDriver(
         with IBMCloudSession(logger, self) as ibm_session:
             return self.tag_resource_sessionless(logger, ibm_session, resource_name, tags)
 
-    def get_resource_tags(
+    def get_resources_by_filter(
         self, logger: gluetool.log.ContextAdapter, resource_filter: str
-    ) -> Result[list[str], Failure]:
+    ) -> Result[list[IBMResourceInfoType], Failure]:
         """
         Retrieve information about the resource (instance, security group, workspace etc) from the resource endpoint.
         Can come in handy when dealing with post-creation tagging.
@@ -336,16 +397,94 @@ class IBMCloudDriver(
                     resource_filter=resource_filter,
                 )
             )
-        tags = cast(dict[str, list[IBMResourceInfoType]], r_resource_details.unwrap())
-        # Cornercase - no instance tags assigned
-        if tags.get('items') == []:
+        resources = cast(dict[str, list[IBMResourceInfoType]], r_resource_details.unwrap())
+        # Cornercase - no resources discovered
+        if resources.get('items') == []:
             return Ok([])
 
-        if not tags.get('items'):
+        if not resources.get('items'):
             # No 'items' key discovered in the data that was sent
-            return Error(Failure(f'Unexpected output of ibmcloud resource show command for {resource_filter}: {tags}'))
+            return Error(
+                Failure(f'Unexpected output of ibmcloud resource search command for {resource_filter}: {resources}')
+            )
 
-        return Ok(tags['items'][0].get('tags', []))
+        return Ok(resources['items'])
+
+    def get_resource_tags(
+        self, logger: gluetool.log.ContextAdapter, resource_filter: str
+    ) -> Result[list[str], Failure]:
+        r_resources = self.get_resources_by_filter(logger, resource_filter)
+        if r_resources.is_error:
+            return Error(r_resources.unwrap_error())
+
+        resources = r_resources.unwrap()
+        if not resources:
+            return Ok([])
+
+        return Ok(resources[0].get('tags', []))
+
+    def get_instances_with_flavor_tags_names(
+        self, logger: gluetool.log.ContextAdapter, resource_type: str
+    ) -> Result[dict[str, str], Failure]:
+        """
+        As IBMCloud does not allow cheap (as in number of api calls) fetching of instances with tags,
+        let's make a single call for all ibmcloud resources of the given type that match the instance
+        flavor:* tag, then form an instance_name: flavor mapping that will come handy in flavor usage
+        metrics collection.
+        """
+        r_flavor_tag = self._instance_flavor_tag
+        if r_flavor_tag.is_error:
+            return Error(r_flavor_tag.unwrap_error())
+
+        # IBMCloud strips certain characters and does not allow capital letters, so the default of ArtemisFlavor
+        # won't fly, need to apply that to the expected tag name from artemis config.
+        flavor_tag = _sanitize_tag_name(r_flavor_tag.unwrap())
+        flavor_tag_prefix = f'{flavor_tag}:'
+
+        r_flavors = self.get_pool_flavor_infos()
+        if r_flavors.is_error:
+            return Error(r_flavors.unwrap_error())
+
+        # IBMCloud sanitizes and lowercases tag values, so the name we read back off an instance is not
+        # necessarily the name we wrote. Reproduce the write-time transformation to map the stored value back
+        # onto the name the flavor cache is keyed by, otherwise the usage lookup misses.
+        known_flavor_names, ambiguous_tag_values = _map_flavor_names_by_tag_value(
+            flavor_tag, [flavor.name for flavor in r_flavors.unwrap()]
+        )
+
+        if ambiguous_tag_values:
+            # Two configured flavors collapsing to the same sanitized tag value is a configuration mistake we
+            # cannot resolve: the stored value no longer identifies a single flavor. Failing here would abort
+            # the whole metrics refresh (cores, memory, limits, usage), which routing and provisioning depend
+            # on, so report it loudly instead and carry on with the ambiguous flavors resolved to
+            # UNKNOWN_FLAVOR_NAME.
+            Failure(
+                'multiple flavor names map to the same sanitized tag value',
+                ambiguous_tag_values=sorted(ambiguous_tag_values),
+            ).handle(logger)
+
+        # Resource search is global, let's restrict it to the pool's region to keep the mapping scoped
+        # to the instances we actually account for.
+        # Need * in region for vpc match to work as vpc has zones (!) in region field, like region: us-east-3..
+        r_instances_with_flavors = self.get_resources_by_filter(
+            logger, f'tags:{flavor_tag}* AND type:{resource_type} AND region:{self.pool_config["default-region"]}*'
+        )
+
+        if r_instances_with_flavors.is_error:
+            return Error(r_instances_with_flavors.unwrap_error())
+
+        def _flavor_name(instance: IBMResourceInfoType) -> str:
+            for tag in instance.get('tags', []):
+                if not tag.startswith(flavor_tag_prefix):
+                    continue
+
+                tagged_name = tag[len(flavor_tag_prefix) :]
+
+                return known_flavor_names.get(tagged_name.lower(), tagged_name)
+
+            return UNKNOWN_FLAVOR_NAME
+
+        return Ok({instance['name']: _flavor_name(instance) for instance in r_instances_with_flavors.unwrap()})
 
     def _create_instance_request(
         self,
