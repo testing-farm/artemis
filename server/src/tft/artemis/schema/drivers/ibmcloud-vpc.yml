@@ -114,18 +114,19 @@ properties:
 
 additionalProperties: false
 
-required:
-- api-key
-- zone
-- default-region
-- subnet-id
-- master-key-name
-- installed-plugins-dir
+allOf:
+  - required:
+    - api-key
+    - zone
+    - default-region
+    - subnet-id
+    - master-key-name
+    - installed-plugins-dir
 
-oneOf:
-  - required:
-    - default-flavor
-  - required:
-    - default-flavor-name
-  - required:
-    - default-flavor-regex
+  - oneOf:
+    - required:
+      - default-flavor
+    - required:
+      - default-flavor-name
+    - required:
+      - default-flavor-regex

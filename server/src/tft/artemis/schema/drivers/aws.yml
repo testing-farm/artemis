@@ -157,26 +157,27 @@ properties:
 
 additionalProperties: false
 
-required:
-- access-key-id
-- availability-zone
-- command
-- default-region
-- master-key-name
-- secret-access-key
-- subnet-id
-- vpc-id
+allOf:
+  - required:
+    - access-key-id
+    - availability-zone
+    - command
+    - default-region
+    - master-key-name
+    - secret-access-key
+    - subnet-id
+    - vpc-id
 
-oneOf:
-  - required:
-    - security-group
-  - required:
-    - security-group-rules
+  - oneOf:
+    - required:
+      - security-group
+    - required:
+      - security-group-rules
 
-oneOf:
-  - required:
-    - default-flavor
-  - required:
-    - default-flavor-name
-  - required:
-    - default-flavor-regex
+  - oneOf:
+    - required:
+      - default-flavor
+    - required:
+      - default-flavor-name
+    - required:
+      - default-flavor-regex

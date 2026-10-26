@@ -81,12 +81,18 @@ properties:
 
 additionalProperties: false
 
-required: [service-account-info, zone, project, image-project, network-resource-url]
+allOf:
+  - required:
+    - service-account-info
+    - zone
+    - project
+    - image-project
+    - network-resource-url
 
-oneOf:
-  - required:
-    - default-flavor
-  - required:
-    - default-flavor-name
-  - required:
-    - default-flavor-regex
+  - oneOf:
+    - required:
+      - default-flavor
+    - required:
+      - default-flavor-name
+    - required:
+      - default-flavor-regex

@@ -115,29 +115,30 @@ properties:
 additionalProperties: false
 
 allOf:
-- required:
-  - username
-  - password
-  - auth-url
-  - project-name
-  - user-domain-name
-  - api-version
-  - glance-version
-  - nova-version
-  - master-key-name
-  - network-regex
-  - ip-version
-  - security-group
-- anyOf:
   - required:
-    - project-domain-id
-  - required:
-    - project-domain-name
+    - username
+    - password
+    - auth-url
+    - project-name
+    - user-domain-name
+    - api-version
+    - glance-version
+    - nova-version
+    - master-key-name
+    - network-regex
+    - ip-version
+    - security-group
 
-oneOf:
-  - required:
-    - default-flavor
-  - required:
-    - default-flavor-name
-  - required:
-    - default-flavor-regex
+  - anyOf:
+    - required:
+      - project-domain-id
+    - required:
+      - project-domain-name
+
+  - oneOf:
+    - required:
+      - default-flavor
+    - required:
+      - default-flavor-name
+    - required:
+      - default-flavor-regex

@@ -110,15 +110,16 @@ properties:
 
 additionalProperties: false
 
-required:
-- password
-- username
-- default-location
+allOf:
+  - required:
+    - password
+    - username
+    - default-location
 
-oneOf:
-  - required:
-    - default-flavor
-  - required:
-    - default-flavor-name
-  - required:
-    - default-flavor-regex
+  - oneOf:
+    - required:
+      - default-flavor
+    - required:
+      - default-flavor-name
+    - required:
+      - default-flavor-regex
