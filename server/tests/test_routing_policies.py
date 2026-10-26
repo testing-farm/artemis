@@ -263,7 +263,7 @@ def test_collect_pool_metrics(mock_inputs: MockInputs, mockpatch: MockPatcher) -
 
     # Without a snapshot in place, each call collects its own, freshly synchronized containers.
     assert mock_sync.call_count == 2 * len(mock_pools)
-    assert all(metrics1 is not metrics2 for (_, metrics1), (_, metrics2) in zip(first, second))
+    assert all(metrics1 is not metrics2 for (_, metrics1), (_, metrics2) in zip(first, second, strict=True))
 
 
 def test_collect_pool_metrics_snapshot(mock_inputs: MockInputs, mockpatch: MockPatcher) -> None:
@@ -287,7 +287,7 @@ def test_collect_pool_metrics_snapshot(mock_inputs: MockInputs, mockpatch: MockP
 
     # Each pool synchronized just once, and both calls got the very same containers, not just equal ones.
     assert mock_sync.call_count == len(mock_pools)
-    assert all(metrics1 is metrics2 for (_, metrics1), (_, metrics2) in zip(first, second))
+    assert all(metrics1 is metrics2 for (_, metrics1), (_, metrics2) in zip(first, second, strict=True))
 
 
 def test_collect_pool_metrics_snapshot_does_not_leak(mock_inputs: MockInputs, mockpatch: MockPatcher) -> None:
