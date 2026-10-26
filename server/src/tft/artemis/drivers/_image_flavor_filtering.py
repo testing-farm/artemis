@@ -299,7 +299,7 @@ def filter_flavors_default_fallback(
         default_flavors = r_default_flavors_by_pattern.unwrap()
 
         if default_flavors:
-            return Ok(FilterRuling.from_flavors(image, flavors, matcher=lambda flavor: flavor in default_flavors))
+            return Ok(FilterRuling.from_flavors(image, default_flavors))
 
     if 'default-flavor' in pool.pool_config:
         default_flavor_name = pool.pool_config['default-flavor']
