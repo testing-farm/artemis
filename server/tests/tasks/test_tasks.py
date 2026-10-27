@@ -486,9 +486,7 @@ def test_preprovision_parses_guest_template_with_removed_environment_fields(
         }
     )
 
-    workspace = tft.artemis.tasks.preprovision.Workspace.create(
-        logger, db, session, 'dummy-shelf', guest_template, '1'
-    )
+    workspace = tft.artemis.tasks.preprovision.Workspace.create(logger, db, session, 'dummy-shelf', guest_template, '1')
 
     class _StopTaskError(Exception):
         pass
