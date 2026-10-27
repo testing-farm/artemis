@@ -30,13 +30,15 @@ from . import (
 )
 from .common import router__status, router_default, router_knobs, router_users
 from .v0_0_53 import router__cache
-from .v0_0_56 import router_shelves
+from .v0_0_56 import create_router_shelves
 
 router_guests = APIRouter(
     prefix='/guests',
     tags=['guests'],
     responses={status.HTTP_404_NOT_FOUND: {'description': 'Not found'}},
 )
+
+router_shelves = create_router_shelves('v0.0.90')
 
 
 @router_guests.get('/', status_code=status.HTTP_200_OK)
