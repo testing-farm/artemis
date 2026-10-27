@@ -48,7 +48,7 @@ KNOB_DISPATCHER_TICK: Knob[float] = Knob(
 
 def handle_task_request(
     root_logger: gluetool.log.ContextAdapter, transaction: Transaction, task_request: TaskRequest
-) -> None:
+) -> _Result[int, Failure]:
     with Sentry.start_span(TracingOp.FUNCTION, description='dispatch_task_request') as tracing_span:
         logger = TaskLogger(root_logger, f'task-request#{task_request.id}')
 
@@ -67,17 +67,19 @@ def handle_task_request(
 
         logger.info(f'about to schedule task {task_request.taskname}({", ".join(formatted_args)})')
 
-        def _log_failure(failure: Failure, message: str) -> None:
-            failure.update(task_name=task_request.taskname, task_args=task_request.arguments).handle(logger, message)
+        def _log_failure(failure: Failure) -> _Result[int, Failure]:
+            failure.update(task_name=task_request.taskname, task_args=task_request.arguments)
 
             DispatcherMetrics.inc_failed_dispatched_tasks()
 
             logger.finished()
 
+            return _Error(failure)
+
         r_task_call = TaskCall.from_task_request(task_request)
 
         if r_task_call.is_error:
-            return _log_failure(r_task_call.unwrap_error(), 'failed to find task')
+            return _log_failure(Failure.from_failure('failed to find task', r_task_call.unwrap_error()))
 
         task_call = r_task_call.unwrap()
 
@@ -89,18 +91,20 @@ def handle_task_request(
         )
 
         if r_dispatch.is_error:
-            return _log_failure(r_dispatch.unwrap_error(), 'failed to dispatch task')
+            return _log_failure(Failure.from_failure('failed to dispatch task', r_dispatch.unwrap_error()))
 
         r_delete: DMLResult[TaskRequest] = transaction.execute_dml(
             logger, sqlalchemy.delete(TaskRequest).where(TaskRequest.id == task_request.id)
         )
 
         if r_delete.is_error:
-            return _log_failure(r_delete.unwrap_error(), 'failed to remove task request')
+            return _log_failure(Failure.from_failure('failed to remove task request', r_delete.unwrap_error()))
 
         DispatcherMetrics.inc_successful_dispatched_tasks(task_call.actor.actor_name)
 
         logger.finished()
+
+        return _Ok(1)
 
 
 def handle_task_sequence_request(
@@ -108,7 +112,7 @@ def handle_task_sequence_request(
     session: sqlalchemy.orm.session.Session,
     transaction: Transaction,
     task_sequence_request: TaskSequenceRequest,
-) -> None:
+) -> _Result[int, Failure]:
     with Sentry.start_span(TracingOp.FUNCTION, description='dispatch_task_sequence_request') as tracing_span:
         logger = TaskLogger(root_logger, f'task-sequence-request#{task_sequence_request.id}')
 
@@ -124,16 +128,14 @@ def handle_task_sequence_request(
         )
 
         if r_task_requests.is_error:
-            Failure.from_failure('failed to fetch task requests', r_task_requests.unwrap_error()).handle(logger)
+            return _Error(Failure.from_failure('failed to fetch task requests', r_task_requests.unwrap_error()))
 
-            return None
-
-        def _log_failure(failure: Failure, message: str) -> None:
-            failure.handle(logger, message)
-
+        def _log_failure(failure: Failure) -> _Result[int, Failure]:
             DispatcherMetrics.inc_failed_dispatched_task_sequences()
 
             logger.finished()
+
+            return _Error(failure)
 
         task_calls: list[TaskCall] = []
 
@@ -141,7 +143,7 @@ def handle_task_sequence_request(
             r_task_call = TaskCall.from_task_request(task_request)
 
             if r_task_call.is_error:
-                return _log_failure(r_task_call.unwrap_error(), 'failed to find task')
+                return _log_failure(Failure.from_failure('failed to find task', r_task_call.unwrap_error()))
 
             task_calls.append(r_task_call.unwrap())
 
@@ -161,7 +163,7 @@ def handle_task_sequence_request(
         )
 
         if r_dispatch.is_error:
-            return _log_failure(r_dispatch.unwrap_error(), 'failed to dispatch task sequence')
+            return _log_failure(Failure.from_failure('failed to dispatch task sequence', r_dispatch.unwrap_error()))
 
         for task_call in task_calls:
             r_delete: DMLResult[TaskRequest] = transaction.execute_dml(
@@ -169,7 +171,7 @@ def handle_task_sequence_request(
             )
 
             if r_delete.is_error:
-                return _log_failure(r_delete.unwrap_error(), 'failed to remove task request')
+                return _log_failure(Failure.from_failure('failed to remove task request', r_delete.unwrap_error()))
 
         r_sequence_delete: DMLResult[TaskSequenceRequest] = transaction.execute_dml(
             logger,
@@ -177,13 +179,17 @@ def handle_task_sequence_request(
         )
 
         if r_sequence_delete.is_error:
-            return _log_failure(r_sequence_delete.unwrap_error(), 'failed to remove task sequence request')
+            return _log_failure(
+                Failure.from_failure('failed to remove task sequence request', r_sequence_delete.unwrap_error())
+            )
 
         DispatcherMetrics.inc_successful_dispatched_task_sequence(
             [task_call.actor.actor_name for task_call in task_calls]
         )
 
         logger.finished()
+
+        return _Ok(1)
 
 
 def pick_task_request(
@@ -218,9 +224,12 @@ def pick_task_request(
 
             tracing_transaction.set_tag('taskname', task_request.taskname)
 
-            handle_task_request(logger, t, task_request)
+            r = handle_task_request(logger, t, task_request)
 
             LOGGER.set(logger)
+
+            if not is_successful(r):
+                return r
 
         if not t.complete:
             assert t.failure is not None
@@ -263,9 +272,12 @@ def pick_task_sequence_request(
             if task_sequence_request is None:
                 return _Ok(0)
 
-            handle_task_sequence_request(logger, session, t, task_sequence_request)
+            r = handle_task_sequence_request(logger, session, t, task_sequence_request)
 
             LOGGER.set(logger)
+
+            if not is_successful(r):
+                return r
 
         if not t.complete:
             assert t.failure is not None
