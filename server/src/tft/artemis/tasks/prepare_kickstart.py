@@ -136,7 +136,11 @@ class Workspace(_Workspace):
 
         log = r_guest_log.unwrap()
 
-        if log is not None and log.blobs and any(blob.ctime >= self.gr.mtime for blob in log.blobs):
+        # The guest may have been dropped back to routing and re-provisioned since the script was stored, so only
+        # blobs stored after the guest entered its current state count.
+        if log is not None and any(
+            self.gr.state_mtime is None or blob.ctime >= self.gr.state_mtime for blob in log.blobs
+        ):
             # An earlier invocation did store the script, there is nothing to explain.
             return None
 
