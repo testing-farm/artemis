@@ -1,6 +1,7 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
+import json
 import logging
 import unittest
 from typing import Any, cast
@@ -21,6 +22,7 @@ import tft.artemis.guest
 import tft.artemis.middleware
 import tft.artemis.tasks
 import tft.artemis.tasks.acquire_guest_request
+import tft.artemis.tasks.preprovision
 import tft.artemis.tasks.route_guest_request
 
 from .. import MATCH, SEARCH, MockPatcher, assert_log
@@ -459,6 +461,50 @@ def test_fail_on_tainted_transaction(
         assert events[0].guestname == 'dummy-guest'
         assert events[0].details['error'] == 'dummy label'
         assert events[0].details['failure']['message'] == 'dummy failure'
+
+
+def test_preprovision_parses_guest_template_with_removed_environment_fields(
+    logger: gluetool.log.ContextAdapter,
+    db: tft.artemis.db.DB,
+    session: sqlalchemy.orm.session.Session,
+    monkeypatch: _pytest.monkeypatch.MonkeyPatch,
+) -> None:
+    """
+    A preprovisioning task queued before the upgrade may still carry fields removed from
+    ``Environment``, e.g. ``spot_instance``. Such a stored template must still be parsed.
+    """
+
+    guest_template = json.dumps(
+        {
+            'keyname': 'dummy-key',
+            'environment': {
+                'hw': {'arch': 'x86_64'},
+                'os': {'compose': 'dummy-compose'},
+                'kickstart': {},
+                'spot_instance': None,
+            },
+        }
+    )
+
+    workspace = tft.artemis.tasks.preprovision.Workspace.create(
+        logger, db, session, 'dummy-shelf', guest_template, '1'
+    )
+
+    class _StopTaskError(Exception):
+        pass
+
+    def _stop_task(self: tft.artemis.tasks.preprovision.Workspace) -> None:
+        raise _StopTaskError
+
+    def _fail(self: tft.artemis.tasks.preprovision.Workspace, *args: Any, **kwargs: Any) -> None:
+        raise AssertionError('failed to parse guest template environment')
+
+    # Stop the task right after it parses the environment, before it touches the database.
+    monkeypatch.setattr(tft.artemis.tasks.preprovision.Workspace, 'transaction', _stop_task)
+    monkeypatch.setattr(tft.artemis.tasks.preprovision.Workspace, 'fail', _fail)
+
+    with pytest.raises(_StopTaskError):
+        workspace.run()
 
 
 @pytest.mark.usefixtures('skip_sqlite', '_schema_initialized_actual')

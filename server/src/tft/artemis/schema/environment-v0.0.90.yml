@@ -1,5 +1,5 @@
 # Essentially the same as v0.0.89, the API change was only about dropping the `spot_instance` field, replaced by
-# the `route.policies.use-spot.label` user data tag.
+# the user data label named by the `route.policies.use-spot.label` knob (`ArtemisUseSpot` by default).
 
 $schema: http://json-schema.org/draft-07/schema#
 description: Environment schema

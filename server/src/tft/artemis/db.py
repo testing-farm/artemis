@@ -1098,17 +1098,18 @@ class GuestRequest(Base):
     @property
     def environment(self) -> 'Environment':
         # avoid circular imports
-        from .environment import Environment
+        from .environment import Environment, drop_removed_environment_fields
 
         # v0.0.53: added Kickstart specification. For backward compatibility,
         # add `kickstart` key if it's missing.
         if 'kickstart' not in self._environment:
             self._environment['kickstart'] = {}
 
-        # v0.0.90: dropped `spot_instance` from the environment, replaced by the
-        # `route.policies.use-spot.label` user data tag. Stored requests may still contain it,
-        # but `Environment` no longer accepts this field - drop it for backward compatibility.
-        self._environment.pop('spot_instance', None)
+        # v0.0.90: drop fields removed from the environment, e.g. `spot_instance`, replaced by
+        # the user data label named by the `route.policies.use-spot.label` knob
+        # (`ArtemisUseSpot` by default). Stored requests may still contain them, but
+        # `Environment` no longer accepts them.
+        drop_removed_environment_fields(self._environment)
 
         return Environment.unserialize(self._environment)
 
