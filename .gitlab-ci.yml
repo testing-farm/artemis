@@ -34,6 +34,19 @@ workflow:
     PYTEST_ADDOPTS: "--color=yes"
     PRE_COMMIT_COLOR: "always"
 
+.postgresql-tests:
+  extends: .tests
+
+  services:
+    - name: postgres:12
+      alias: postgres
+
+  variables:
+    POSTGRES_DB: artemis
+    POSTGRES_USER: artemis
+    POSTGRES_PASSWORD: artemis
+    ARTEMIS_DB_URL: "postgresql://artemis:artemis@postgres:5432/artemis"
+
 test/server/pre-commit:
   interruptible: true
   extends: .tests
@@ -43,14 +56,17 @@ test/server/pre-commit:
 
 test/server/unittests:
   interruptible: true
-  extends: .tests
+  extends: .postgresql-tests
+
+  variables:
+    PYTEST_ADDOPTS: "--color=yes --against-db-url=postgresql://artemis:artemis@postgres:5432/artemis"
 
   script:
     - make -C server/ test-units
 
 test/server/db-schema:
   interruptible: true
-  extends: .tests
+  extends: .postgresql-tests
 
   script:
     - make -C server/ test-db-schema-revisions
