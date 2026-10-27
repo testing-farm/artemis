@@ -407,7 +407,9 @@ class AzureDriver(
                 Failure.from_exc('failed to parse timestamp', exc, timestamp=timestamp, strptime_format=ts_format)
             )
 
-    def _render_resource_group_name(self, guest_request: GuestRequest) -> _Result[str, Failure]:
+    def _render_resource_group_name(
+        self, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
+    ) -> _Result[str, Failure]:
         r_resource_group_template = KNOB_RESOURCE_GROUP_NAME_TEMPLATE.get_value(entityname=self.poolname)
         if r_resource_group_template.is_error:
             return _Error(
@@ -519,7 +521,7 @@ class AzureDriver(
         return ResourceGroup(name=self.pool_config['guest-resource-group'], is_shared=True)
 
     def query_resource_groups_by_guest_request(
-        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> _Result[list[ResourceGroup], Failure]:
         # If there is a pool-defined resource group -> use it
         predefined_rg = self._get_guest_resource_group()
@@ -527,12 +529,12 @@ class AzureDriver(
             return _Ok([predefined_rg])
 
         # Let's get expected name to match against
-        r_expected_name = self._render_resource_group_name(guest_request)
+        r_expected_name = self._render_resource_group_name(session, guest_request)
         if not is_successful(r_expected_name):
             return _Error(Failure.from_failure('failed to get expected resouce group name', r_expected_name.failure()))
 
-        with AzureSession(logger, self) as session:
-            r_resource_groups_list = session.run(
+        with AzureSession(logger, self) as az_session:
+            r_resource_groups_list = az_session.run(
                 logger,
                 ['group', 'list', '--query', f"[?starts_with(name, '{r_expected_name.unwrap()}')]"],
                 commandname='az.resource-groups-list',
@@ -793,7 +795,7 @@ class AzureDriver(
 
     # XXX FIXME Should be imho moved to FlavorBasedDriver class
     def _query_instances_by_guest_request(
-        self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest
+        self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> _Result[list[AzureInstance], Failure]:
         """
         Fetch list of instances for a given guest request from the backend infrastructure.
@@ -806,7 +808,7 @@ class AzureDriver(
             return _Error(Failure.from_failure('failed to list instances', r_instances_list.unwrap_error()))
 
         # Let's get expected name to match against
-        r_expected_name = self._render_instance_name(guest_request)
+        r_expected_name = self._render_instance_name(session, guest_request)
         if not is_successful(r_expected_name):
             return _Error(Failure.from_failure('failed to get expected instance name', r_expected_name.failure()))
         expected_name = r_expected_name.unwrap()

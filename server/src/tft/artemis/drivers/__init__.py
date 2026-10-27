@@ -1774,7 +1774,9 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
 
         return Ok(r_value.unwrap())
 
-    def _render_instance_name(self, guest_request: GuestRequest) -> _Result[str, Failure]:
+    def _render_instance_name(
+        self, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
+    ) -> _Result[str, Failure]:
         r_instance_name_template = KNOB_INSTANCE_NAME_TEMPLATE.get_value(entityname=self.poolname)
         if r_instance_name_template.is_error:
             return _Error(
@@ -2286,7 +2288,7 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
 
         tags['ArtemisGuestName'] = guest_request.guestname
 
-        r_guest_name = self._render_instance_name(guest_request)
+        r_guest_name = self._render_instance_name(session, guest_request)
         if not is_successful(r_guest_name):
             return Error(Failure.from_failure('failed to get expected instance name', r_guest_name.failure()))
 
@@ -4126,6 +4128,7 @@ class ResourceCreationOutcome(Generic[ResourceT]):
 RMListResourcesCallback = Callable[
     [
         gluetool.log.ContextAdapter,
+        sqlalchemy.orm.session.Session,
         GuestRequest,
     ],
     _Result[list[ResourceT], Failure],
@@ -4173,6 +4176,7 @@ RMReuseResourceCallback = Callable[
 #: When invoked, provide name of the resource for the given guest request.
 RMResourceNameCallback = Callable[
     [
+        sqlalchemy.orm.session.Session,
         GuestRequest,
     ],
     _Result[str, Failure],
@@ -4182,12 +4186,15 @@ RMResourceNameCallback = Callable[
 #: When invoked, decide whether an existing resource may be reused to satisfy the given creation request.
 #: A resource that is otherwise reusable (pending/ready) but incompatible with the request - e.g. a spot
 #: instance for a request that no longer wants spot - must not be reused, and is cleaned up instead.
+#: Returns a ``Result``: ``Ok(True)``/``Ok(False)`` for a definite reuse decision, or ``Error`` when the check
+#: itself could not be carried out (e.g. a transient backend failure). An ``Error`` aborts the acquire so it is
+#: retried, rather than being misread as "not reusable" and triggering a needless (and possibly harmful) recreate.
 RMCanReuseResourceCallback = Callable[
     [
         ResourceCreationRequestT,
         ResourceT,
     ],
-    bool,
+    _Result[bool, Failure],
 ]
 
 
@@ -4233,7 +4240,7 @@ class ResourceManager(Generic[ResourceT, ResourceCreationRequestT, ResourceCreat
         resource_request = r_resource_request.unwrap()
         failure_details['resource_request'] = resource_request.serialize()
 
-        r_resource_name = self.resource_name(guest_request)
+        r_resource_name = self.resource_name(session, guest_request)
         if not is_successful(r_resource_name):
             return _Error(
                 Failure.from_failure('Could not get resource name', r_resource_name.failure(), **failure_details)
@@ -4245,7 +4252,7 @@ class ResourceManager(Generic[ResourceT, ResourceCreationRequestT, ResourceCreat
 
         guest_request.log_event(logger, transaction, 'resource-acquisition-attempt', **failure_details)
 
-        r_existing_resources = self.list_resources(logger, guest_request)
+        r_existing_resources = self.list_resources(logger, session, guest_request)
         if not is_successful(r_existing_resources):
             return _Error(
                 Failure.from_failure(
@@ -4270,9 +4277,14 @@ class ResourceManager(Generic[ResourceT, ResourceCreationRequestT, ResourceCreat
         # left over from a previous attempt while the pool (or request) no longer asks for spot. Such resources must
         # not be reused; treat them as leftovers so they get cleaned up and a fresh, compatible one is created.
         if self.can_reuse_resource is not None:
-            pending_reusability = [
-                (resource, self.can_reuse_resource(resource_request, resource)) for resource in pending_resources
-            ]
+            pending_reusability: list[tuple[ResourceT, bool]] = []
+            for resource in pending_resources:
+                r_reusable = self.can_reuse_resource(resource_request, resource)
+                # A failed check (e.g. transient backend error) must not be read as "not reusable": abort and retry
+                # the whole acquire instead of discarding/recreating a resource that may well be fine.
+                if not is_successful(r_reusable):
+                    return _Error(r_reusable.failure().update(**failure_details))
+                pending_reusability.append((resource, r_reusable.unwrap()))
             incompatible_resources = [resource for resource, is_reusable in pending_reusability if not is_reusable]
             pending_resources = [resource for resource, is_reusable in pending_reusability if is_reusable]
         else:
