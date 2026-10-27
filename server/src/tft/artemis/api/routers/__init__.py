@@ -40,7 +40,7 @@ from ... import (
 from ...cache import get_cache_value, iter_cache_keys
 from ...context import DATABASE, LOGGER, SESSION
 from ...drivers import Instance, PoolDriver
-from ...environment import Environment
+from ...environment import Environment, drop_removed_environment_fields
 from ...guest import GuestState
 from ...knobs import KNOB_DEPLOYMENT, KNOB_DEPLOYMENT_ENVIRONMENT, KNOB_TRACING_ENABLED, Knob
 from ...security_group_rules import SecurityGroupRule
@@ -495,10 +495,11 @@ def _environment_compat(environment: dict[str, Optional[Any]]) -> dict[str, Opti
     if 'kickstart' not in environment:
         environment['kickstart'] = {}
 
-    # COMPAT: v0.0.90: `spot_instance` was dropped from the environment, replaced by the
-    # `route.policies.use-spot.label` user data tag. Older APIs and clients still send it,
-    # but `Environment` no longer accepts it - drop it to keep them working.
-    environment.pop('spot_instance', None)
+    # COMPAT: v0.0.90: drop fields removed from the environment, e.g. `spot_instance`,
+    # replaced by the user data label named by the `route.policies.use-spot.label` knob
+    # (`ArtemisUseSpot` by default). Older APIs and clients still send them, but
+    # `Environment` no longer accepts them.
+    drop_removed_environment_fields(environment)
 
     return environment
 

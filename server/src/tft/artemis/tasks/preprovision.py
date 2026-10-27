@@ -22,7 +22,7 @@ from .. import Failure
 from ..api.environment import DEFAULT_SSH_PORT, DEFAULT_SSH_USERNAME
 from ..api.models import GuestRequest as GuestRequestSchema
 from ..db import DB, DMLResult, GuestLogContentType, GuestRequest
-from ..environment import Environment
+from ..environment import Environment, drop_removed_environment_fields
 from ..guest import GuestState
 from . import _ROOT_LOGGER, DoerReturnType, DoerType, Workspace as _Workspace, get_shelf_logger, step, task, task_core
 from .guest_shelf_lookup import guest_shelf_lookup
@@ -71,7 +71,11 @@ class Workspace(_Workspace):
                 return self.fail(Failure.from_exc('failed to parse log types', exc), 'failed to parse log types')
 
         try:
-            environment = Environment.unserialize(self.guest_template.environment)
+            # COMPAT: v0.0.90: templates queued before the upgrade may still carry fields
+            # removed from `Environment`, e.g. `spot_instance`.
+            environment = Environment.unserialize(
+                drop_removed_environment_fields(self.guest_template.environment)
+            )
 
         except Exception as exc:
             return self.fail(
