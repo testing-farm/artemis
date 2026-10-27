@@ -73,9 +73,7 @@ class Workspace(_Workspace):
         try:
             # COMPAT: v0.0.90: templates queued before the upgrade may still carry fields
             # removed from `Environment`, e.g. `spot_instance`.
-            environment = Environment.unserialize(
-                drop_removed_environment_fields(self.guest_template.environment)
-            )
+            environment = Environment.unserialize(drop_removed_environment_fields(self.guest_template.environment))
 
         except Exception as exc:
             return self.fail(
