@@ -13,6 +13,12 @@ properties:
   default-flavor:
     type: string
 
+  default-flavor-name:
+    type: string
+
+  default-flavor-regex:
+    type: string
+
   capabilities:
     type: object
 
@@ -78,11 +84,19 @@ properties:
 
 additionalProperties: false
 
-required:
-- api-key
-- workspace-crn
-- subnet-id
-- master-key-name
-- default-region
-- default-flavor
-- installed-plugins-dir
+allOf:
+  - required:
+    - api-key
+    - workspace-crn
+    - subnet-id
+    - master-key-name
+    - default-region
+    - installed-plugins-dir
+
+  - oneOf:
+    - required:
+      - default-flavor
+    - required:
+      - default-flavor-name
+    - required:
+      - default-flavor-regex

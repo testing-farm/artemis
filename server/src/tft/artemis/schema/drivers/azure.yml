@@ -47,6 +47,12 @@ properties:
   default-flavor:
     type: string
 
+  default-flavor-name:
+    type: string
+
+  default-flavor-regex:
+    type: string
+
   default-location:
     type: string
 
@@ -104,8 +110,16 @@ properties:
 
 additionalProperties: false
 
-required:
-- password
-- username
-- default-flavor
-- default-location
+allOf:
+  - required:
+    - password
+    - username
+    - default-location
+
+  - oneOf:
+    - required:
+      - default-flavor
+    - required:
+      - default-flavor-name
+    - required:
+      - default-flavor-regex
