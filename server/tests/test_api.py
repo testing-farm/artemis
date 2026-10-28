@@ -117,7 +117,7 @@ def test_router_shelves_preprovision_uses_its_api_version(
     route = next(
         route
         for route in router.routes
-        if isinstance(route, fastapi.routing.APIRoute) and route.path == '/shelves/{shelfname}/preprovision'
+        if isinstance(route, fastapi.routing.APIRoute) and route.path == '/shelves/{shelfname}/preprovision'  # noqa: FS003
     )
 
     route.endpoint(
