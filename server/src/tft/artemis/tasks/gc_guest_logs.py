@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Schedule and execute a dummy task serving as an end-to-end check of worker stability.
+Remove old guest logs.
 
 .. note::
 
@@ -15,6 +15,7 @@ from typing import cast
 
 import gluetool.log
 import periodiq
+import sqlalchemy.dialects.postgresql
 import sqlalchemy.orm.session
 
 from ..db import DB, DMLResult, GuestLog, GuestRequest
