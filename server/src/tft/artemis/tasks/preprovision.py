@@ -71,7 +71,7 @@ class Workspace(_Workspace):
                 return self.fail(Failure.from_exc('failed to parse log types', exc), 'failed to parse log types')
 
         try:
-            # COMPAT: v0.0.90: templates queued before the upgrade may still carry fields
+            # COMPAT: v0.0.95: templates queued before the upgrade may still carry fields
             # removed from `Environment`, e.g. `spot_instance`.
             environment = Environment.unserialize(drop_removed_environment_fields(self.guest_template.environment))
 

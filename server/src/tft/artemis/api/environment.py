@@ -23,9 +23,9 @@ ENVIRONMENT_SCHEMAS: dict[str, JSONSchemaType] = {}
 #: API versions. Based on this list, routers for proper endpoints will be added to the application with appropriate
 #: redirects if specified.
 API_MILESTONES: list[tuple[str, list[str]]] = [
-    # DROPPED: environment spot_instance field
+    # DROPPED: environment spot_instance field (originally planned as v0.0.90)
     (
-        'v0.0.90',
+        'v0.0.95',
         [
             # For lazy clients who don't care about the version, our most current API version should add
             # `/current` redirected to itself.
