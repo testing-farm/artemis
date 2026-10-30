@@ -4,13 +4,12 @@
 import dataclasses
 import functools
 import re
-from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Callable, Generic, Optional, Protocol, TypedDict, TypeVar, cast
+from collections.abc import Callable, Sequence
+from typing import TYPE_CHECKING, Any, Generic, Optional, Protocol, Self, TypeAlias, TypedDict, TypeVar, cast
 
 import gluetool.log
 import sqlalchemy
 from gluetool.result import Error, Ok, Result
-from typing_extensions import Self, TypeAlias
 
 from .. import Failure, SerializableContainer
 from ..db import GuestRequest
@@ -213,8 +212,9 @@ def filter_flavors_image_compatible(
         FilterRuling.from_flavors(
             image,
             flavors,
-            matcher=lambda flavor: not flavor.compatible.distro
-            or bool(image_distros.intersection(flavor.compatible.distro)),
+            matcher=lambda flavor: (
+                not flavor.compatible.distro or bool(image_distros.intersection(flavor.compatible.distro))
+            ),
         )
     )
 

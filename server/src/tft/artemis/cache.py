@@ -9,8 +9,8 @@ Helpful building blocks for cache operations.
 
 import datetime
 import uuid
-from collections.abc import Generator
-from typing import Any, Callable, Optional, Protocol, TypeVar, Union, cast
+from collections.abc import Callable, Generator
+from typing import Any, Optional, Protocol, TypeVar, Union, cast
 
 import gluetool.log
 import redis
@@ -589,7 +589,7 @@ def release_lock(logger: gluetool.log.ContextAdapter, cache: redis.Redis, lockna
 
         pipeline.multi()
         pipeline.delete(lockname)
-        pipeline.execute()  # type: ignore[no-untyped-call]
+        pipeline.execute()
 
     except redis.exceptions.WatchError as exc:
         Failure.from_exc('lock token changed during transaction', exc, lockname=lockname, token=token).handle(logger)

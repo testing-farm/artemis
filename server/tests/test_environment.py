@@ -3,6 +3,7 @@
 
 import dataclasses
 import importlib.resources
+import itertools
 import os
 import textwrap
 from typing import Any
@@ -1938,7 +1939,7 @@ def _get_milestone_schema_files() -> list[str]:
 
 def _get_consecutive_schema_pairs() -> list[tuple[str, str]]:
     files = _get_milestone_schema_files()
-    return list(zip(files[:-1], files[1:]))
+    return list(itertools.pairwise(files))
 
 
 def _get_consecutive_schema_pair_ids() -> list[str]:

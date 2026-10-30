@@ -5,7 +5,7 @@ import dataclasses
 import datetime
 import functools
 from collections.abc import Iterator
-from typing import Any, Optional, TypedDict, Union, cast
+from typing import Any, Optional, TypeAlias, TypedDict, Union, cast, override
 
 import gluetool.log
 import gluetool.utils
@@ -15,7 +15,6 @@ from gluetool.utils import normalize_bool_option
 from returns.pipeline import is_successful
 from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
-from typing_extensions import TypeAlias, override
 
 from .. import Failure, JSONType, render_template, rewrap_to_gluetool
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, Transaction
@@ -1255,13 +1254,15 @@ class AzureDriver(
                 )
             )
             .lash(
-                lambda failure: _Error(failure)
-                if failure.recoverable
-                else _Ok(
-                    ProvisioningProgress(
-                        state=ProvisioningState.CANCEL,
-                        pool_data=guest_request.pool_data.mine(self, AzurePoolData),
-                        pool_failures=[failure],
+                lambda failure: (
+                    _Error(failure)
+                    if failure.recoverable
+                    else _Ok(
+                        ProvisioningProgress(
+                            state=ProvisioningState.CANCEL,
+                            pool_data=guest_request.pool_data.mine(self, AzurePoolData),
+                            pool_failures=[failure],
+                        )
                     )
                 )
             )

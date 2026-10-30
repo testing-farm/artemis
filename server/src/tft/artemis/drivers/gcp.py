@@ -8,7 +8,7 @@ import re
 import string
 import threading
 from collections.abc import Iterator
-from typing import Any, Optional, cast
+from typing import Any, Optional, TypeAlias, cast, override
 
 import gluetool.log
 import google.api_core
@@ -19,7 +19,6 @@ from google.cloud import compute_v1
 from returns.pipeline import is_successful
 from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
-from typing_extensions import TypeAlias, override
 
 from .. import Failure, rewrap_to_gluetool
 from ..db import GuestRequest, Transaction
@@ -627,7 +626,7 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, 
                     id=str(operation.target_id),
                     name=instance_name,
                     status='',
-                    created_at=datetime.datetime.now(tz=datetime.timezone.utc),
+                    created_at=datetime.datetime.now(tz=datetime.UTC),
                 ),
                 image=instance_request.image,
                 flavor=instance_request.flavor,
@@ -725,13 +724,15 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, 
                 )
             )
             .lash(
-                lambda failure: _Error(failure)
-                if failure.recoverable
-                else _Ok(
-                    ProvisioningProgress(
-                        state=ProvisioningState.CANCEL,
-                        pool_data=GCPPoolData(),
-                        pool_failures=[failure],
+                lambda failure: (
+                    _Error(failure)
+                    if failure.recoverable
+                    else _Ok(
+                        ProvisioningProgress(
+                            state=ProvisioningState.CANCEL,
+                            pool_data=GCPPoolData(),
+                            pool_failures=[failure],
+                        )
                     )
                 )
             )

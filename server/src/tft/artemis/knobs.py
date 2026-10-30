@@ -7,8 +7,9 @@ import logging
 import operator
 import os
 import re
+from collections.abc import Callable
 from re import Pattern
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, Generic, Optional, TypeVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, Optional, TypeVar, cast
 
 import gluetool.log
 import gluetool.utils
@@ -893,7 +894,7 @@ KNOB_TEMPLATE_BLOCK_DELIMITERS: Knob[str] = Knob(
     has_db=False,
     envvar='ARTEMIS_TEMPLATE_BLOCK_DELIMITERS',
     cast_from_str=str,
-    default='{%,%}',  # noqa: FS003
+    default='{%,%}',
 )
 
 KNOB_WORKER_MAX_TASKS_PER_PROCESS: Knob[int] = Knob(

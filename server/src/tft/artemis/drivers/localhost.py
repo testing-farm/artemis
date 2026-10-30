@@ -1,13 +1,12 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
-from typing import Optional
+from typing import Optional, override
 
 import gluetool.log
 import gluetool.utils
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
-from typing_extensions import override
 
 from .. import Failure
 from ..db import GuestRequest, Transaction

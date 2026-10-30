@@ -8,14 +8,13 @@ import functools
 import os
 import shutil
 import string
-from typing import Any, Generic, Optional, TypedDict, TypeVar, cast
+from typing import Any, Generic, Optional, TypedDict, TypeVar, cast, override
 
 import gluetool.log
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 from returns.pipeline import is_successful
 from returns.result import Failure as _Error, Result as _Result, Success as _Ok
-from typing_extensions import override
 
 from tft.artemis.drivers import (
     UNKNOWN_FLAVOR_NAME,
@@ -572,13 +571,15 @@ class IBMCloudDriver(
                 )
             )
             .lash(
-                lambda failure: _Error(failure)
-                if failure.recoverable
-                else _Ok(
-                    ProvisioningProgress(
-                        state=ProvisioningState.CANCEL,
-                        pool_data=IBMCloudPoolData(),
-                        pool_failures=[failure],
+                lambda failure: (
+                    _Error(failure)
+                    if failure.recoverable
+                    else _Ok(
+                        ProvisioningProgress(
+                            state=ProvisioningState.CANCEL,
+                            pool_data=IBMCloudPoolData(),
+                            pool_failures=[failure],
+                        )
                     )
                 )
             )

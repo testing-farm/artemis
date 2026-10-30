@@ -10,14 +10,14 @@ import hashlib
 import secrets
 import threading
 import time
-from collections.abc import Generator, Iterator
+from collections.abc import Callable, Generator, Iterator
 from contextlib import contextmanager
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     Generic,
     Optional,
+    Self,
     TypeVar,
     Union,
     cast,
@@ -50,7 +50,6 @@ from sqlalchemy.orm.session import sessionmaker
 from sqlalchemy.schema import ForeignKeyConstraint, Index, PrimaryKeyConstraint
 from sqlalchemy_utils import EncryptedType
 from sqlalchemy_utils.types.encrypted.encrypted_type import AesEngine
-from typing_extensions import Self
 
 from .guest import GuestState
 from .knobs import KNOB_LOGGING_DB_QUERIES, get_vault_password
@@ -307,7 +306,7 @@ def execute_dml(
 
     with Sentry.start_span(TracingOp.DB_QUERY_DML, description=stringified):
         try:
-            result: sqlalchemy.engine.cursor.CursorResult[T] = session.execute(statement)
+            result: sqlalchemy.engine.cursor.CursorResult[T] = session.execute(statement)  # type: ignore[assignment]
 
             return Ok(result)
 
@@ -899,7 +898,7 @@ class TaskRequest(Base):
         if r.is_error:
             return Error(r.unwrap_error())
 
-        return Ok(r.unwrap().inserted_primary_key[0])
+        return Ok(r.unwrap().inserted_primary_key[0])  # type: ignore[index]
 
 
 class TaskSequenceRequest(Base):
@@ -916,7 +915,7 @@ class TaskSequenceRequest(Base):
         if r.is_error:
             return Error(r.unwrap_error())
 
-        return Ok(r.unwrap().inserted_primary_key[0])
+        return Ok(r.unwrap().inserted_primary_key[0])  # type: ignore[index]
 
 
 class GuestShelf(Base):
@@ -1177,7 +1176,7 @@ class GuestRequest(Base):
 
     # Pool-specific data.
     _pool_data: Mapped[dict[str, dict[str, Any]]] = mapped_column(
-        JSONB(),  # type: ignore[no-untyped-call]
+        JSONB(),
         nullable=False,
         server_default='{}',
     )
@@ -1907,7 +1906,7 @@ def before_rollback(
 
 
 class DB:
-    instance: Optional['DB'] = None
+    instance: Optional[Self] = None
     _lock = threading.RLock()
 
     #: "Root" engine, with the setup dictated by DB configuration.
@@ -2049,7 +2048,7 @@ class DB:
         self.sessionmaker_repeatable = sqlalchemy.orm.sessionmaker(bind=self.engine_repeatable)
         self.sessionmaker_repeatable_read_only = sqlalchemy.orm.sessionmaker(bind=self.engine_repeatable_read_only)
 
-    def __new__(cls, logger: gluetool.log.ContextAdapter, url: str, application_name: Optional[str] = None) -> 'DB':
+    def __new__(cls, logger: gluetool.log.ContextAdapter, url: str, application_name: Optional[str] = None) -> Self:
         with cls._lock:
             if cls.instance is None:
                 from . import _YAML_DUMPABLE_CLASSES

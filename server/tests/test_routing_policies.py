@@ -201,7 +201,7 @@ def test_collect_pool_capabilities(mock_inputs: MockInputs, mockpatch: MockPatch
 
     mock_capabilities = [MagicMock(name=f'{pool.poolname}.capabilities<mock>') for pool in mock_pools]
 
-    for pool, capabilities in zip(mock_pools, mock_capabilities):
+    for pool, capabilities in zip(mock_pools, mock_capabilities, strict=True):
         mockpatch(pool, 'capabilities').return_value = _Ok(capabilities)
 
     r = tft.artemis.routing_policies.collect_pool_capabilities(mock_pools)
@@ -263,7 +263,7 @@ def test_collect_pool_metrics(mock_inputs: MockInputs, mockpatch: MockPatcher) -
 
     # Without a snapshot in place, each call collects its own, freshly synchronized containers.
     assert mock_sync.call_count == 2 * len(mock_pools)
-    assert all(metrics1 is not metrics2 for (_, metrics1), (_, metrics2) in zip(first, second))
+    assert all(metrics1 is not metrics2 for (_, metrics1), (_, metrics2) in zip(first, second, strict=True))
 
 
 def test_collect_pool_metrics_snapshot(mock_inputs: MockInputs, mockpatch: MockPatcher) -> None:
@@ -287,7 +287,7 @@ def test_collect_pool_metrics_snapshot(mock_inputs: MockInputs, mockpatch: MockP
 
     # Each pool synchronized just once, and both calls got the very same containers, not just equal ones.
     assert mock_sync.call_count == len(mock_pools)
-    assert all(metrics1 is metrics2 for (_, metrics1), (_, metrics2) in zip(first, second))
+    assert all(metrics1 is metrics2 for (_, metrics1), (_, metrics2) in zip(first, second, strict=True))
 
 
 def test_collect_pool_metrics_snapshot_does_not_leak(mock_inputs: MockInputs, mockpatch: MockPatcher) -> None:
@@ -583,7 +583,7 @@ def do_test_policy_least_crowded(
         mock_metrics = mock_metrics[:pool_count]
 
     mockpatch(tft.artemis.routing_policies, 'collect_pool_metrics').return_value = Ok(
-        [(_pool, _metrics) for _pool, _metrics in zip(mock_pools, mock_metrics)]
+        [(_pool, _metrics) for _pool, _metrics in zip(mock_pools, mock_metrics, strict=True)]
     )
 
     r_ruling = tft.artemis.routing_policies.policy_least_crowded(
@@ -776,7 +776,7 @@ def do_test_policy_enough_resources(
         mock_metrics = mock_metrics[:pool_count]
 
     mockpatch(tft.artemis.routing_policies, 'collect_pool_metrics').return_value = Ok(
-        [(_pool, _metrics) for _pool, _metrics in zip(mock_pools, mock_metrics)]
+        [(_pool, _metrics) for _pool, _metrics in zip(mock_pools, mock_metrics, strict=True)]
     )
 
     r_ruling = tft.artemis.routing_policies.policy_enough_resources(

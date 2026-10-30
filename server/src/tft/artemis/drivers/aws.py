@@ -12,13 +12,16 @@ import operator
 import os
 import re
 import string
-from collections.abc import Iterator, MutableSequence, Sequence
+from collections.abc import Callable, Iterator, MutableSequence, Sequence
 from typing import (
     Any,
-    Callable,
+    Literal,
+    NotRequired,
     Optional,
+    TypeAlias,
     Union,
     cast,
+    override,
 )
 
 import gluetool.log
@@ -32,7 +35,7 @@ from jinja2 import Template
 from returns.pipeline import is_successful
 from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS, Operator
-from typing_extensions import Literal, NotRequired, TypeAlias, TypedDict, override
+from typing_extensions import TypedDict
 
 from .. import (
     Failure,
@@ -331,7 +334,7 @@ KNOB_CONSOLE_INTERACTIVE_URL: Knob[str] = Knob(
     has_db=False,
     envvar='ARTEMIS_AWS_LOGS_CONSOLE_INTERACTIVE_URL',
     cast_from_str=str,
-    default='https://console.aws.amazon.com/ec2/v2/connect/ec2-user/{instance_id}?connection-type=isc&serial-port=0',  # noqa: FS003,E501
+    default='https://console.aws.amazon.com/ec2/v2/connect/ec2-user/{instance_id}?connection-type=isc&serial-port=0',  # noqa: E501
 )
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
@@ -3414,7 +3417,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
             # Guest is fine, nothing to report (yet?)
             return Ok(WatchdogState.CONTINUE)
 
-        if state == 'cancelled' and status in ('instance-terminated-by-user',):
+        if state == 'cancelled' and status == 'instance-terminated-by-user':
             # This should be the expected final state of normal provisioning.
             return Ok(WatchdogState.COMPLETE)
 
@@ -3487,13 +3490,15 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
                 )
             )
             .lash(
-                lambda failure: _Error(failure)
-                if failure.recoverable
-                else _Ok(
-                    ProvisioningProgress(
-                        state=ProvisioningState.CANCEL,
-                        pool_data=guest_request.pool_data.mine_or_none(self, AWSPoolData) or AWSPoolData(),
-                        pool_failures=[failure],
+                lambda failure: (
+                    _Error(failure)
+                    if failure.recoverable
+                    else _Ok(
+                        ProvisioningProgress(
+                            state=ProvisioningState.CANCEL,
+                            pool_data=guest_request.pool_data.mine_or_none(self, AWSPoolData) or AWSPoolData(),
+                            pool_failures=[failure],
+                        )
                     )
                 )
             )

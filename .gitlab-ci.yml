@@ -68,6 +68,9 @@ test/server/db-schema:
   interruptible: true
   extends: .postgresql-tests
 
+  variables:
+    INTEGRATION_POSTGRES_URI: "${ARTEMIS_DB_URL}"
+
   script:
     - make -C server/ test-db-schema-revisions
 

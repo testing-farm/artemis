@@ -33,7 +33,8 @@ prevent most of the issues.
 
 import contextvars
 import functools
-from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, Optional, TypeVar
 
 import dramatiq.broker
 import gluetool.log
@@ -69,7 +70,7 @@ CONTEXT_PROVIDERS: dict[tuple[str, Any], contextvars.ContextVar[Any]] = {
     ('db', DB): DATABASE,
     ('session', sqlalchemy.orm.session.Session): SESSION,
     ('cache', redis.Redis): CACHE,
-    ('current_message', dramatiq.broker.MessageProxy): CURRENT_MESSAGE,
+    ('current_message', dramatiq.MessageProxy): CURRENT_MESSAGE,
     ('current_task', 'TaskCall'): CURRENT_TASK,
 }
 

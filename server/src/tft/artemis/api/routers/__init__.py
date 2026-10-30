@@ -8,8 +8,8 @@ import functools
 import json
 import os
 import uuid
-from collections.abc import Generator
-from typing import Annotated, Any, Callable, Optional, TypeVar, Union, cast
+from collections.abc import Callable, Generator
+from typing import Annotated, Any, Optional, TypeVar, Union, cast
 
 import fastapi
 import fastapi.openapi

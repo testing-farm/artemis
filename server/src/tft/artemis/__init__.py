@@ -19,14 +19,15 @@ import shlex
 import sys
 import threading
 import traceback as _traceback
-from collections.abc import Generator, Iterable, Iterator, MutableSet
+from collections.abc import Callable, Generator, Iterable, Iterator, MutableSet
 from types import FrameType, TracebackType
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     NoReturn,
     Optional,
+    Self,
+    TypeAlias,
     TypeVar,
     Union,
     cast,
@@ -35,6 +36,7 @@ from typing import (
 import dramatiq
 import dramatiq.brokers.rabbitmq
 import dramatiq.brokers.stub
+import dramatiq.message
 import dramatiq.middleware.age_limit
 import dramatiq.middleware.callbacks
 import dramatiq.middleware.current_message
@@ -75,7 +77,7 @@ from gluetool.result import Error, Ok, Result
 from returns.pipeline import is_successful
 from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
-from typing_extensions import ParamSpec, Self, TypeAlias
+from typing_extensions import ParamSpec
 
 __VERSION__ = importlib.metadata.version('tft-artemis')
 
@@ -139,6 +141,8 @@ S = TypeVar('S', bound='SerializableContainer')
 P = ParamSpec('P')
 
 FailureDetailsType = dict[str, Any]
+
+Message: TypeAlias = dramatiq.message.Message[None]
 
 #: Represents a data structure created from a JSON input. The main purpose of this type to allow tracking of such data
 #: instead of very open and easy to misunderstand ``Any``. A particular name is easier to follow in the code.
@@ -720,7 +724,9 @@ _DEFAULT_FAILURE_LOG_LABEL = 'failure'
 
 
 def _sentry_stringify(
-    v: Union[str, sentry_sdk.utils.AnnotatedValue, list[str], list[Union[sentry_sdk.utils.AnnotatedValue, str]], None],
+    v: Union[
+        str, sentry_sdk._types.AnnotatedValue, list[str], list[Union[sentry_sdk._types.AnnotatedValue, str]], None
+    ],
 ) -> Iterator[str]:
     """
     Convert weird string-ish objects into strings we can use as part of serialized frames in Sentry.
@@ -734,12 +740,12 @@ def _sentry_stringify(
     elif isinstance(v, str):
         yield v
 
-    elif isinstance(v, sentry_sdk.utils.AnnotatedValue):
+    elif isinstance(v, sentry_sdk._types.AnnotatedValue):
         yield str(v.value)
 
     elif isinstance(v, list):
         for s in v:
-            yield (s.value or '') if isinstance(s, sentry_sdk.utils.AnnotatedValue) else s
+            yield (s.value or '') if isinstance(s, sentry_sdk._types.AnnotatedValue) else s
 
     else:
         yield str(v)
@@ -1191,7 +1197,7 @@ class Failure:
         details['fail_guest_request'] = self.fail_guest_request
 
         if self.exception:
-            details['exception'] = self._exception_details(self.exception, self.details.get('scrubbed_command'))
+            details['exception'] = self._exception_details(self.exception, self.details.get('scrubbed_command'))  # noqa: FS002
 
         if self.exc_info:
             details['traceback'] = '\n'.join(
@@ -1234,7 +1240,7 @@ class Failure:
         return f'<Failure: message="{self.message}">'
 
     def log(self, log_fn: gluetool.log.LoggingFunctionType, label: str = _DEFAULT_FAILURE_LOG_LABEL) -> None:
-        exc_info = self.exc_info if self.exc_info else (None, None, None)
+        exc_info = self.exc_info or (None, None, None)
 
         log_fn(self._printable(label=label), exc_info=exc_info)
 
@@ -1352,7 +1358,7 @@ def get_broker_middleware(logger: gluetool.log.ContextAdapter) -> list[dramatiq.
         dramatiq.middleware.time_limit.TimeLimit(),
         dramatiq.middleware.shutdown.ShutdownNotifications(notify_shutdown=True),
         dramatiq.middleware.callbacks.Callbacks(),
-        dramatiq.middleware.GroupCallbacks(dramatiq.rate_limits.backends.stub.StubBackend()),
+        dramatiq.middleware.GroupCallbacks(dramatiq.rate_limits.backends.stub.StubBackend()),  # type: ignore[no-untyped-call]
         dramatiq.middleware.pipelines.Pipelines(),
         artemis_middleware.CurrentMessage(),
         artemis_middleware.Prometheus(),

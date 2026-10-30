@@ -18,18 +18,21 @@ import string
 import sys
 import tempfile
 import time
-from collections.abc import Generator, Iterable, Iterator, Mapping
+from collections.abc import Callable, Generator, Iterable, Iterator, Mapping
 from re import Pattern
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     ClassVar,
     Generic,
+    Literal,
     Optional,
+    Protocol,
+    Self,
     TypeVar,
     Union,
     cast,
+    final,
 )
 
 import gluetool
@@ -38,10 +41,11 @@ import gluetool.utils
 import sqlalchemy
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
+from pint import Unit
 from returns.pipeline import is_successful
 from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
-from typing_extensions import Literal, Protocol, Self, TypedDict, final
+from typing_extensions import TypedDict
 
 from .. import (
     Failure,
@@ -293,7 +297,7 @@ ConfigCapabilitiesType = TypedDict(
 )
 
 
-IP_ADDRESS_PATTERN = re.compile(r'((?:[0-9]{1,3}\.){3}[0-9]{1,3})')  # noqa: FS003
+IP_ADDRESS_PATTERN = re.compile(r'((?:[0-9]{1,3}\.){3}[0-9]{1,3})')
 
 
 KNOB_INSTANCE_NAME_TEMPLATE: Knob[str] = Knob(
@@ -973,14 +977,14 @@ class PoolResourcesIDs(SerializableContainer):
 
 
 def _spec_to_unit(
-    value: Union[str, int], error_msg: str, error_details: dict[str, Any], default_units: SizeType = UNITS.bytes
+    value: Union[str, int], error_msg: str, error_details: dict[str, Any], default_units: Unit = UNITS.bytes
 ) -> Result[Optional[SizeType], Failure]:
     r_value = safe_call(UNITS, str(value))
     if r_value.is_error:
         return Error(Failure.from_failure(error_msg, r_value.unwrap_error(), details=error_details))
     raw_value = r_value.unwrap()
 
-    res = UNITS.Quantity(raw_value, default_units) if isinstance(raw_value, int) else raw_value
+    res = (raw_value * default_units) if (isinstance(raw_value, (int, float)) or raw_value.unitless) else raw_value
 
     return Ok(res)
 
