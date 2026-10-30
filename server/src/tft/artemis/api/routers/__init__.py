@@ -495,7 +495,7 @@ def _environment_compat(environment: dict[str, Optional[Any]]) -> dict[str, Opti
     if 'kickstart' not in environment:
         environment['kickstart'] = {}
 
-    # COMPAT: v0.0.90: drop fields removed from the environment, e.g. `spot_instance`,
+    # COMPAT: v0.0.95: drop fields removed from the environment, e.g. `spot_instance`,
     # replaced by the user data label named by the `route.policies.use-spot.label` knob
     # (`ArtemisUseSpot` by default). Older APIs and clients still send them, but
     # `Environment` no longer accepts them.

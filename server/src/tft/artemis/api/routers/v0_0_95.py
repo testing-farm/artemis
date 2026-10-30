@@ -38,7 +38,7 @@ router_guests = APIRouter(
     responses={status.HTTP_404_NOT_FOUND: {'description': 'Not found'}},
 )
 
-router_shelves = create_router_shelves('v0.0.90')
+router_shelves = create_router_shelves('v0.0.95')
 
 
 @router_guests.get('/', status_code=status.HTTP_200_OK)
@@ -61,7 +61,7 @@ def create_guest(
     logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
 ) -> GuestResponse_v0_0_72:
     return create_guest_request(
-        api_version='v0.0.90',
+        api_version='v0.0.95',
         guest_request=guest_request,
         manager=manager,
         request=request,

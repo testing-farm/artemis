@@ -1105,7 +1105,7 @@ class GuestRequest(Base):
         if 'kickstart' not in self._environment:
             self._environment['kickstart'] = {}
 
-        # v0.0.90: drop fields removed from the environment, e.g. `spot_instance`, replaced by
+        # v0.0.95: drop fields removed from the environment, e.g. `spot_instance`, replaced by
         # the user data label named by the `route.policies.use-spot.label` knob
         # (`ArtemisUseSpot` by default). Stored requests may still contain them, but
         # `Environment` no longer accepts them.

@@ -2092,7 +2092,7 @@ def drop_removed_environment_fields(environment: dict[str, Any]) -> dict[str, An
     :returns: the same mapping, with removed fields dropped.
     """
 
-    # COMPAT: v0.0.90: `spot_instance` was dropped from the environment, replaced by the
+    # COMPAT: v0.0.95: `spot_instance` was dropped from the environment, replaced by the
     # user data label named by the `route.policies.use-spot.label` knob (`ArtemisUseSpot`
     # by default).
     environment.pop('spot_instance', None)

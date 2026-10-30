@@ -18,7 +18,7 @@ import sqlalchemy
 import tft.artemis.api
 import tft.artemis.api.middleware
 import tft.artemis.api.routers.v0_0_56
-import tft.artemis.api.routers.v0_0_90
+import tft.artemis.api.routers.v0_0_95
 import tft.artemis.db
 from tft.artemis import __VERSION__
 from tft.artemis.api.environment import CURRENT_MILESTONE_VERSION
@@ -99,7 +99,7 @@ def test_api_redirects(api_client: fastapi.testclient.TestClient) -> None:
     ('router', 'expected_api_version'),
     [
         (tft.artemis.api.routers.v0_0_56.router_shelves, 'v0.0.56'),
-        (tft.artemis.api.routers.v0_0_90.router_shelves, 'v0.0.90'),
+        (tft.artemis.api.routers.v0_0_95.router_shelves, 'v0.0.95'),
     ],
 )
 def test_router_shelves_preprovision_uses_its_api_version(
@@ -813,7 +813,7 @@ def test_spot_instance_environment_backward_compat(
 
     # The current API version rejects the dropped field.
     with pytest.raises(tft.artemis.api.errors.BadRequestError):
-        tft.artemis.api.routers._validate_environment(logger, _environment(), schemas['v0.0.90'], {})
+        tft.artemis.api.routers._validate_environment(logger, _environment(), schemas['v0.0.95'], {})
 
 
 def test_guest_request_environment_drops_spot_instance() -> None:
