@@ -1560,7 +1560,7 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
             if snippet is not None
         ]
 
-        return Ok(f'{{% set ks_appends = {json.dumps(ks_appends, ensure_ascii=False)} %}}\n{template}')  # noqa: FS003
+        return Ok(f'{{% set ks_appends = {json.dumps(ks_appends, ensure_ascii=False)} %}}\n{template}')
 
     def _create_wow_options(
         self,
