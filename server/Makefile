@@ -22,47 +22,47 @@ test-units: _env-info  ## Run unit tests
 coverage: _env-info  ## Run tests with coverage
 	tox -e py312-coverage
 
-INTEGRATION_POSTGRES_HOSTNAME := "localhost"
-INTEGRATION_POSTGRES_PORT := "5432"
-INTEGRATION_POSTGRES_USER := "artemis"
-INTEGRATION_POSTGRES_PASSWORD := artemis
-INTEGRATION_POSTGRES_DATABASE := "unit_test_db"
-INTEGRATION_POSTGRES_URI := "postgresql://$(INTEGRATION_POSTGRES_USER):$(INTEGRATION_POSTGRES_PASSWORD)@$(INTEGRATION_POSTGRES_HOSTNAME):$(INTEGRATION_POSTGRES_PORT)/$(INTEGRATION_POSTGRES_DATABASE)"
+ifeq ($(INTEGRATION_POSTGRES_URI),)
+	# No externally-managed PostgreSQL instance specified, spawn our own
+	INTEGRATION_POSTGRES_HOSTNAME := "localhost"
+	INTEGRATION_POSTGRES_PORT := "5432"
+	INTEGRATION_POSTGRES_USER := "artemis"
+	INTEGRATION_POSTGRES_PASSWORD := artemis
+	INTEGRATION_POSTGRES_DATABASE := "unit_test_db"
+	INTEGRATION_POSTGRES_URI := "postgresql://$(INTEGRATION_POSTGRES_USER):$(INTEGRATION_POSTGRES_PASSWORD)@$(INTEGRATION_POSTGRES_HOSTNAME):$(INTEGRATION_POSTGRES_PORT)/$(INTEGRATION_POSTGRES_DATABASE)"
+
+	define postgresql_setup
+		# Spawn PostgreSQL container
+		podman-compose up -d postgresql
+
+		# Wait for PostgreSQL to become available
+		while /bin/true; do \
+		    pg_isready --host $(INTEGRATION_POSTGRES_HOSTNAME) --port $(INTEGRATION_POSTGRES_PORT); \
+		    if [[ "$$?" == "0" ]]; then break; fi; \
+		    sleep 1; \
+		done
+
+		# (Re-)create an empty DB for integration
+		PGPASSWORD=$(INTEGRATION_POSTGRES_PASSWORD) psql --host $(INTEGRATION_POSTGRES_HOSTNAME) --port $(INTEGRATION_POSTGRES_PORT) -U $(INTEGRATION_POSTGRES_USER) -c "DROP DATABASE IF EXISTS $(INTEGRATION_POSTGRES_DATABASE)"
+		PGPASSWORD=$(INTEGRATION_POSTGRES_PASSWORD) psql --host $(INTEGRATION_POSTGRES_HOSTNAME) --port $(INTEGRATION_POSTGRES_PORT) -U $(INTEGRATION_POSTGRES_USER) -c "CREATE DATABASE $(INTEGRATION_POSTGRES_DATABASE)"
+	endef
+	
+	define postgresql_teardown
+		# Drop the integration DB and stop the container
+		PGPASSWORD=$(INTEGRATION_POSTGRES_PASSWORD) psql --host $(INTEGRATION_POSTGRES_HOSTNAME) --port $(INTEGRATION_POSTGRES_PORT) -U $(INTEGRATION_POSTGRES_USER) -c "DROP DATABASE IF EXISTS $(INTEGRATION_POSTGRES_DATABASE)"
+
+		podman-compose down postgresql
+	endef
+else
+endif
 
 test-integration: _env-info  ## Run tests against real services
-	# Spawn the real processes, and we have a bunch of them handy
-	podman-compose up -d postgresql
-
-	# Wait for PostgreSQL to become available
-	while /bin/true; do \
-	    pg_isready --host $(INTEGRATION_POSTGRES_HOSTNAME) --port $(INTEGRATION_POSTGRES_PORT); \
-	    if [[ "$$?" == "0" ]]; then break; fi; \
-	    sleep 1; \
-	done
-
-	# Unit tests
-	PGPASSWORD=$(INTEGRATION_POSTGRES_PASSWORD) psql --host $(INTEGRATION_POSTGRES_HOSTNAME) --port $(INTEGRATION_POSTGRES_PORT) -U $(INTEGRATION_POSTGRES_USER) -c "DROP DATABASE IF EXISTS $(INTEGRATION_POSTGRES_DATABASE)"
-	PGPASSWORD=$(INTEGRATION_POSTGRES_PASSWORD) psql --host $(INTEGRATION_POSTGRES_HOSTNAME) --port $(INTEGRATION_POSTGRES_PORT) -U $(INTEGRATION_POSTGRES_USER) -c "CREATE DATABASE $(INTEGRATION_POSTGRES_DATABASE)"
-
+	$(postgresql_setup)
 	tox -e py312 -- -x --against-db-url="$(INTEGRATION_POSTGRES_URI)"
-
-	PGPASSWORD=$(INTEGRATION_POSTGRES_PASSWORD) psql --host $(INTEGRATION_POSTGRES_HOSTNAME) --port $(INTEGRATION_POSTGRES_PORT) -U $(INTEGRATION_POSTGRES_USER) -c "DROP DATABASE IF EXISTS $(INTEGRATION_POSTGRES_DATABASE)"
-
-	podman-compose down postgresql
+	$(postgresql_teardown)
 
 test-db-schema-revisions:  _env-info  ## Verify DB schema revisions
-	# Spawn the real processes, and we have a bunch of them handy
-	podman-compose up -d postgresql
-
-	# Wait for PostgreSQL to become available
-	while /bin/true; do \
-	    pg_isready --host $(INTEGRATION_POSTGRES_HOSTNAME) --port $(INTEGRATION_POSTGRES_PORT); \
-	    if [[ "$$?" == "0" ]]; then break; fi; \
-	    sleep 1; \
-	done
-
-	PGPASSWORD=$(INTEGRATION_POSTGRES_PASSWORD) psql --host $(INTEGRATION_POSTGRES_HOSTNAME) --port $(INTEGRATION_POSTGRES_PORT) -U $(INTEGRATION_POSTGRES_USER) -c "DROP DATABASE IF EXISTS $(INTEGRATION_POSTGRES_DATABASE)"
-	PGPASSWORD=$(INTEGRATION_POSTGRES_PASSWORD) psql --host $(INTEGRATION_POSTGRES_HOSTNAME) --port $(INTEGRATION_POSTGRES_PORT) -U $(INTEGRATION_POSTGRES_USER) -c "CREATE DATABASE $(INTEGRATION_POSTGRES_DATABASE)"
+	$(postgresql_setup)
 
 	ARTEMIS_DB_URL="$(INTEGRATION_POSTGRES_URI)" ARTEMIS_VAULT_PASSWORD=dummy-vault-password poetry run alembic upgrade head
 	ARTEMIS_DB_URL="$(INTEGRATION_POSTGRES_URI)" ARTEMIS_VAULT_PASSWORD=dummy-vault-password poetry run alembic revision --autogenerate &> autogenerate.log
@@ -74,31 +74,13 @@ test-db-schema-revisions:  _env-info  ## Verify DB schema revisions
 
 	ARTEMIS_DB_URL="$(INTEGRATION_POSTGRES_URI)" ARTEMIS_VAULT_PASSWORD=dummy-vault-password poetry run alembic downgrade base
 
-	PGPASSWORD=$(INTEGRATION_POSTGRES_PASSWORD) psql --host $(INTEGRATION_POSTGRES_HOSTNAME) --port $(INTEGRATION_POSTGRES_PORT) -U $(INTEGRATION_POSTGRES_USER) -c "DROP DATABASE IF EXISTS $(INTEGRATION_POSTGRES_DATABASE)"
-
-	podman-compose down postgresql
+	$(postgresql_teardown)
 
 gen-db-revision:  ## Generate new DB revision
-	# Spawn the real processes, and we have a bunch of them handy
-	podman-compose up -d postgresql
-
-	# Wait for PostgreSQL to become available
-	while /bin/true; do \
-	    pg_isready --host $(INTEGRATION_POSTGRES_HOSTNAME) --port $(INTEGRATION_POSTGRES_PORT); \
-	    if [[ "$$?" == "0" ]]; then break; fi; \
-	    sleep 1; \
-	done
-
-	PGPASSWORD=$(INTEGRATION_POSTGRES_PASSWORD) psql --host $(INTEGRATION_POSTGRES_HOSTNAME) --port $(INTEGRATION_POSTGRES_PORT) -U $(INTEGRATION_POSTGRES_USER) -c "DROP DATABASE IF EXISTS $(INTEGRATION_POSTGRES_DATABASE)"
-	PGPASSWORD=$(INTEGRATION_POSTGRES_PASSWORD) psql --host $(INTEGRATION_POSTGRES_HOSTNAME) --port $(INTEGRATION_POSTGRES_PORT) -U $(INTEGRATION_POSTGRES_USER) -c "CREATE DATABASE $(INTEGRATION_POSTGRES_DATABASE)"
-
+	$(postgresql_setup)
 	ARTEMIS_DB_URL="$(INTEGRATION_POSTGRES_URI)" ARTEMIS_VAULT_PASSWORD=dummy-vault-password poetry run alembic upgrade head
 	ARTEMIS_DB_URL="$(INTEGRATION_POSTGRES_URI)" ARTEMIS_VAULT_PASSWORD=dummy-vault-password poetry run alembic revision --autogenerate -m "$(NAME)"
-
-	PGPASSWORD=$(INTEGRATION_POSTGRES_PASSWORD) psql --host $(INTEGRATION_POSTGRES_HOSTNAME) --port $(INTEGRATION_POSTGRES_PORT) -U $(INTEGRATION_POSTGRES_USER) -c "DROP DATABASE IF EXISTS $(INTEGRATION_POSTGRES_DATABASE)"
-
-	podman-compose down postgresql
-
+	$(postgresql_teardown)
 
 ##@ Documentation
 
