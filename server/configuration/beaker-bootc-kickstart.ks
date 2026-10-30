@@ -28,4 +28,5 @@ autopart
 %end
 
 {% snippet 'onerror' %}
+{{ ks_appends|join('\n') }}
 {% snippet 'postinstall_done' %}

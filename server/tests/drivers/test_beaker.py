@@ -1,12 +1,14 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
+import pathlib
 import textwrap
 from typing import Any, Optional
 from unittest.mock import MagicMock
 
 import bs4
 import gluetool.utils
+import jinja2.sandbox
 import pytest
 import sqlalchemy.orm.session
 from gluetool.log import ContextAdapter
@@ -734,6 +736,58 @@ def test_merge_beaker_filters(filters: list[str], expected: str) -> None:
     assert str(final_filter) == expected
 
 
+def test_create_kickstart_template(
+    mockpatch: MockPatcher,
+    tmp_path: pathlib.Path,
+    dummy_image_info: MagicMock,
+    pool: tft.artemis.drivers.beaker.BeakerDriver,
+) -> None:
+    # TFT-4430: Beaker ignores `<ks_append/>` snippets of a recipe with a custom `<kickstart/>` template.
+    snippets = [
+        'part / --fstype=xfs --grow --ondisk="mpatha"',
+        '%pre --log=/dev/console\necho "{{ not rendered }}" \'%}\'\n%end',
+        'rootpw \\ünicode',
+    ]
+
+    kickstart = tft.artemis.environment.Kickstart(
+        **{'script': snippets[0], 'pre-install': snippets[1], 'post-install': snippets[2]}
+    )
+
+    template_filepath = tmp_path / 'kickstart.ks'
+    template_filepath.write_text("text\n{{ ks_appends|join('\\n') }}\nreboot\n", encoding='utf-8')
+
+    mockpatch(tft.artemis.drivers.beaker.KNOB_KICKSTART_TEMPLATE_BOOTC_FILEPATH, 'get_value').return_value = Ok(
+        str(template_filepath)
+    )
+
+    dummy_image_info.bootc_image = 'registry.example.com/rhel-bootc:dummy'
+
+    r_template = pool._create_kickstart_template(kickstart, dummy_image_info)
+
+    assert r_template.is_ok
+
+    template = r_template.unwrap()
+
+    assert template is not None
+
+    # Beaker renders custom templates with a sandboxed environment, passing an empty `ks_appends` list.
+    rendered = jinja2.sandbox.SandboxedEnvironment(trim_blocks=True).from_string(template).render(ks_appends=[])
+
+    assert rendered.strip() == '\n'.join(['text', *snippets, 'reboot'])
+
+
+def test_create_kickstart_template_not_bootc(
+    dummy_image_info: MagicMock,
+    pool: tft.artemis.drivers.beaker.BeakerDriver,
+) -> None:
+    r_template = pool._create_kickstart_template(
+        tft.artemis.environment.Kickstart(script='part / --grow'), dummy_image_info
+    )
+
+    assert r_template.is_ok
+    assert r_template.unwrap() is None
+
+
 @pytest.mark.parametrize(
     ('env', 'avoid_groups', 'avoid_hostnames', 'expected'),
     [
@@ -1001,6 +1055,13 @@ def test_bkr_ks_options(pool: tft.artemis.drivers.beaker.BeakerDriver, env: str,
     r_wow_options = tft.artemis.drivers.beaker.BeakerDriver._create_bkr_kickstart_options(pool, environment.kickstart)
 
     assert r_wow_options == expected
+
+    # With a custom kickstart template, the snippets are part of the template instead.
+    r_wow_options = tft.artemis.drivers.beaker.BeakerDriver._create_bkr_kickstart_options(
+        pool, environment.kickstart, ks_appends=False
+    )
+
+    assert r_wow_options == expected[: expected.index('--ks-append')]
 
 
 @pytest.mark.parametrize(

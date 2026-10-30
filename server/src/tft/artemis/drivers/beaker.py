@@ -1,9 +1,11 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
+import contextlib
 import dataclasses
 import datetime
 import enum
+import json
 import os
 import re
 import shlex
@@ -1468,6 +1470,8 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
     def _create_bkr_kickstart_options(
         self,
         kickstart: Kickstart,
+        *,
+        ks_appends: bool = True,
     ) -> list[str]:
         options = []
 
@@ -1480,6 +1484,9 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
         if kickstart.metadata is not None:
             options += ['--ks-meta', kickstart.metadata]
 
+        if not ks_appends:
+            return options
+
         if kickstart.script is not None:
             options += ['--ks-append', kickstart.script]
 
@@ -1491,13 +1498,67 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
 
         return options
 
+    def _create_kickstart_template(
+        self,
+        kickstart: Kickstart,
+        distro: BeakerPoolImageInfo,
+    ) -> Result[Optional[str], Failure]:
+        """
+        Create a custom kickstart template for the given distro, if it needs one.
+
+        Beaker hands ``<ks_append/>`` snippets to its own kickstart templates only. A recipe with a custom
+        ``<kickstart/>`` template gets an empty ``ks_appends`` list, and the snippets never reach the installer.
+        To work around it, the snippets are prepended to the template as a Jinja ``set`` statement, restoring
+        the ``ks_appends`` variable for the template to render.
+
+        The snippets are encoded as Jinja string literals. Like Beaker does with its own templates, any Jinja
+        syntax they contain is left unrendered.
+
+        :param kickstart: kickstart specification of the guest request.
+        :param distro: distro the guest would be installed with.
+        :returns: the kickstart template, or ``None`` when Beaker's own template is to be used.
+        """
+
+        if not distro.bootc_image:
+            return Ok(None)
+
+        r_template_filepath = KNOB_KICKSTART_TEMPLATE_BOOTC_FILEPATH.get_value(entityname=self.poolname)
+
+        if r_template_filepath.is_error:
+            return Error(r_template_filepath.unwrap_error())
+
+        template_filepath = r_template_filepath.unwrap()
+
+        try:
+            with open(template_filepath, encoding='utf-8') as f:
+                template = f.read()
+
+        except Exception as exc:
+            return Error(Failure.from_exc('failed to read kickstart template', exc, filepath=template_filepath))
+
+        ks_appends = [
+            snippet
+            for snippet in (kickstart.script, kickstart.pre_install, kickstart.post_install)
+            if snippet is not None
+        ]
+
+        return Ok(f'{{% set ks_appends = {json.dumps(ks_appends, ensure_ascii=False)} %}}\n{template}')  # noqa: FS003
+
     def _create_wow_options(
         self,
         logger: gluetool.log.ContextAdapter,
         session: sqlalchemy.orm.session.Session,
         guest_request: GuestRequest,
         distro: BeakerPoolImageInfo,
+        kickstart_filepath: Optional[str] = None,
     ) -> Result[list[str], Failure]:
+        """
+        Create options for ``bkr workflow-simple``.
+
+        :param kickstart_filepath: if set, path to a custom kickstart template. Kickstart snippets of the guest
+            request are expected to be part of the template, see :py:meth:`_create_kickstart_template`.
+        """
+
         # Job whiteboard
         r_whiteboard_template = KNOB_JOB_WHITEBOARD_TEMPLATE.get_value(entityname=self.poolname)
 
@@ -1533,19 +1594,6 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
             if pattern.match(installation_method_needle)
         ]
 
-        # Custom kickstart filepath
-        if distro.bootc_image:
-            # Override kickstart template for bootc installation
-            r_kickstart_filepath = KNOB_KICKSTART_TEMPLATE_BOOTC_FILEPATH.get_value(entityname=self.poolname)
-
-            if r_kickstart_filepath.is_error:
-                return Error(r_kickstart_filepath.unwrap_error())
-
-            kickstart_filepath: Optional[str] = os.path.abspath(r_kickstart_filepath.unwrap())
-
-        else:
-            kickstart_filepath = None
-
         # Custom kickstart meta
         r_ks_meta_template = KNOB_KICKSTART_METADATA_TEMPLATE.get_value(entityname=self.poolname)
 
@@ -1573,7 +1621,9 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
                 meta for meta in [ks_meta, environment.kickstart.metadata] if meta
             )
 
-            kickstart_options = self._create_bkr_kickstart_options(environment.kickstart)
+            kickstart_options = self._create_bkr_kickstart_options(
+                environment.kickstart, ks_appends=kickstart_filepath is None
+            )
 
         else:
             kickstart_options = []
@@ -1689,14 +1739,34 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
 
         is_bootc = distro.bootc_image is not None
 
-        r_wow_options = self._create_wow_options(logger, session, guest_request, distro)
+        r_kickstart_template = self._create_kickstart_template(guest_request.environment.kickstart, distro)
 
-        if r_wow_options.is_error:
-            return Error(r_wow_options.unwrap_error())
+        if r_kickstart_template.is_error:
+            return Error(r_kickstart_template.unwrap_error())
 
-        self.log_acquisition_attempt(logger, transaction, guest_request, image=distro)
+        kickstart_template = r_kickstart_template.unwrap()
 
-        r_workflow_simple = self._run_bkr(logger, r_wow_options.unwrap(), commandname='bkr.workflow-simple')
+        # `bkr workflow-simple` reads the custom kickstart template from a file, which must exist until it finishes.
+        with contextlib.ExitStack() as stack:
+            kickstart_filepath = (
+                stack.enter_context(
+                    create_tempfile(file_contents=kickstart_template, prefix='beaker-kickstart-', suffix='.ks')
+                )
+                if kickstart_template is not None
+                else None
+            )
+
+            r_wow_options = self._create_wow_options(
+                logger, session, guest_request, distro, kickstart_filepath=kickstart_filepath
+            )
+
+            if r_wow_options.is_error:
+                return Error(r_wow_options.unwrap_error())
+
+            self.log_acquisition_attempt(logger, transaction, guest_request, image=distro)
+
+            r_workflow_simple = self._run_bkr(logger, r_wow_options.unwrap(), commandname='bkr.workflow-simple')
+
         if r_workflow_simple.is_error:
             return Error(Failure.from_failure('failed to create job', r_workflow_simple.unwrap_error()))
 
