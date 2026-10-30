@@ -63,17 +63,7 @@ test-integration: _env-info  ## Run tests against real services
 
 test-db-schema-revisions:  _env-info  ## Verify DB schema revisions
 	$(postgresql_setup)
-
-	ARTEMIS_DB_URL="$(INTEGRATION_POSTGRES_URI)" ARTEMIS_VAULT_PASSWORD=dummy-vault-password poetry run alembic upgrade head
-	ARTEMIS_DB_URL="$(INTEGRATION_POSTGRES_URI)" ARTEMIS_VAULT_PASSWORD=dummy-vault-password poetry run alembic revision --autogenerate &> autogenerate.log
-
-	@echo "--- autogenerate.log ---"
-	@cat autogenerate.log
-	@echo "------------------------"
-	@grep "No changes to schema detected" autogenerate.log || bash -c "echo 'Untracked schema changes detected.'; exit 1"
-
-	ARTEMIS_DB_URL="$(INTEGRATION_POSTGRES_URI)" ARTEMIS_VAULT_PASSWORD=dummy-vault-password poetry run alembic downgrade base
-
+	ARTEMIS_DB_URL="$(INTEGRATION_POSTGRES_URI)" tox -e py312-db-schema-revisions
 	$(postgresql_teardown)
 
 gen-db-revision:  ## Generate new DB revision
