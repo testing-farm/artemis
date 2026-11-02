@@ -9,6 +9,7 @@ import datetime
 import enum
 import functools
 import inspect
+import json
 import os
 import random
 import threading
@@ -56,6 +57,7 @@ from ..db import (
     GuestLogState,
     GuestRequest,
     GuestShelf,
+    PoolTag,
     SafeQuery,
     SerializedPoolDataMapping,
     SSHKey,
@@ -1334,6 +1336,96 @@ def _close_broker_connection(logger: gluetool.log.ContextAdapter) -> None:
 
     BROKER.connection.close()
 
+#: A single pool-refresh dispatcher group: a named combination of a Cron-like schedule and a pool-tag filter.
+#: Used to schedule the very same dispatcher several times, with different intervals and for different sets of pools.
+DispatcherGroup = dict[str, str]
+
+
+def parse_dispatcher_groups(raw: str) -> list[DispatcherGroup]:
+    """
+    Parse the JSON definition of pool-refresh dispatcher groups, as provided by a knob value.
+
+    Expects a JSON array of objects, each with ``name``, ``schedule`` and ``pool-tag-filter`` keys, e.g.::
+
+        [{"name": "slow", "schedule": "*/15 * * * *", "pool-tag-filter": "refresh-group=slow"}]
+
+    An empty or whitespace-only value yields an empty list, meaning "no groups configured" - the caller then
+    falls back to a single default group, preserving the original, un-grouped behavior.
+    """
+
+    raw = raw.strip()
+
+    if not raw:
+        return []
+
+    return cast(list[DispatcherGroup], json.loads(raw))
+
+
+def register_pool_dispatcher_actors(
+    namespace: dict[str, Any],
+    *,
+    base_actor_name: str,
+    taskname: str,
+    doer: 'DoerType',
+    groups: list[DispatcherGroup],
+    default_schedule: str,
+    default_tag_filter: str,
+) -> None:
+    """
+    Register one periodic dispatcher actor per configured group into ``namespace`` (a module's ``globals()``).
+
+    Periodiq schedules every registered actor that carries a ``periodic`` Cron spec, but it cannot schedule a
+    single actor several times with different parameters. To work around that, we register a separate actor for
+    each group - the same dispatcher logic, but with its own schedule and its own pool-tag filter - so periodiq
+    ends up scheduling the dispatcher several times, exactly as configured.
+
+    Each actor passes its group's pool-tag filter to the doer via ``doer_kwargs``, selecting which pools it
+    dispatches the refresh for. With filters that together cover all pools (e.g. one group per tag value plus a
+    catch-all group with an empty filter), every pool is refreshed, each on its group's own schedule.
+
+    When ``groups`` is empty, a single default group is registered under ``base_actor_name``, using
+    ``default_schedule`` and ``default_tag_filter`` - i.e. the original, un-grouped behavior is preserved. Named
+    groups are registered under ``{base_actor_name}_{name}``.
+
+    .. note::
+
+       The group configuration must be identical for the scheduler and the workers: periodiq (scheduler) emits a
+       message for each group actor, and a worker must have the very same actor registered to process it.
+    """
+
+    normalized: list[DispatcherGroup] = groups or [
+        {'name': '', 'schedule': default_schedule, 'pool-tag-filter': default_tag_filter}
+    ]
+
+    for group in normalized:
+        name = group.get('name', '')
+        schedule = group.get('schedule', default_schedule)
+        tag_filter = group.get('pool-tag-filter', default_tag_filter)
+
+        actor_name = base_actor_name if not name else f'{base_actor_name}_{name}'
+        logger_name = taskname if not name else f'{taskname}-{name}'
+
+        # Bind the per-group values as default arguments, so each generated actor captures its own group's
+        # filter and logger name instead of the last values of the loop variables.
+        def _entry(tag_filter: str = tag_filter, logger_name: str = logger_name) -> None:
+            task_core(
+                doer,
+                logger=TaskLogger(_ROOT_LOGGER, logger_name),
+                session_read_only=True,
+                doer_kwargs={'tag_filter': tag_filter},
+            )
+
+        _entry.__name__ = actor_name
+        _entry.__qualname__ = actor_name
+
+        namespace[actor_name] = task(
+            singleton=True,
+            singleton_no_retry_on_lock_fail=True,
+            periodic=periodiq.cron(schedule),
+            priority=TaskPriority.HIGH,
+            queue_name=TaskQueue.PERIODIC,
+        )(_entry)
+
 
 def _randomize_delay(delay: int) -> int:
     """
@@ -2409,6 +2501,71 @@ class Workspace:
         self.pools = r_pools.unwrap()
 
         return self
+
+    def pools_matching_tag(self, tag_filter: str) -> list[PoolDriver[Any, Instance]]:
+        """
+        Return the subset of loaded pools matching a pool-tag filter.
+
+        The filter is matched against pool tags (the ``pool-tags`` section of a pool's configuration). Supported
+        forms, where ``key`` is a tag name and ``value`` a tag value:
+
+        * ``key=value`` - pools carrying that tag with that value.
+        * ``key`` or ``key=`` - pools carrying that tag, regardless of value (presence).
+        * ``!key`` - pools *not* carrying that tag at all (negated presence); the natural catch-all for pools
+          not assigned to any tagged group.
+        * ``key!=value`` - pools *not* carrying that tag with that value; matches pools lacking the tag as well
+          as pools carrying it with a different value.
+
+        An empty filter returns all loaded pools - i.e. filtering is disabled, preserving the original behavior.
+
+        On failure to query pool tags, an empty list is returned - the dispatcher skips this run rather than
+        refreshing a wrong set of pools; the next scheduled run retries.
+        """
+
+        tag_filter = tag_filter.strip()
+
+        if not tag_filter:
+            return self.pools
+
+        negated = False
+
+        # Leading "!" negates the whole filter: "!key" (and "!key=value") selects pools that do *not* match.
+        if tag_filter.startswith('!'):
+            negated = True
+            tag_filter = tag_filter[1:].strip()
+
+        key, separator, value = tag_filter.partition('=')
+
+        # "key!=value" is the other way to negate - a trailing "!" on the key, mirroring the usual operator.
+        if key.endswith('!') and separator:
+            negated = True
+            key = key[:-1]
+
+        key = key.strip()
+        value = value.strip()
+
+        query = SafeQuery.from_session(self.session, PoolTag).filter(PoolTag.tag == key)
+
+        if separator and value:
+            query = query.filter(PoolTag.value == value)
+
+        r_tags = query.all()
+
+        if r_tags.is_error:
+            Failure.from_failure(
+                'failed to fetch pool tags for filtering',
+                r_tags.unwrap_error(),
+                tag_filter=tag_filter,
+            ).handle(self.logger)
+
+            return []
+
+        matching_poolnames = {tag.poolname for tag in r_tags.unwrap()}
+
+        if negated:
+            return [pool for pool in self.pools if pool.poolname not in matching_poolnames]
+
+        return [pool for pool in self.pools if pool.poolname in matching_poolnames]
 
     def mark_note_poolname(self) -> Self:
         if self.result:
