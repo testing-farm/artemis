@@ -9,9 +9,9 @@ import datetime
 import enum
 import functools
 import inspect
-import json
 import os
 import random
+import re
 import threading
 from collections.abc import Callable, Generator
 from typing import Any, Literal, Optional, Protocol, Self, TypeVar, Union, cast
@@ -57,7 +57,6 @@ from ..db import (
     GuestLogState,
     GuestRequest,
     GuestShelf,
-    PoolTag,
     SafeQuery,
     SerializedPoolDataMapping,
     SSHKey,
@@ -1332,29 +1331,77 @@ def _close_broker_connection(logger: gluetool.log.ContextAdapter) -> None:
 
     BROKER.connection.close()
 
+
 #: A single pool-refresh dispatcher group: a named combination of a Cron-like schedule and a pool-tag filter.
 #: Used to schedule the very same dispatcher several times, with different intervals and for different sets of pools.
-DispatcherGroup = dict[str, str]
+#: A single pool-refresh dispatcher group: a pool-name pattern (a regular expression matched against pool names)
+#: paired with a Cron-like schedule. Used to schedule the very same dispatcher several times, with different
+#: intervals and for different sets of pools.
+DispatcherGroup = tuple[str, str]
 
 
 def parse_dispatcher_groups(raw: str) -> list[DispatcherGroup]:
     """
-    Parse the JSON definition of pool-refresh dispatcher groups, as provided by a knob value.
+    Parse pool-refresh dispatcher groups from a knob value.
 
-    Expects a JSON array of objects, each with ``name``, ``schedule`` and ``pool-tag-filter`` keys, e.g.::
+    The value is a ``;``-separated list of ``POOLNAME-PATTERN:CRONTAB`` entries, where ``POOLNAME-PATTERN`` is a
+    regular expression matched against pool names and ``CRONTAB`` is a Cron-like schedule, e.g.::
 
-        [{"name": "slow", "schedule": "*/15 * * * *", "pool-tag-filter": "refresh-group=slow"}]
+        ibmcloud-.*:0/27 * * * *;(?!ibmcloud-).*:*/5 * * * *
 
-    An empty or whitespace-only value yields an empty list, meaning "no groups configured" - the caller then
-    falls back to a single default group, preserving the original, un-grouped behavior.
+    The pattern is split from the schedule on the first ``:``. A Cron spec never contains ``:``, so the pattern
+    must not contain one either - use ``(...)`` rather than ``(?:...)``. An empty value yields an empty list,
+    meaning "no groups configured"; the caller then falls back to a single default group.
+
+    Malformed entries - missing ``:``, an invalid regular expression, or an invalid Cron spec - are reported
+    (logged and sent to Sentry) and skipped, so a single bad entry does not stop the scheduler from starting.
     """
 
-    raw = raw.strip()
+    groups: list[DispatcherGroup] = []
 
-    if not raw:
-        return []
+    for entry in raw.split(';'):
+        entry = entry.strip()
 
-    return cast(list[DispatcherGroup], json.loads(raw))
+        if not entry:
+            continue
+
+        pattern, separator, period = entry.partition(':')
+        pattern = pattern.strip()
+        period = period.strip()
+
+        if not separator or not pattern or not period:
+            Failure(
+                'ignoring malformed pool refresh group, expected POOLNAME-PATTERN:CRONTAB',
+                group=entry,
+            ).handle(_ROOT_LOGGER)
+
+            continue
+
+        try:
+            re.compile(pattern)
+        except re.error as exc:
+            Failure.from_exc(
+                'ignoring pool refresh group with invalid pool name pattern',
+                exc,
+                group=entry,
+            ).handle(_ROOT_LOGGER)
+
+            continue
+
+        try:
+            periodiq.cron(period)
+        except Exception as exc:
+            Failure.from_exc(
+                'ignoring pool refresh group with invalid schedule',
+                exc,
+                group=entry,
+            ).handle(_ROOT_LOGGER)
+
+            continue
+
+        groups.append((pattern, period))
+
+    return groups
 
 
 def register_pool_dispatcher_actors(
@@ -1365,23 +1412,22 @@ def register_pool_dispatcher_actors(
     doer: 'DoerType',
     groups: list[DispatcherGroup],
     default_schedule: str,
-    default_tag_filter: str,
 ) -> None:
     """
     Register one periodic dispatcher actor per configured group into ``namespace`` (a module's ``globals()``).
 
     Periodiq schedules every registered actor that carries a ``periodic`` Cron spec, but it cannot schedule a
     single actor several times with different parameters. To work around that, we register a separate actor for
-    each group - the same dispatcher logic, but with its own schedule and its own pool-tag filter - so periodiq
+    each group - the same dispatcher logic, but with its own schedule and its own pool-name pattern - so periodiq
     ends up scheduling the dispatcher several times, exactly as configured.
 
-    Each actor passes its group's pool-tag filter to the doer via ``doer_kwargs``, selecting which pools it
-    dispatches the refresh for. With filters that together cover all pools (e.g. one group per tag value plus a
-    catch-all group with an empty filter), every pool is refreshed, each on its group's own schedule.
+    Each actor passes its group's pool-name pattern to the doer via ``doer_args``, selecting which pools it
+    dispatches the refresh for. Groups are independent: a pool matching several patterns is dispatched by each
+    matching group, so patterns should be kept disjoint (e.g. a lookahead catch-all like ``(?!ibmcloud-).*``).
 
-    When ``groups`` is empty, a single default group is registered under ``base_actor_name``, using
-    ``default_schedule`` and ``default_tag_filter`` - i.e. the original, un-grouped behavior is preserved. Named
-    groups are registered under ``{base_actor_name}_{name}``.
+    When ``groups`` is empty, a single default group matching all pools (``.*``) on ``default_schedule`` is
+    registered under ``base_actor_name`` - i.e. the original, un-grouped behavior is preserved. With several
+    groups configured, actors are registered under ``{base_actor_name}_{index}``.
 
     .. note::
 
@@ -1389,26 +1435,21 @@ def register_pool_dispatcher_actors(
        message for each group actor, and a worker must have the very same actor registered to process it.
     """
 
-    normalized: list[DispatcherGroup] = groups or [
-        {'name': '', 'schedule': default_schedule, 'pool-tag-filter': default_tag_filter}
-    ]
+    normalized: list[DispatcherGroup] = groups or [('.*', default_schedule)]
+    multiple = len(normalized) > 1
 
-    for group in normalized:
-        name = group.get('name', '')
-        schedule = group.get('schedule', default_schedule)
-        tag_filter = group.get('pool-tag-filter', default_tag_filter)
-
-        actor_name = base_actor_name if not name else f'{base_actor_name}_{name}'
-        logger_name = taskname if not name else f'{taskname}-{name}'
+    for index, (pattern, period) in enumerate(normalized):
+        actor_name = f'{base_actor_name}_{index}' if multiple else base_actor_name
+        logger_name = f'{taskname}-{index}' if multiple else taskname
 
         # Bind the per-group values as default arguments, so each generated actor captures its own group's
-        # filter and logger name instead of the last values of the loop variables.
-        def _entry(tag_filter: str = tag_filter, logger_name: str = logger_name) -> None:
+        # pattern and logger name instead of the last values of the loop variables.
+        def _entry(pattern: str = pattern, logger_name: str = logger_name) -> None:
             task_core(
                 doer,
                 logger=TaskLogger(_ROOT_LOGGER, logger_name),
                 session_read_only=True,
-                doer_kwargs={'tag_filter': tag_filter},
+                doer_args=(pattern,),
             )
 
         _entry.__name__ = actor_name
@@ -1417,7 +1458,7 @@ def register_pool_dispatcher_actors(
         namespace[actor_name] = task(
             singleton=True,
             singleton_no_retry_on_lock_fail=True,
-            periodic=periodiq.cron(schedule),
+            periodic=periodiq.cron(period),
             priority=TaskPriority.HIGH,
             queue_name=TaskQueue.PERIODIC,
         )(_entry)
@@ -2496,70 +2537,21 @@ class Workspace:
 
         return self
 
-    def pools_matching_tag(self, tag_filter: str) -> list[PoolDriver[Any, Instance]]:
+    def pools_matching_name(self, poolname_pattern: str) -> list[PoolDriver[Any, Instance]]:
         """
-        Return the subset of loaded pools matching a pool-tag filter.
+        Return the subset of loaded pools whose name matches the given regular expression.
 
-        The filter is matched against pool tags (the ``pool-tags`` section of a pool's configuration). Supported
-        forms, where ``key`` is a tag name and ``value`` a tag value:
+        The pattern is matched against the whole pool name (:py:func:`re.fullmatch`), so ``ibmcloud-.*`` matches
+        ``ibmcloud-s390x`` and ``.*`` matches every pool. Use a lookahead, e.g. ``(?!ibmcloud-).*``, for a
+        catch-all that excludes pools already covered by another group.
 
-        * ``key=value`` - pools carrying that tag with that value.
-        * ``key`` or ``key=`` - pools carrying that tag, regardless of value (presence).
-        * ``!key`` - pools *not* carrying that tag at all (negated presence); the natural catch-all for pools
-          not assigned to any tagged group.
-        * ``key!=value`` - pools *not* carrying that tag with that value; matches pools lacking the tag as well
-          as pools carrying it with a different value.
-
-        An empty filter returns all loaded pools - i.e. filtering is disabled, preserving the original behavior.
-
-        On failure to query pool tags, an empty list is returned - the dispatcher skips this run rather than
-        refreshing a wrong set of pools; the next scheduled run retries.
+        The pattern is expected to be valid - it is validated when the group configuration is parsed (see
+        :py:func:`parse_dispatcher_groups`), so invalid patterns never reach this method.
         """
 
-        tag_filter = tag_filter.strip()
+        matcher = re.compile(poolname_pattern)
 
-        if not tag_filter:
-            return self.pools
-
-        negated = False
-
-        # Leading "!" negates the whole filter: "!key" (and "!key=value") selects pools that do *not* match.
-        if tag_filter.startswith('!'):
-            negated = True
-            tag_filter = tag_filter[1:].strip()
-
-        key, separator, value = tag_filter.partition('=')
-
-        # "key!=value" is the other way to negate - a trailing "!" on the key, mirroring the usual operator.
-        if key.endswith('!') and separator:
-            negated = True
-            key = key[:-1]
-
-        key = key.strip()
-        value = value.strip()
-
-        query = SafeQuery.from_session(self.session, PoolTag).filter(PoolTag.tag == key)
-
-        if separator and value:
-            query = query.filter(PoolTag.value == value)
-
-        r_tags = query.all()
-
-        if r_tags.is_error:
-            Failure.from_failure(
-                'failed to fetch pool tags for filtering',
-                r_tags.unwrap_error(),
-                tag_filter=tag_filter,
-            ).handle(self.logger)
-
-            return []
-
-        matching_poolnames = {tag.poolname for tag in r_tags.unwrap()}
-
-        if negated:
-            return [pool for pool in self.pools if pool.poolname not in matching_poolnames]
-
-        return [pool for pool in self.pools if pool.poolname in matching_poolnames]
+        return [pool for pool in self.pools if matcher.fullmatch(pool.poolname)]
 
     def mark_note_poolname(self) -> Self:
         if self.result:
