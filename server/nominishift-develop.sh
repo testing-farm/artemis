@@ -36,15 +36,15 @@ export ARTEMIS_HOOK_IBMCLOUD_VPC_FLAVOR_FILTERS="${ARTEMIS_HOOK_IBMCLOUD_VPC_FLA
 export ARTEMIS_HOOK_OPENSTACK_FLAVOR_FILTERS="${ARTEMIS_HOOK_OPENSTACK_FLAVOR_FILTERS:-$ARTEMIS_CONFIG_DIR/ARTEMIS_HOOK_OPENSTACK_FLAVOR_FILTERS.py}"
 
 # Pool image/flavor info refresh groups: schedule the refresh dispatchers several times, on different intervals
-# and for different sets of pools (selected by their "pool-tags"). Tag pools with e.g. "refresh-group: slow" in
-# server.yml; the "rest" group ("!refresh-group") covers all pools that carry no such tag. The scheduler and the
-# worker below share this single shell environment, so their group definitions cannot drift apart.
+# and for different sets of pools, selected by a POOLNAME-PATTERN:CRONTAB list (';'-separated). Here ibmcloud
+# pools refresh on their own cadences and everything else every 5 minutes. The scheduler and the worker below
+# share this single shell environment, so their group definitions cannot drift apart.
 # Unset both for the original behavior: one group, all pools, every 5 minutes.
 if [ -z "$ARTEMIS_ACTOR_REFRESH_POOL_IMAGE_INFO_GROUPS" ]; then
-    export ARTEMIS_ACTOR_REFRESH_POOL_IMAGE_INFO_GROUPS='[{"name": "fast", "schedule": "*/2 * * * *", "pool-tag-filter": "refresh-group=fast"}, {"name": "slow", "schedule": "*/15 * * * *", "pool-tag-filter": "refresh-group=slow"}, {"name": "rest", "schedule": "*/5 * * * *", "pool-tag-filter": "!refresh-group"}]'
+    export ARTEMIS_ACTOR_REFRESH_POOL_IMAGE_INFO_GROUPS='ibmcloud-s390x:*/2 * * * *;ibmcloud-ppc64:*/15 * * * *;(?!ibmcloud-).*:*/5 * * * *'
 fi
 if [ -z "$ARTEMIS_ACTOR_REFRESH_POOL_FLAVOR_INFO_GROUPS" ]; then
-    export ARTEMIS_ACTOR_REFRESH_POOL_FLAVOR_INFO_GROUPS='[{"name": "fast", "schedule": "*/2 * * * *", "pool-tag-filter": "refresh-group=fast"}, {"name": "slow", "schedule": "*/15 * * * *", "pool-tag-filter": "refresh-group=slow"}, {"name": "rest", "schedule": "*/5 * * * *", "pool-tag-filter": "!refresh-group"}]'
+    export ARTEMIS_ACTOR_REFRESH_POOL_FLAVOR_INFO_GROUPS='ibmcloud-s390x:*/2 * * * *;ibmcloud-ppc64:*/15 * * * *;(?!ibmcloud-).*:*/5 * * * *'
 fi
 
 ARTEMIS_WORKER_OPTIONS="${ARTEMIS_WORKER_OPTIONS:-}"
