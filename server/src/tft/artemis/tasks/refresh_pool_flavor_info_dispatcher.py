@@ -13,23 +13,19 @@ Find the most suitable pool for a given request, and dispatch its provisioning.
 from typing import cast
 
 import gluetool.log
-import periodiq
 import sqlalchemy.orm.session
 
 from ..db import DB
 from ..knobs import Knob
 from . import (
-    _ROOT_LOGGER,
+    DispatcherGroup,
     DoerReturnType,
     DoerType,
-    TaskLogger,
-    TaskPriority,
-    TaskQueue,
     Workspace as _Workspace,
     get_pool_logger,
+    parse_dispatcher_groups,
+    register_pool_dispatcher_actors,
     step,
-    task,
-    task_core,
 )
 from .refresh_pool_flavor_info import refresh_pool_flavor_info
 
@@ -42,6 +38,30 @@ KNOB_REFRESH_POOL_FLAVOR_INFO_SCHEDULE: Knob[str] = Knob(
     default='*/5 * * * *',
 )
 
+KNOB_REFRESH_POOL_FLAVOR_INFO_POOL_TAG_FILTER: Knob[str] = Knob(
+    'actor.refresh-pool-flavor-info.pool-tag-filter',
+    'If set, only pools matching this pool-tag filter get their flavor info refreshed. Forms: "key=value" (that'
+    ' tag and value), "key" (tag present, any value), "!key" (tag absent - the catch-all for ungrouped pools),'
+    ' "key!=value" (not that value, including pools lacking the tag). Empty (the default) means all pools.',
+    has_db=False,
+    envvar='ARTEMIS_ACTOR_REFRESH_POOL_FLAVOR_INFO_POOL_TAG_FILTER',
+    cast_from_str=str,
+    default='',
+)
+
+KNOB_REFRESH_POOL_FLAVOR_INFO_GROUPS: Knob[list[DispatcherGroup]] = Knob(
+    'actor.refresh-pool-flavor-info.groups',
+    'JSON array of flavor-info refresh groups. Each group is an object with keys name, schedule and'
+    ' pool-tag-filter, for example a group named "slow" with schedule "*/15 * * * *" and'
+    ' pool-tag-filter "refresh-group=slow". When the groups together cover all pools, every pool is'
+    ' refreshed on its group schedule. Empty (the default) means a single group using the plain'
+    ' schedule and pool-tag-filter knobs.',
+    has_db=False,
+    envvar='ARTEMIS_ACTOR_REFRESH_POOL_FLAVOR_INFO_GROUPS',
+    cast_from_str=parse_dispatcher_groups,
+    default=[],
+)
+
 
 class Workspace(_Workspace):
     """
@@ -49,6 +69,9 @@ class Workspace(_Workspace):
     """
 
     TASKNAME = 'refresh-pool-flavor-info-dispatcher'
+
+    #: Pool-tag filter selecting which pools this dispatcher run refreshes. Set per group; empty means all pools.
+    tag_filter: str = ''
 
     @step
     def run(self) -> None:
@@ -60,7 +83,7 @@ class Workspace(_Workspace):
 
             self._progress(transaction, 'scheduling pool flavor info refresh')
 
-            for pool in self.pools:
+            for pool in self.pools_matching_tag(self.tag_filter):
                 if self.result:
                     return
 
@@ -77,6 +100,7 @@ class Workspace(_Workspace):
         logger: gluetool.log.ContextAdapter,
         db: DB,
         session: sqlalchemy.orm.session.Session,
+        tag_filter: str = '',
     ) -> 'Workspace':
         """
         Create workspace.
@@ -84,17 +108,25 @@ class Workspace(_Workspace):
         :param logger: logger to use for logging.
         :param db: DB instance to use for DB access.
         :param session: DB session to use for DB access.
+        :param tag_filter: pool-tag filter selecting which pools to refresh. Empty means all pools.
         :returns: newly created workspace.
         """
 
-        return cls(logger, session, db=db, task=Workspace.TASKNAME)
+        workspace = cls(logger, session, db=db, task=Workspace.TASKNAME)
+        workspace.tag_filter = tag_filter
+
+        return workspace
 
     @classmethod
     def refresh_pool_flavor_info_dispatcher(
-        cls, logger: gluetool.log.ContextAdapter, db: DB, session: sqlalchemy.orm.session.Session
+        cls,
+        logger: gluetool.log.ContextAdapter,
+        db: DB,
+        session: sqlalchemy.orm.session.Session,
+        tag_filter: str = '',
     ) -> DoerReturnType:
         """
-        Schedule refresh of hostname groups to avoid for suitable pools.
+        Schedule flavor info refresh for the pools matching the given pool-tag filter.
 
         .. note::
 
@@ -104,35 +136,22 @@ class Workspace(_Workspace):
         :param logger: logger to use for logging.
         :param db: DB instance to use for DB access.
         :param session: DB session to use for DB access.
+        :param tag_filter: pool-tag filter selecting which pools to refresh. Empty means all pools.
         :returns: task result.
         """
 
-        return cls.create(logger, db, session).begin().run().complete().final_result
+        return cls.create(logger, db, session, tag_filter=tag_filter).begin().run().complete().final_result
 
 
-@task(
-    singleton=True,
-    singleton_no_retry_on_lock_fail=True,
-    periodic=periodiq.cron(KNOB_REFRESH_POOL_FLAVOR_INFO_SCHEDULE.value),
-    priority=TaskPriority.HIGH,
-    queue_name=TaskQueue.PERIODIC,
+# Register one periodic dispatcher actor per configured group - this is what makes periodiq schedule the
+# dispatcher several times, on different intervals and for different sets of pools. With no groups configured,
+# a single actor named `refresh_pool_flavor_info_dispatcher` is registered, preserving the original behavior.
+register_pool_dispatcher_actors(
+    globals(),
+    base_actor_name='refresh_pool_flavor_info_dispatcher',
+    taskname=Workspace.TASKNAME,
+    doer=cast(DoerType, Workspace.refresh_pool_flavor_info_dispatcher),
+    groups=KNOB_REFRESH_POOL_FLAVOR_INFO_GROUPS.value,
+    default_schedule=KNOB_REFRESH_POOL_FLAVOR_INFO_SCHEDULE.value,
+    default_tag_filter=KNOB_REFRESH_POOL_FLAVOR_INFO_POOL_TAG_FILTER.value,
 )
-def refresh_pool_flavor_info_dispatcher() -> None:
-    """
-    Dispatcher-like task for pool flavor info refresh. It is being scheduled periodically (by Periodiq),
-    and it refreshes nothing on its own - instead, it gets a list of pools, and dispatches the actual refresh
-    task for each pool.
-
-    This way, we can use Periodiq (or similar package), which makes it much simpler to run tasks in
-    a cron-like fashion, to schedule the task. It does not support this kind of scheduling with different
-    parameters, so we have this task that picks parameters for its kids.
-
-    We don't care about rescheduling or retries - this task would be executed again very soon, exponential
-    retries would make the metrics more outdated.
-    """
-
-    task_core(
-        cast(DoerType, Workspace.refresh_pool_flavor_info_dispatcher),
-        logger=TaskLogger(_ROOT_LOGGER, Workspace.TASKNAME),
-        session_read_only=True,
-    )
