@@ -259,6 +259,20 @@ guest request watchdog tasks.
 
 5+|When to run refresh of Beaker avoid groups hostnames, as a Cron-like specification.
 
+|`actor.refresh-pool-flavor-info.groups`
+|`parse_dispatcher_groups`
+|`ARTEMIS_ACTOR_REFRESH_POOL_FLAVOR_INFO_GROUPS`
+|`[]`
+|no
+
+
+
+5+|Flavor info refresh groups, as a semicolon-separated list of `PATTERN:CRONTAB` entries, where
+`PATTERN` is a regular expression matched against pool names, and `CRONTAB` is a Cron-like schedule.
+For example, `ibmcloud-.*:0/27 * * * *`. Groups are independent, so patterns should be kept disjoint. Pools
+matching no group are refreshed by an implicit catch-all on the plain schedule knob, so no explicit catch-all
+group is needed. Empty (the default) means a single group refreshing all pools on the plain schedule knob.
+
 |`actor.refresh-pool-flavor-info.schedule`
 |`str`
 |`ARTEMIS_ACTOR_REFRESH_POOL_FLAVOR_INFO_SCHEDULE`
@@ -268,6 +282,20 @@ guest request watchdog tasks.
 
 
 5+|When to run OpenStack flavor info refresh task, as a Cron-like specification.
+
+|`actor.refresh-pool-image-info.groups`
+|`parse_dispatcher_groups`
+|`ARTEMIS_ACTOR_REFRESH_POOL_IMAGE_INFO_GROUPS`
+|`[]`
+|no
+
+
+
+5+|Image info refresh groups, as a semicolon-separated list of `PATTERN:CRONTAB` entries, where
+`PATTERN` is a regular expression matched against pool names, and `CRONTAB` is a Cron-like schedule.
+For example, `ibmcloud-.*:0/27 * * * *`. Groups are independent, so patterns should be kept disjoint. Pools
+matching no group are refreshed by an implicit catch-all on the plain schedule knob, so no explicit catch-all
+group is needed. Empty (the default) means a single group refreshing all pools on the plain schedule knob.
 
 |`actor.refresh-pool-image-info.schedule`
 |`str`
