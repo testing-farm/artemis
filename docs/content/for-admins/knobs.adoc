@@ -277,17 +277,7 @@ guest request watchdog tasks.
 
 
 
-5+|JSON array of flavor-info refresh groups. Each group is an object with keys name, schedule and pool-tag-filter, for example a group named "slow" with schedule "*/15 * * * *" and pool-tag-filter "refresh-group=slow". When the groups together cover all pools, every pool is refreshed on its group schedule. Empty (the default) means a single group using the plain schedule and pool-tag-filter knobs.
-
-|`actor.refresh-pool-flavor-info.pool-tag-filter`
-|`str`
-|`ARTEMIS_ACTOR_REFRESH_POOL_FLAVOR_INFO_POOL_TAG_FILTER`
-|``
-|no
-
-
-
-5+|If set, only pools matching this pool-tag filter get their flavor info refreshed. Forms: "key=value" (that tag and value), "key" (tag present, any value), "!key" (tag absent - the catch-all for ungrouped pools), "key!=value" (not that value, including pools lacking the tag). Empty (the default) means all pools.
+5+|Flavor info refresh groups, as a semicolon-separated list of POOLNAME-PATTERN:CRONTAB entries, where POOLNAME-PATTERN is a regular expression matched against pool names and CRONTAB is a Cron-like schedule, e.g. "ibmcloud-.*:0/27 * * * *;(?!ibmcloud-).*:*/5 * * * *". Groups are independent, so patterns should be kept disjoint. Empty (the default) means a single group refreshing all pools on the plain schedule knob.
 
 |`actor.refresh-pool-flavor-info.schedule`
 |`str`
@@ -307,17 +297,7 @@ guest request watchdog tasks.
 
 
 
-5+|JSON array of image-info refresh groups. Each group is an object with keys name, schedule and pool-tag-filter, for example a group named "slow" with schedule "*/15 * * * *" and pool-tag-filter "refresh-group=slow". When the groups together cover all pools, every pool is refreshed on its group schedule. Empty (the default) means a single group using the plain schedule and pool-tag-filter knobs.
-
-|`actor.refresh-pool-image-info.pool-tag-filter`
-|`str`
-|`ARTEMIS_ACTOR_REFRESH_POOL_IMAGE_INFO_POOL_TAG_FILTER`
-|``
-|no
-
-
-
-5+|If set, only pools matching this pool-tag filter get their image info refreshed. Forms: "key=value" (that tag and value), "key" (tag present, any value), "!key" (tag absent - the catch-all for ungrouped pools), "key!=value" (not that value, including pools lacking the tag). Empty (the default) means all pools.
+5+|Image info refresh groups, as a semicolon-separated list of POOLNAME-PATTERN:CRONTAB entries, where POOLNAME-PATTERN is a regular expression matched against pool names and CRONTAB is a Cron-like schedule, e.g. "ibmcloud-.*:0/27 * * * *;(?!ibmcloud-).*:*/5 * * * *". Groups are independent, so patterns should be kept disjoint. Empty (the default) means a single group refreshing all pools on the plain schedule knob.
 
 |`actor.refresh-pool-image-info.schedule`
 |`str`
