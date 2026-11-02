@@ -262,10 +262,10 @@ AWS_INSTANCE_SPECIFICATION = Template("""
     "AvailabilityZone": "{{ availability_zone }}"
   },
   {% if network_interfaces -%}
-  "NetworkInterfaces": {{ network_interfaces | to_json }},
+  "NetworkInterfaces": {{ network_interfaces | tojson }},
   {% endif -%}
   {% if block_device_mappings -%}
-  "BlockDeviceMappings": {{ block_device_mappings | to_json }},
+  "BlockDeviceMappings": {{ block_device_mappings | tojson }},
   {% endif -%}
   "UserData": "{{ user_data }}"
 }
