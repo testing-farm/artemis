@@ -32,7 +32,9 @@ from . import (
 )
 from .common import router__status, router_default, router_knobs, router_users
 from .v0_0_53 import router__cache
-from .v0_0_56 import router_shelves
+from .v0_0_56 import create_router_shelves
+
+router_shelves = create_router_shelves('v0.0.69')
 
 router_guests = APIRouter(
     prefix='/guests',

@@ -4,11 +4,12 @@
 import base64
 import re
 from re import Pattern
-from typing import cast
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import _pytest.monkeypatch
 import fastapi
+import fastapi.routing
 import fastapi.testclient
 import gluetool.log
 import pytest
@@ -16,6 +17,17 @@ import sqlalchemy
 
 import tft.artemis.api
 import tft.artemis.api.middleware
+import tft.artemis.api.routers.v0_0_56
+import tft.artemis.api.routers.v0_0_58
+import tft.artemis.api.routers.v0_0_67
+import tft.artemis.api.routers.v0_0_69
+import tft.artemis.api.routers.v0_0_70
+import tft.artemis.api.routers.v0_0_72
+import tft.artemis.api.routers.v0_0_73
+import tft.artemis.api.routers.v0_0_74
+import tft.artemis.api.routers.v0_0_83
+import tft.artemis.api.routers.v0_0_84
+import tft.artemis.api.routers.v0_0_89
 import tft.artemis.db
 from tft.artemis import __VERSION__
 from tft.artemis.api.environment import CURRENT_MILESTONE_VERSION
@@ -90,6 +102,53 @@ def test_api_redirects(api_client: fastapi.testclient.TestClient) -> None:
     # supported versions should include no redirects
     response = api_client.request('GET', '/v0.0.72/about', follow_redirects=False)
     assert response.status_code == 200
+
+
+@pytest.mark.parametrize(
+    ('router', 'expected_api_version'),
+    [
+        (tft.artemis.api.routers.v0_0_56.router_shelves, 'v0.0.56'),
+        (tft.artemis.api.routers.v0_0_58.router_shelves, 'v0.0.58'),
+        (tft.artemis.api.routers.v0_0_67.router_shelves, 'v0.0.67'),
+        (tft.artemis.api.routers.v0_0_69.router_shelves, 'v0.0.69'),
+        (tft.artemis.api.routers.v0_0_70.router_shelves, 'v0.0.70'),
+        (tft.artemis.api.routers.v0_0_72.router_shelves, 'v0.0.72'),
+        (tft.artemis.api.routers.v0_0_73.router_shelves, 'v0.0.73'),
+        (tft.artemis.api.routers.v0_0_74.router_shelves, 'v0.0.74'),
+        (tft.artemis.api.routers.v0_0_83.router_shelves, 'v0.0.83'),
+        (tft.artemis.api.routers.v0_0_84.router_shelves, 'v0.0.84'),
+        (tft.artemis.api.routers.v0_0_89.router_shelves, 'v0.0.89'),
+    ],
+)
+def test_router_shelves_preprovision_uses_its_api_version(
+    router: fastapi.APIRouter,
+    expected_api_version: str,
+    monkeypatch: _pytest.monkeypatch.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def _preprovision_guest(**kwargs: Any) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(tft.artemis.api.routers.v0_0_56, 'preprovision_guest', _preprovision_guest)
+
+    route = next(
+        route
+        for route in router.routes
+        if isinstance(route, fastapi.routing.APIRoute) and route.path == '/shelves/{shelfname}/preprovision'
+    )
+
+    route.endpoint(
+        shelfname='dummy-shelf',
+        preprovisioning_request=MagicMock(),
+        manager=MagicMock(),
+        auth=MagicMock(),
+        logger=MagicMock(),
+    )
+
+    # The preprovisioning endpoint must validate the guest environment against the schema of
+    # the API version whose router serves it, not against the version where it was introduced.
+    assert captured['api_version'] == expected_api_version
 
 
 @pytest.mark.usefixtures('schema_actual')
