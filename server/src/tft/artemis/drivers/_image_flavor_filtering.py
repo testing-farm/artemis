@@ -232,7 +232,7 @@ def filter_flavors_prefer_default_flavor(
         return Ok(FilterRuling.from_flavors(image, flavors))
 
     default_flavor_regex: Optional[str]
-    default_flavor_name: Optional[str]
+    default_flavor_name: Optional[str] = None
 
     if (default_flavor_regex := pool.pool_config.get('default-flavor-regex')) is not None:
         try:
@@ -280,7 +280,7 @@ def filter_flavors_default_fallback(
         return Ok(FilterRuling.from_flavors(image, flavors))
 
     default_flavor_regex: Optional[str]
-    default_flavor_name: Optional[str]
+    default_flavor_name: Optional[str] = None
 
     if (default_flavor_regex := pool.pool_config.get('default-flavor-regex')) is not None:
         try:
