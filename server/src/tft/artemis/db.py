@@ -838,7 +838,7 @@ class TaskRequest(Base):
     __tablename__ = 'task_requests'
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    taskname: Mapped[str]
+    taskname: Mapped[str] = mapped_column(Text(), nullable=False)
     arguments: Mapped[Any] = mapped_column(JSON(), nullable=False)
     delay: Mapped[Optional[int]]
 
@@ -1200,7 +1200,7 @@ class GuestRequest(Base):
     skip_prepare_verify_ssh: Mapped[bool] = mapped_column(nullable=False, server_default='false')
 
     # Contents of a script to be run when the guest becomes active
-    post_install_script: Mapped[Optional[str]]
+    post_install_script: Mapped[Optional[str]] = mapped_column(Text(), nullable=True)
 
     # User specified watchdog delay
     watchdog_dispatch_delay: Mapped[Optional[int]]
@@ -1532,8 +1532,8 @@ class GuestLogBlob(Base):
     contenttype: Mapped[GuestLogContentType]
 
     ctime: Mapped[datetime.datetime] = mapped_column(nullable=False, default=datetime.datetime.utcnow)
-    content: Mapped[str] = mapped_column(nullable=False, server_default='', deferred=True)
-    content_hash: Mapped[str] = mapped_column(nullable=False, server_default='')
+    content: Mapped[str] = mapped_column(Text(), nullable=False, server_default='', deferred=True)
+    content_hash: Mapped[str] = mapped_column(Text(), nullable=False, server_default='')
 
     guest_log = relationship('GuestLog', back_populates='blobs')
 
