@@ -47,6 +47,8 @@ define postgresql_teardown
 
 	podman-compose down postgresql
 endef
+else
+ARTEMIS_DB_URL := "$(INTEGRATION_POSTGRES_URI)"
 endif
 
 tests: .common-tests test-static-analysis test-db-schema-revisions
