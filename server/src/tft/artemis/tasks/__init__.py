@@ -1001,6 +1001,8 @@ def run_doer_multithread(
                 actor_control_value(actor_name, 'VERBOSE_PROFILE', default=False)
             )
 
+            profiler: Optional[Profiler] = None
+
             if profile_actor:
                 profiler = Profiler(verbose=verbose_profile)
                 profiler.start()
@@ -1009,7 +1011,7 @@ def run_doer_multithread(
                 return thread_context.run(fn, logger, db, session, *args, **kwargs)
 
             finally:
-                if profile_actor:
+                if profiler is not None:
                     profiler.stop()
                     profiler.log(logger, 'profiling report (inner)')
 
@@ -1064,6 +1066,8 @@ def run_doer_singlethread(
         actor_control_value(actor_name, 'VERBOSE_PROFILE', default=False)
     )
 
+    profiler: Optional[Profiler] = None
+
     try:
         logger.debug(f'submitting task doer {fn.__name__}')
 
@@ -1077,7 +1081,7 @@ def run_doer_singlethread(
     except dramatiq.middleware.Interrupt as exc:
         logger.debug('doer interrupted')
 
-        if profile_actor:
+        if profiler is not None:
             profiler.stop()
             profiler.log(logger, 'profiling report (inner)')
 
@@ -1097,7 +1101,7 @@ def run_doer_singlethread(
     else:
         logger.debug(f'doer finished with {result}')
 
-        if profile_actor:
+        if profiler is not None:
             profiler.stop()
             profiler.log(logger, 'profiling report (inner)')
 
@@ -1420,12 +1424,14 @@ def dispatch_group(
     # The underlying Dramatiq code treats delay as miliseconds, hence the multiplication.
     actual_delay = _randomize_delay(delay) * 1000 if delay is not None else None
 
+    messages: list[Message] = []
+    task_calls: list[TaskCall] = []
+    on_complete_task_call: Optional[TaskCall] = None
+
     try:
         messages = [task.message(*args) for task in tasks]
 
-        task_calls: list[TaskCall] = [TaskCall.from_message(BROKER, message, delay=delay) for message in messages]
-
-        on_complete_task_call: Optional[TaskCall] = None
+        task_calls = [TaskCall.from_message(BROKER, message, delay=delay) for message in messages]
 
         group = dramatiq.group(messages)  # type: ignore[no-untyped-call]
 

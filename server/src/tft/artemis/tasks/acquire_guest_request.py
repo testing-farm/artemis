@@ -1,7 +1,7 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
-from typing import cast
+from typing import Optional, cast
 
 import gluetool.log
 import sqlalchemy.orm.session
@@ -51,9 +51,10 @@ class Workspace(_Workspace):
             if r_update_delay.is_error:
                 return self._error(transaction, r_update_delay, 'failed to load update delay')
 
-            if self.is_pool_enabled:
-                skip_prepare_verify_ssh = self.gr.skip_prepare_verify_ssh
+            new_guest_values: Optional[GuestFieldStates] = None
+            skip_prepare_verify_ssh = self.gr.skip_prepare_verify_ssh
 
+            if self.is_pool_enabled:
                 log_dict_yaml(self.logger.info, 'provisioning environment', self.gr._environment)
 
                 result = self.pool.acquire_guest(self.logger, self.session, transaction, self.gr)
@@ -70,7 +71,7 @@ class Workspace(_Workspace):
                 # We have a guest, we can move the guest record to the next state. The guest may be unfinished,
                 # in that case we should schedule a task for driver's update_guest method. Otherwise, we must
                 # save guest's address. In both cases, we must be sure nobody else did any changes before us.
-                new_guest_values: GuestFieldStates = {
+                new_guest_values = {
                     '_pool_data': self.gr.pool_data.update(self.gr.poolname, provisioning_progress.pool_data),
                 }
 
@@ -137,6 +138,7 @@ class Workspace(_Workspace):
 
                 self._progress(transaction, 'address-assigned', address=provisioning_progress.address)
 
+                new_guest_values = new_guest_values or {}
                 new_guest_values['address'] = provisioning_progress.address
 
                 # Running verify-ssh step is optional - user might have requested us to skip the step.
