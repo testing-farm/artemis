@@ -66,7 +66,7 @@ test/server/units:
 
 test/server/static-analysis:
   interruptible: true
-  extends: .postgresql-tests
+  extends: .tests
 
   script:
     - make -C server/ test-static-analysis
