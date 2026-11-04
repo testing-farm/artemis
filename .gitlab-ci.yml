@@ -46,6 +46,9 @@ workflow:
     POSTGRES_USER: artemis
     POSTGRES_PASSWORD: artemis
     ARTEMIS_DB_URL: "postgresql://artemis:artemis@postgres:5432/artemis"
+    INTEGRATION_POSTGRES_URI: "${ARTEMIS_DB_URL}"
+
+    PYTEST_ADDOPTS: "--color=yes --against-db-url=${ARTEMIS_DB_URL}"
 
 test/server/pre-commit:
   interruptible: true
@@ -54,22 +57,23 @@ test/server/pre-commit:
   script:
     - make -C server/ test-pre-commit
 
-test/server/unittests:
+test/server/units:
   interruptible: true
   extends: .postgresql-tests
-
-  variables:
-    PYTEST_ADDOPTS: "--color=yes --against-db-url=postgresql://artemis:artemis@postgres:5432/artemis"
 
   script:
     - make -C server/ test-units
 
-test/server/db-schema:
+test/server/static-analysis:
+  interruptible: true
+  extends: .tests
+
+  script:
+    - make -C server/ test-static-analysis
+
+test/server/db-schema-revisions:
   interruptible: true
   extends: .postgresql-tests
-
-  variables:
-    INTEGRATION_POSTGRES_URI: "${ARTEMIS_DB_URL}"
 
   script:
     - make -C server/ test-db-schema-revisions
