@@ -1336,8 +1336,6 @@ def _close_broker_connection(logger: gluetool.log.ContextAdapter) -> None:
     BROKER.connection.close()
 
 
-#: A single pool-refresh dispatcher group: a named combination of a Cron-like schedule and a pool-tag filter.
-#: Used to schedule the very same dispatcher several times, with different intervals and for different sets of pools.
 #: A single pool-refresh dispatcher group: a pool-name pattern (a regular expression matched against pool names)
 #: paired with a Cron-like schedule. Used to schedule the very same dispatcher several times, with different
 #: intervals and for different sets of pools.
