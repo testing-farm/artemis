@@ -20,25 +20,6 @@ depends_on = None
 
 
 def upgrade() -> None:
-    with op.batch_alter_table('guest_log_blobs', schema=None) as batch_op:
-        batch_op.alter_column(
-            'content',
-            existing_type=sa.TEXT(),
-            type_=sa.String(),
-            existing_nullable=False,
-            existing_server_default=sa.text("''::text"),
-        )
-        batch_op.alter_column(
-            'content_hash',
-            existing_type=sa.TEXT(),
-            type_=sa.String(),
-            existing_nullable=False,
-            existing_server_default=sa.text("''::text"),
-        )
-
-    with op.batch_alter_table('guest_requests', schema=None) as batch_op:
-        batch_op.alter_column('post_install_script', existing_type=sa.TEXT(), type_=sa.String(), existing_nullable=True)
-
     with op.batch_alter_table('guest_shelves', schema=None) as batch_op:
         batch_op.alter_column(
             'state',
@@ -60,14 +41,8 @@ def upgrade() -> None:
             postgresql_using='state::text::gueststate',
         )
 
-    with op.batch_alter_table('task_requests', schema=None) as batch_op:
-        batch_op.alter_column('taskname', existing_type=sa.TEXT(), type_=sa.String(), existing_nullable=False)
-
 
 def downgrade() -> None:
-    with op.batch_alter_table('task_requests', schema=None) as batch_op:
-        batch_op.alter_column('taskname', existing_type=sa.String(), type_=sa.TEXT(), existing_nullable=False)
-
     with op.batch_alter_table('guest_shelves', schema=None) as batch_op:
         batch_op.alter_column(
             'state',
@@ -87,23 +62,4 @@ def downgrade() -> None:
             type_=sa.VARCHAR(length=250),
             existing_nullable=False,
             postgresql_using='state::text',
-        )
-
-    with op.batch_alter_table('guest_requests', schema=None) as batch_op:
-        batch_op.alter_column('post_install_script', existing_type=sa.String(), type_=sa.TEXT(), existing_nullable=True)
-
-    with op.batch_alter_table('guest_log_blobs', schema=None) as batch_op:
-        batch_op.alter_column(
-            'content_hash',
-            existing_type=sa.String(),
-            type_=sa.TEXT(),
-            existing_nullable=False,
-            existing_server_default=sa.text("''::text"),
-        )
-        batch_op.alter_column(
-            'content',
-            existing_type=sa.String(),
-            type_=sa.TEXT(),
-            existing_nullable=False,
-            existing_server_default=sa.text("''::text"),
         )
