@@ -57,6 +57,9 @@ ARTEMIS_CONTAINER_LOG_PROMTAIL_OPTIONS="${ARTEMIS_CONTAINER_LOG_PROMTAIL_OPTIONS
 
 ARTEMIS_WORKER_OPTIONS="${ARTEMIS_WORKER_OPTIONS:-}"
 
+# Disable tracing while handling URLs, they carry credentials which must not end up in the logs.
+set +x
+
 if [ -z "$ARTEMIS_DB_URL" ]; then
     export ARTEMIS_DB_URL="${ARTEMIS_DB_PROTOCOL}://${ARTEMIS_DB_USERNAME}:${ARTEMIS_DB_PASSWORD}@${ARTEMIS_DB_HOST}/${ARTEMIS_DB_DATABASE}"
 fi
@@ -75,6 +78,8 @@ if [ -z "$ARTEMIS_BROKER_URL" ]; then
 
     export ARTEMIS_BROKER_URL="${ARTEMIS_BROKER_URL}${extra_variables:+/?$extra_variables}"
 fi
+
+set -x
 
 cd /APP
 

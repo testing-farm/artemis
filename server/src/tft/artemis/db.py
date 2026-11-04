@@ -1945,7 +1945,7 @@ class DB:
 
         self.logger = logger
 
-        logger.info(f'connecting to db {url}')
+        logger.info(f'connecting to db {sqlalchemy.engine.make_url(url).render_as_string(hide_password=True)}')
 
         self._echo_pool: Union[str, bool] = False
 

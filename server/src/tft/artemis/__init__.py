@@ -1406,7 +1406,9 @@ def get_broker(
             fragment=parsed_url.fragment,
         ).geturl()
 
-    logger.debug(f'final broker URL is {broker_url}')
+    import sqlalchemy.engine
+
+    logger.debug(f'final broker URL is {sqlalchemy.engine.make_url(broker_url).render_as_string(hide_password=True)}')
 
     broker = dramatiq.brokers.rabbitmq.RabbitmqBroker(
         confirm_delivery=KNOB_BROKER_CONFIRM_DELIVERY.value, middleware=middleware, url=broker_url
