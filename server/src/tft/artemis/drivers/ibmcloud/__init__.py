@@ -33,7 +33,7 @@ from tft.artemis.drivers import (
     ResourceCreationRequest,
     ResourceManager,
     Tags,
-    create_sanitize_tags,
+    TagsSanitizer,
 )
 
 from ... import Failure, rewrap_to_gluetool
@@ -145,7 +145,7 @@ class InstanceCreationOutcome(ResourceCreationOutcome[IBMCloudInstanceT]):
     image: PoolImageInfo
 
 
-_sanitize_tags = create_sanitize_tags(
+_sanitize_tags = TagsSanitizer(
     allowed_charset=TAG_ALLOWED_CHARACTERS,
     max_key_value_length=TAG_MAX_LENGTH,
     delim_len=1,
@@ -161,9 +161,7 @@ def _sanitize_tag_name(name: str) -> str:
     Artemis configuration is not necessarily the tag name the cloud ends up storing.
     """
 
-    sanitized_name, _ = next(iter(_sanitize_tags({name: ''})))
-
-    return sanitized_name.lower()
+    return _sanitize_tags.sanitize_key(name)[:TAG_MAX_LENGTH].lower()
 
 
 def _sanitize_flavor_tag_value(flavor_tag: str, flavor_name: str) -> str:

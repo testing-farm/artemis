@@ -46,8 +46,8 @@ from . import (
     ResourceManager,
     SerializedPoolResourcesIDs,
     Tags,
+    TagsSanitizer,
     create_error_cause_extractor,
-    create_sanitize_tags,
 )
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
@@ -85,7 +85,7 @@ LABEL_KEY_MAX_LENGTH = 63
 LABEL_VALUE_MAX_LENGTH = 63
 LABEL_ALLOWED_CHARACTERS = string.ascii_lowercase + string.digits + '_-'
 
-_sanitize_tags = create_sanitize_tags(
+_sanitize_tags = TagsSanitizer(
     allowed_charset=LABEL_ALLOWED_CHARACTERS,
     max_key_length=LABEL_KEY_MAX_LENGTH,
     max_value_length=LABEL_VALUE_MAX_LENGTH,

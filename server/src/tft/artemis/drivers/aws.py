@@ -83,9 +83,9 @@ from . import (
     ResourceManager,
     SerializedPoolResourcesIDs,
     Tags,
+    TagsSanitizer,
     WatchdogState,
     create_error_cause_extractor,
-    create_sanitize_tags,
     guest_log_updater,
     run_cli_tool,
 )
@@ -1445,7 +1445,7 @@ def create_network_interfaces(
     return Ok(r_nics.unwrap())
 
 
-_sanitize_tags = create_sanitize_tags(
+_sanitize_tags = TagsSanitizer(
     allowed_charset=TAG_VALUE_ALLOWED_CHARACTERS,
     allowed_key_charset=TAG_KEY_ALLOWED_CHARACTERS,
     max_key_length=TAG_KEY_MAX_LENGTH,
