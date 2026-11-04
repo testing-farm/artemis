@@ -1,6 +1,8 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
+from typing import Optional
+
 import pytest
 
 from tft.artemis import Failure
@@ -8,6 +10,8 @@ from tft.artemis import Failure
 
 @pytest.fixture(name='failure')
 def fixture_failure() -> Failure:
+    failure: Optional[Failure] = None
+
     # Create a nice traceback for our failure...
     def _a() -> None:
         raise ValueError
@@ -24,6 +28,7 @@ def fixture_failure() -> Failure:
     except Exception as exc:
         failure = Failure.from_exc('dummy failure', exc, a_dummy_detail='bar')
 
+    assert failure is not None  # narrow type
     return failure
 
 
@@ -37,37 +42,37 @@ exception:
     instance: ''
     type: <class 'ValueError'>
 traceback: |-
-    File "__FILE__", line 22, in fixture_failure
-        10   def fixture_failure() -> Failure:
+    File "__FILE__", line 26, in fixture_failure
+        12   def fixture_failure() -> Failure:
      (...)
-        18       def _c() -> None:
-        19           _b()
-        20
-        21       try:
-    --> 22           _c()
-        23
+        22       def _c() -> None:
+        23           _b()
+        24
+        25       try:
+    --> 26           _c()
+        27
         ..................................................
-         _c = <function 'fixture_failure.<locals>._c' test_failure.py:18>
-         _b = <function 'fixture_failure.<locals>._b' test_failure.py:15>
-        ..................................................
-
-    File "__FILE__", line 19, in _c
-        18   def _c() -> None:
-    --> 19       _b()
-        ..................................................
-         _b = <function 'fixture_failure.<locals>._b' test_failure.py:15>
+         _c = <function 'fixture_failure.<locals>._c' test_failure.py:22>
+         _b = <function 'fixture_failure.<locals>._b' test_failure.py:19>
         ..................................................
 
-    File "__FILE__", line 16, in _b
-        15   def _b() -> None:
-    --> 16       _a()
+    File "__FILE__", line 23, in _c
+        22   def _c() -> None:
+    --> 23       _b()
         ..................................................
-         _a = <function 'fixture_failure.<locals>._a' test_failure.py:12>
+         _b = <function 'fixture_failure.<locals>._b' test_failure.py:19>
         ..................................................
 
-    File "__FILE__", line 13, in _a
-        12   def _a() -> None:
-    --> 13       raise ValueError
+    File "__FILE__", line 20, in _b
+        19   def _b() -> None:
+    --> 20       _a()
+        ..................................................
+         _a = <function 'fixture_failure.<locals>._a' test_failure.py:16>
+        ..................................................
+
+    File "__FILE__", line 17, in _a
+        16   def _a() -> None:
+    --> 17       raise ValueError
 
     ValueError""".replace('__FILE__', __file__)
 
