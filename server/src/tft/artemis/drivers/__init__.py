@@ -1521,21 +1521,14 @@ def render_tags(
     return _Ok(tags)
 
 
-def create_sanitize_tags(
-    *,
-    allowed_charset: str = string.printable,
-    allowed_key_charset: Optional[str] = None,
-    sanitize_key_charset: bool = True,
-    sanitize_value_charset: bool = True,
-    max_key_length: Optional[int] = None,
-    max_value_length: Optional[int] = None,
-    max_key_value_length: Optional[int] = None,
-    tag_chars_mapping: Optional[Mapping[str, str]] = None,
-    delim_len: int = 1,
-    delim_optional: bool = False,
-) -> Callable[[Tags], Generator[tuple[str, str], None, None]]:
+class TagsSanitizer:
     """
-    Create tag sanitization function.
+    Sanitize tags by replacing disallowed characters and truncating keys and values.
+
+    An instance is callable: calling it with a :py:class:`Tags` mapping yields sanitized ``(key, value)``
+    pairs, exactly as the former ``create_sanitize_tags`` factory did. The per-key and per-value character
+    replacement is also exposed via :py:meth:`sanitize_key` and :py:meth:`sanitize_value` for callers that
+    need to sanitize a single key or value in isolation.
 
     :param allowed_charset: A string of characters allowed in the tag value.
     :param allowed_key_charset: A string of characters allowed in the tag key. If ``None``, defaults to
@@ -1548,58 +1541,85 @@ def create_sanitize_tags(
     :param tag_chars_mapping: A mapping of replacements for special characters.
     :param delim_len: Length of the delimiting sequence.
     :param delim_optional: The delimiter is optional and only present iff. value is not empty
-    :return: tags sanitization function.
     """
 
-    tag_chars_mapping = tag_chars_mapping or {}
-    allowed_key_charset = allowed_key_charset or allowed_charset
+    def __init__(
+        self,
+        *,
+        allowed_charset: str = string.printable,
+        allowed_key_charset: Optional[str] = None,
+        sanitize_key_charset: bool = True,
+        sanitize_value_charset: bool = True,
+        max_key_length: Optional[int] = None,
+        max_value_length: Optional[int] = None,
+        max_key_value_length: Optional[int] = None,
+        tag_chars_mapping: Optional[Mapping[str, str]] = None,
+        delim_len: int = 1,
+        delim_optional: bool = False,
+    ) -> None:
+        self.allowed_charset = allowed_charset
+        self.allowed_key_charset = allowed_key_charset or allowed_charset
+        self.sanitize_key_charset = sanitize_key_charset
+        self.sanitize_value_charset = sanitize_value_charset
+        self.max_key_length = max_key_length
+        self.max_value_length = max_value_length
+        self.max_key_value_length = max_key_value_length
+        self.tag_chars_mapping = tag_chars_mapping or {}
+        self.delim_len = delim_len
+        self.delim_optional = delim_optional
 
-    def _create_substitution_fn(allowed_chars: str) -> Callable[[str], str]:
+        self.sanitize_key = (
+            self._create_substitution_fn(self.allowed_key_charset) if sanitize_key_charset else self._noop
+        )
+        self.sanitize_value = (
+            self._create_substitution_fn(self.allowed_charset) if sanitize_value_charset else self._noop
+        )
+
+    def _create_substitution_fn(self, allowed_chars: str) -> Callable[[str], str]:
         pattern = re.compile(f'[^{re.escape(allowed_chars)}]')
 
         def _char_mapping(match: re.Match[str]) -> str:
-            return tag_chars_mapping.get(match.group(0), '_')
+            return self.tag_chars_mapping.get(match.group(0), '_')
 
         def _map_val(val: str) -> str:
             return pattern.sub(_char_mapping, val)
 
         return _map_val
 
+    @staticmethod
     def _noop(val: str) -> str:
         return val
 
-    _map_key = _create_substitution_fn(allowed_key_charset) if sanitize_key_charset else _noop
-    _map_value = _create_substitution_fn(allowed_charset) if sanitize_value_charset else _noop
-
-    def _sanitize_tags(tags: Tags) -> Generator[tuple[str, str], None, None]:
+    def __call__(self, tags: Tags) -> Generator[tuple[str, str], None, None]:
         """Sanitize tags by replacing disallowed characters and truncating keys and values."""
 
         for name, value in tags.items():
             if value is None:
                 value = ''
 
-            name = _map_key(name)
-            value = _map_value(value)
+            name = self.sanitize_key(name)
+            value = self.sanitize_value(value)
 
             # Trim the tag name and value to comply with limits
-            if max_key_length is not None and len(name) > max_key_length:
-                name = name[:max_key_length]
+            if self.max_key_length is not None and len(name) > self.max_key_length:
+                name = name[: self.max_key_length]
 
-            if max_value_length is not None and len(value) > max_value_length:
-                value = value[:max_value_length]
+            if self.max_value_length is not None and len(value) > self.max_value_length:
+                value = value[: self.max_value_length]
 
-            if max_key_value_length is not None:
-                if len(name) + delim_len > max_key_value_length:
+            if self.max_key_value_length is not None:
+                if len(name) + self.delim_len > self.max_key_value_length:
                     # If tag delimiter is optional, we should ignore it in key truncation.
-                    key_len = min(len(name), max_key_value_length - (delim_len if not delim_optional else 0))
+                    key_len = min(
+                        len(name),
+                        self.max_key_value_length - (self.delim_len if not self.delim_optional else 0),
+                    )
                     name = name[:key_len]
                     value = ''
-                elif len(name) + len(value) + delim_len > max_key_value_length:
-                    value = value[: max_key_value_length - len(name) - delim_len]
+                elif len(name) + len(value) + self.delim_len > self.max_key_value_length:
+                    value = value[: self.max_key_value_length - len(name) - self.delim_len]
 
             yield name, value
-
-    return _sanitize_tags
 
 
 InstanceT = TypeVar('InstanceT', bound='Instance', covariant=True)  # noqa: PLC0105
