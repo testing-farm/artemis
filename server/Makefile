@@ -58,6 +58,11 @@ test-units: _env-info  ## Run unit tests
 	ARTEMIS_DB_URL="$(ARTEMIS_DB_URL)" tox -e py312-units -- -x --against-db-url="$(ARTEMIS_DB_URL)"
 	$(postgresql_teardown)
 
+coverage: _env-info  ## Run tests with coverage
+	$(postgresql_setup)
+	tox -e py312-coverage
+	$(postgresql_teardown)
+
 test-static-analysis: _env-info  ## Run static analysis
 	ARTEMIS_DB_URL="$(ARTEMIS_DB_URL)" tox -e py312-static-analysis
 
