@@ -41,7 +41,7 @@ def test_run_doer(logger: gluetool.log.ContextAdapter, db: tft.artemis.db.DB) ->
 
     with db.get_session(logger) as session:
         assert (
-            tft.artemis.tasks.run_doer_multithread(
+            tft.artemis.tasks.run_doer(
                 logger, db, session, cast(tft.artemis.tasks.DoerType, foo), 'test_run_doer', '79'
             )
             == tft.artemis.tasks.RESCHEDULE
@@ -55,7 +55,7 @@ def test_run_doer_exception(logger: gluetool.log.ContextAdapter, db: tft.artemis
         raise Exception('foo')
 
     with db.get_session(logger) as session, pytest.raises(Exception, match=r'foo'):
-        tft.artemis.tasks.run_doer_multithread(
+        tft.artemis.tasks.run_doer(
             logger, db, session, cast(tft.artemis.tasks.DoerType, foo), 'test_run_doer_exception'
         )
 
@@ -123,8 +123,7 @@ def task_core_args(
     task_logger = tft.artemis.tasks.TaskLogger(logger, 'dummy-task')
 
     run_doer = mockpatch(tft.artemis.tasks, 'run_doer')
-    monkeypatch.setattr(tft.artemis.tasks, 'run_doer_multithread', run_doer)
-    monkeypatch.setattr(tft.artemis.tasks, 'run_doer_singlethread', run_doer)
+    monkeypatch.setattr(tft.artemis.tasks, 'run_doer', run_doer)
 
     doer = MagicMock(name='mock_doer', actor_name='dummy-actor-name', __name__='mock_doer')
     doer_args = (MagicMock(name='mock_doer_arg1'), MagicMock(name='mock_doer_arg2'))
