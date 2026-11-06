@@ -4,6 +4,7 @@
 import dataclasses
 import datetime
 import functools
+import re
 from collections.abc import Iterator
 from typing import Any, Optional, TypeAlias, TypedDict, Union, cast, override
 
@@ -391,6 +392,8 @@ class AzureDriver(
         except ValueError as err:
             # Sometimes timestamps appear in a different format
             if ts_format != AZURE_DATETIME_FORMAT_FALLBACK:
+                # Sometimes 7 digits emerge in fraction part, let's truncate to 6
+                timestamp = re.sub(r'(\.\d{6})\d+', r'\1', timestamp)
                 return cls.timestamp_to_datetime(timestamp, AZURE_DATETIME_FORMAT_FALLBACK)
             return Error(
                 Failure.from_exc(
