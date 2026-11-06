@@ -1,9 +1,7 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
-import concurrent.futures
 import contextlib
-import contextvars
 import dataclasses
 import datetime
 import enum
@@ -11,7 +9,6 @@ import functools
 import inspect
 import os
 import random
-import threading
 from collections.abc import Callable, Generator
 from typing import Any, Literal, Optional, Protocol, Self, TypeVar, Union, cast
 
@@ -295,15 +292,6 @@ KNOB_DELAY_UNIFORM_SPREAD: Knob[int] = Knob(
     envvar='ARTEMIS_ACTOR_DELAY_UNIFORM_SPREAD',
     cast_from_str=int,
     default=5,
-)
-
-KNOB_OFFLOAD_TASKS: Knob[bool] = Knob(
-    'actor.offload-tasks',
-    'When enabled, tasks will run in their own threads.',
-    has_db=False,
-    envvar='ARTEMIS_OFFLOAD_TASKS',
-    cast_from_str=gluetool.utils.normalize_bool_option,
-    default=True,
 )
 
 KNOB_TRACE_TASKS_AS_EVENTS: Knob[bool] = Knob(
@@ -929,120 +917,7 @@ class task:  # noqa: N801
         return cast(Actor, dramatiq_actor)
 
 
-def run_doer_multithread(
-    logger: gluetool.log.ContextAdapter,
-    db: DB,
-    session: sqlalchemy.orm.session.Session,
-    fn: DoerType,
-    actor_name: str,
-    *args: ActorArgumentType,
-    **kwargs: Any,
-) -> DoerReturnType:
-    """
-    Run a given function - "doer" - isolated in its own thread. This thread then serves as a landing
-    spot for dramatiq control exceptions (e.g. Shutdown).
-
-    Control exceptions are delivered to the thread that runs the task. We don't want to interrupt
-    the actual task code, which is hidden in the doer, so we offload it to a separate thread, and catch
-    exceptions here.
-    """
-
-    executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
-    doer_future: Optional[concurrent.futures.Future[DoerReturnType]] = None
-
-    def _wait(message: str) -> None:
-        """
-        Wait for doer future to complete.
-
-        Serves as a helper, to provide unified logging.
-        """
-
-        assert doer_future is not None
-
-        while True:
-            # We could drop timeout parameter, but it seems that without timeout in play, control exceptions
-            # are delivered when blocking wait() finishes, which is obviously *after* the doer competes its
-            # job - and that's too late for canceling anything, so not using timeout makes cancellation impossible.
-            #
-            # This is connected to GIL and how an exception can be delivered to a thread. So, we use timeout,
-            # to interrupt wait() regularly, so we get a chance to receive exceptions and signal cancellation
-            # to doer thread. The actual timeout length is pretty much pointless.
-            done_futures, undone_futures = concurrent.futures.wait({doer_future}, timeout=10.0)
-
-            if len(undone_futures) != 0:
-                logger.debug('doer is still running')
-                continue
-
-            break
-
-        logger.debug(message)
-
-        assert len(done_futures) == 1
-        assert len(undone_futures) == 0
-        assert doer_future in done_futures
-
-    try:
-        executor = concurrent.futures.ThreadPoolExecutor(
-            max_workers=1, thread_name_prefix=threading.current_thread().name
-        )
-
-        logger.debug(f'submitting task doer {fn.__name__}')
-
-        # We need to propagate our current context to newly spawned thread. To do that, we need to copy our context,
-        # and then use its `run()` method instead of the function we'd run in our new thread. `run()` would then
-        # do its setup and call our function when context is set properly.
-        thread_context = contextvars.copy_context()
-
-        def _thread_trampoline() -> DoerReturnType:
-            profile_actor = gluetool.utils.normalize_bool_option(
-                actor_control_value(actor_name, 'PROFILE', default=False)
-            )
-            verbose_profile = gluetool.utils.normalize_bool_option(
-                actor_control_value(actor_name, 'VERBOSE_PROFILE', default=False)
-            )
-
-            profiler: Optional[Profiler] = None
-
-            if profile_actor:
-                profiler = Profiler(verbose=verbose_profile)
-                profiler.start()
-
-            try:
-                return thread_context.run(fn, logger, db, session, *args, **kwargs)
-
-            finally:
-                if profiler is not None:
-                    profiler.stop()
-                    profiler.log(logger, 'profiling report (inner)')
-
-        doer_future = executor.submit(_thread_trampoline)
-
-        _wait('doer finished in regular mode')
-
-    except dramatiq.middleware.Interrupt as exc:
-        if isinstance(exc, dramatiq.middleware.TimeLimitExceeded):
-            logger.error('task time depleted')
-
-        elif isinstance(exc, dramatiq.middleware.Shutdown):
-            logger.error('worker shutdown requested')
-
-        else:
-            raise TypeError('Unhandled interrupt exception') from None
-
-        logger.debug('waiting for doer to finish')
-
-        _wait('doer finished in cancellation mode')
-
-    assert doer_future is not None
-    assert doer_future.done(), 'doer finished yet not marked as done'
-
-    if executor:
-        executor.shutdown()
-
-    return doer_future.result()
-
-
-def run_doer_singlethread(
+def run_doer(
     logger: gluetool.log.ContextAdapter,
     db: DB,
     session: sqlalchemy.orm.session.Session,
@@ -1106,9 +981,6 @@ def run_doer_singlethread(
             profiler.log(logger, 'profiling report (inner)')
 
         return result
-
-
-run_doer = run_doer_multithread if KNOB_OFFLOAD_TASKS.value else run_doer_singlethread
 
 
 def _task_core(
