@@ -4,6 +4,7 @@
 import dataclasses
 import datetime
 import functools
+import re
 from collections.abc import Iterator
 from typing import Any, Optional, TypeAlias, TypedDict, Union, cast, override
 
@@ -108,6 +109,9 @@ AZURE_RESOURCE_TYPE: dict[str, ResourceType] = {
 
 AZURE_DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S%z'
 AZURE_DATETIME_FORMAT_FALLBACK = '%Y-%m-%dT%H:%M:%S.%f%z'
+# Azure sometimes returns more than 6 fraction digits, which the ``%f`` directive won't match;
+# this trims a 7+ digit fraction down to 6 so the fallback format parses.
+AZURE_DATETIME_FALLBACK_FRACTION_PATTERN = re.compile(r'(\.\d{6})\d+')
 
 
 ConfigImageFilter = TypedDict(
@@ -391,7 +395,9 @@ class AzureDriver(
         except ValueError as err:
             # Sometimes timestamps appear in a different format
             if ts_format != AZURE_DATETIME_FORMAT_FALLBACK:
-                return cls.timestamp_to_datetime(timestamp, AZURE_DATETIME_FORMAT_FALLBACK)
+                # Truncate a 7+ digit fraction to 6, otherwise the %f format won't match it
+                truncated_timestamp = AZURE_DATETIME_FALLBACK_FRACTION_PATTERN.sub(r'\1', timestamp)
+                return cls.timestamp_to_datetime(truncated_timestamp, AZURE_DATETIME_FORMAT_FALLBACK)
             return Error(
                 Failure.from_exc(
                     'failed to parse timestamp with fallback format',
