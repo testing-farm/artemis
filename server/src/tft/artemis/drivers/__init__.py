@@ -85,7 +85,7 @@ from ..environment import (
     MeasurableConstraintValueType,
     SizeType,
 )
-from ..knobs import KNOB_POOL_ENABLED, Knob
+from ..knobs import KNOB_LOG_STORAGE_BACKEND, KNOB_POOL_ENABLED, Knob
 from ..metrics import PoolCostsMetrics, PoolMetrics, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from ..script import hook_engine
 
@@ -1315,16 +1315,81 @@ class GuestLogBlob:
     content: str
     content_hash: str
 
+    @property
+    def size(self) -> int:
+        return len(self.content)
+
     def save(
         self,
         logger: gluetool.log.ContextAdapter,
         transaction: Transaction,
+        guest_request: GuestRequest,
         guest_log: GuestLog,
         *,
         overwrite: bool = False,
     ) -> Result[None, Failure]:
         if guest_log.blobs and overwrite:
-            return guest_log.blobs[0].update(logger, transaction, content=self.content, content_hash=self.content_hash)
+            if guest_log.blobs[0].is_storage_backed:
+                storage = guest_log.blobs[0].storage
+
+                if storage is not None:
+                    r_storage_key = storage.store(
+                        logger,
+                        guest_request,
+                        guest_log,
+                        self,
+                    )
+
+                    if not is_successful(r_storage_key):
+                        return Error(r_storage_key.failure())
+
+                    return guest_log.blobs[0].update(
+                        logger,
+                        transaction,
+                        size=self.size,
+                        content_hash=self.content_hash,
+                    )
+
+                return guest_log.blobs[0].update(
+                    logger,
+                    transaction,
+                    size=self.size,
+                    content_hash=self.content_hash,
+                    content=self.content,
+                    storage_key=None,
+                )
+
+        from ..log_storage._base import LogStorage
+
+        storage: Optional[LogStorage] = None
+
+        if KNOB_LOG_STORAGE_BACKEND.value == 'filesystem':
+            from ..log_storage.filesystem import FilesystemLogStorage
+
+            storage = FilesystemLogStorage()
+
+        if storage is not None:
+            r_storage_key = storage.store(
+                logger,
+                guest_request,
+                guest_log,
+                self,
+            )
+
+            if not is_successful(r_storage_key):
+                return Error(r_storage_key.failure())
+
+            return GuestLogBlobDB.create(
+                logger,
+                transaction,
+                guestname=guest_log.guestname,
+                logname=guest_log.logname,
+                contenttype=guest_log.contenttype,
+                ctime=self.ctime,
+                content_hash=self.content_hash,
+                size=self.size,
+                storage_key=f'{storage.NAME}:{r_storage_key.unwrap()}',
+            )
 
         return GuestLogBlobDB.create(
             logger,
@@ -1335,6 +1400,7 @@ class GuestLogBlob:
             ctime=self.ctime,
             content=self.content,
             content_hash=self.content_hash,
+            size=self.size,
         )
 
     @staticmethod

@@ -48,6 +48,13 @@ services:
     volumes:
       - ./configuration/podman-compose/postgresql-exporter/custom-metrics.yaml:/tmp/queries.yaml:Z,ro
 
+  nginx:
+    image: "docker.io/bitnamilegacy/nginx:1.29.1"
+    ports:
+      - "8002:8080"
+    volumes:
+      - log_storage_data:/app
+
   prometheus:
     image: "docker.io/bitnamilegacy/prometheus:3.0.1"
     command:
@@ -61,3 +68,4 @@ services:
 volumes:
   prometheus_data:
   postgresql_data:
+  log_storage_data:

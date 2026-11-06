@@ -185,7 +185,7 @@ class Workspace(_Workspace):
 
                             log = r_create_log.unwrap()
 
-                        r_store_blob = blob.save(self.logger, transaction, log, overwrite=True)
+                        r_store_blob = blob.save(self.logger, transaction, self.gr, log, overwrite=True)
 
                         if r_store_blob.is_error:
                             return self._error(

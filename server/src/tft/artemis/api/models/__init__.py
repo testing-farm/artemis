@@ -474,7 +474,13 @@ class GuestLogResponse:
             state=artemis_db.GuestLogState(log.state),
             contenttype=artemis_db.GuestLogContentType(log.contenttype),
             url=log.url,
-            blobs=[GuestLogBlobResponse(ctime=blob.ctime, content=blob.content) for blob in log.blobs],
+            blobs=[
+                GuestLogBlobResponse(
+                    ctime=blob.ctime,
+                    content=blob.storage.read(blob.storage_key).unwrap() if blob.is_storage_backed else blob.content
+                )
+                for blob in log.blobs
+            ],
             updated=log.updated,
             expires=log.expires,
         )

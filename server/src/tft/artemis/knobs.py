@@ -924,6 +924,15 @@ KNOB_HTTP_TIMEOUT: Knob[int] = Knob(
     default=60,
 )
 
+KNOB_LOG_STORAGE_BACKEND: Knob[str] = Knob(
+    'foo',
+    'foo',
+    has_db=False,
+    envvar='ARTEMIS_LOG_STORAGE_BACKEND',
+    cast_from_str=str,
+    default='database',
+)
+
 
 def get_vault_password() -> str:
     password = KNOB_VAULT_PASSWORD.value

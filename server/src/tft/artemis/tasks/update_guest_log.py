@@ -220,7 +220,9 @@ class Workspace(_Workspace):
                 return self._error(transaction, r_log_update, 'failed to update the log')
 
             for blob in update_progress.blobs:
-                r_blob_update = blob.save(self.logger, transaction, guest_log, overwrite=update_progress.overwrite)
+                r_blob_update = blob.save(
+                    self.logger, transaction, self.gr, guest_log, overwrite=update_progress.overwrite
+                )
 
                 if r_blob_update.is_error:
                     return self._error(transaction, r_blob_update, 'failed to store a log blob')

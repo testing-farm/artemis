@@ -165,7 +165,9 @@ class Workspace(_Workspace):
             if r_update_log.is_error:
                 return self._error(transaction, r_update_log, f'failed to update the log {KS_LOGNAME}', no_effect=True)
 
-        r_store_blob = GuestLogBlob.from_content(KS_LOST_CONTENT).save(self.logger, transaction, log, overwrite=True)
+        r_store_blob = GuestLogBlob.from_content(KS_LOST_CONTENT).save(
+            self.logger, transaction, self.gr, log, overwrite=True
+        )
 
         if r_store_blob.is_error:
             return self._error(
@@ -451,7 +453,7 @@ class Workspace(_Workspace):
 
                 log = r_create_log.unwrap()
 
-            r_store_blob = blob.save(self.logger, transaction, log, overwrite=True)
+            r_store_blob = blob.save(self.logger, transaction, self.gr, log, overwrite=True)
 
             if r_store_blob.is_error:
                 self._error(transaction, r_store_blob, 'failed to store the kickstart script log blob', no_effect=True)

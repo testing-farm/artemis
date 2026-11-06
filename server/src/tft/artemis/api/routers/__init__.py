@@ -11,6 +11,7 @@ import uuid
 from collections.abc import Callable, Generator
 from typing import Annotated, Any, Optional, TypeVar, Union, cast
 
+from starlette.responses import RedirectResponse
 import fastapi
 import fastapi.openapi
 import gluetool.log
@@ -1446,6 +1447,52 @@ def get_guest_request_log(
             raise errors.ConflictError(message='guest log has expired', logger=guest_logger)
 
         return guest_log_response_model.from_db(log)
+
+
+def get_guest_log_blob(
+    guestname: str,
+    logname: str,
+    contenttype: str,
+    ctime: str,
+    manager: GuestRequestManager,
+    logger: gluetool.log.ContextAdapter,
+) -> Union[GuestLogBlobResponse, RedirectResponse]:
+    from ...tasks import get_guest_logger
+
+    failure_details = {'guestname': guestname}
+
+    guest_logger = get_guest_logger('get-guest-request-log-blob', logger, guestname)
+
+    with get_session(guest_logger, manager.db, read_only=True) as (session, _):
+        r_log_blob = (
+            artemis_db.SafeQuery.from_session(session, artemis_db.GuestLogBlob)
+            .filter(artemis_db.GuestLogBlob.guestname == guestname)
+            .filter(artemis_db.GuestLogBlob.logname == logname)
+            .filter(artemis_db.GuestLogBlob.contenttype == artemis_db.GuestLogContentType(contenttype))
+            .filter(artemis_db.GuestLogBlob.ctime == datetime.datetime.fromisoformat(ctime))
+            .one_or_none()
+        )
+
+        if r_log_blob.is_error:
+            raise errors.InternalServerError(
+                logger=guest_logger, caused_by=r_log_blob.unwrap_error(), failure_details=failure_details
+            )
+
+        blob: artemis_db.GuestLogBlob = r_log_blob.unwrap()
+
+        if blob is None:
+            raise errors.NoSuchEntityError(logger=guest_logger)
+
+        if blob.is_storage_backed:
+            storage = blob.storage
+
+            return RedirectResponse(storage.url(blob.storage_key).unwrap(), status_code=308)
+
+        from ..models import GuestLogBlobResponse
+
+        return GuestLogBlobResponse(
+            ctime=blob.ctime, content=ctime.content
+        )
 
 
 def create_guest_request_log(

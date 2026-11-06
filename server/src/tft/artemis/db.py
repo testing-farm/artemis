@@ -52,7 +52,7 @@ from sqlalchemy_utils import EncryptedType
 from sqlalchemy_utils.types.encrypted.encrypted_type import AesEngine
 
 from .guest import GuestState
-from .knobs import KNOB_LOGGING_DB_QUERIES, get_vault_password
+from .knobs import KNOB_LOGGING_DB_QUERIES, get_vault_password, KNOB_LOG_STORAGE_BACKEND
 
 if TYPE_CHECKING:
     from sqlalchemy.orm.query import Query as _Query
@@ -62,6 +62,7 @@ if TYPE_CHECKING:
     from .environment import Environment
     from .security_group_rules import SecurityGroupRule, SecurityGroupRules
     from .tasks import Actor, ActorArgumentType
+    from .log_storage._base import LogStorage
 
 
 # Type variables for use in our generic types
@@ -1532,8 +1533,12 @@ class GuestLogBlob(Base):
     contenttype: Mapped[GuestLogContentType]
 
     ctime: Mapped[datetime.datetime] = mapped_column(nullable=False, default=datetime.datetime.utcnow)
-    content: Mapped[str] = mapped_column(Text(), nullable=False, server_default='', deferred=True)
+    size: Mapped[Optional[int]] = mapped_column(nullable=True)
     content_hash: Mapped[str] = mapped_column(Text(), nullable=False, server_default='')
+
+    storage_key: Mapped[Optional[str]] = mapped_column(Text(), nullable=True)
+
+    content: Mapped[str] = mapped_column(Text(), nullable=False, server_default='', deferred=True)
 
     guest_log = relationship('GuestLog', back_populates='blobs')
 
@@ -1545,12 +1550,32 @@ class GuestLogBlob(Base):
         ),
     )
 
+    @property
+    def is_storage_backed(self) -> bool:
+        return self.storage_key is not None
+
+    @property
+    def storage(self) -> Optional['LogStorage']:
+        if self.storage_key is None:
+            return None
+
+        storage_name, _ = self.storage_key.split(':', 1)
+
+        if storage_name == 'filesystem':
+            from .log_storage.filesystem import FilesystemLogStorage
+
+            return FilesystemLogStorage()
+
+        return None
+
     def update(
         self,
         logger: gluetool.log.ContextAdapter,
         transaction: Transaction,
-        content: str,
         content_hash: str,
+        size: int,
+        content: str = '',
+        storage_key: Optional[str] = None,
     ) -> Result[None, 'Failure']:
         """
         Update the log content.
@@ -1568,7 +1593,7 @@ class GuestLogBlob(Base):
             .where(GuestLogBlob.logname == self.logname)
             .where(GuestLogBlob.contenttype == self.contenttype)
             .where(GuestLogBlob.ctime == self.ctime)
-            .values(content=content, content_hash=content_hash),
+            .values(content=content, content_hash=content_hash, size=size, storage_key=storage_key),
         )
 
         if r.is_error:
@@ -1585,8 +1610,10 @@ class GuestLogBlob(Base):
         logname: str,
         contenttype: GuestLogContentType,
         ctime: datetime.datetime,
-        content: str,
         content_hash: str,
+        size: int,
+        content: str = '',
+        storage_key: Optional[str] = None,
     ) -> Result[None, 'Failure']:
         """
         Create a new log blob entry.
@@ -1610,6 +1637,8 @@ class GuestLogBlob(Base):
                 ctime=ctime,
                 content=content,
                 content_hash=content_hash,
+                size=size,
+                storage_key=storage_key,
             ),
         )
 

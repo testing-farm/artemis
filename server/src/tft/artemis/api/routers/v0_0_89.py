@@ -3,11 +3,13 @@
 
 # flake8: noqa: FS003 f-string missing prefix
 
-from typing import Annotated
+from typing import Annotated, Union
 
 import fastapi
 import gluetool.log
 from fastapi import APIRouter, Depends, Request, status
+
+from starlette.responses import RedirectResponse
 
 from ..dependencies import get_auth_context, get_logger
 from ..models import (
@@ -15,6 +17,7 @@ from ..models import (
     EventSearchParameters,
     GuestEvent,
     GuestLogResponse,
+    GuestLogBlobResponse,
 )
 from ..models.v0_0_72 import GuestRequest_v0_0_72, GuestResponse_v0_0_72
 from . import (
@@ -26,6 +29,7 @@ from . import (
     get_guest_request,
     get_guest_request_log,
     get_guest_requests,
+    get_guest_log_blob,
     with_tracing,
 )
 from .common import router__status, router_default, router_knobs, router_users
@@ -138,6 +142,20 @@ def get_guest_log(
     logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
 ) -> GuestLogResponse:
     return get_guest_request_log(guestname, logname, contenttype, manager, logger)
+
+
+@router_guests.get('/{guestname}/logs/{logname}/{contenttype}/blobs/{ctime}', status_code=status.HTTP_200_OK)
+@with_tracing
+def get_guest_log_blob(
+    guestname: str,
+    logname: str,
+    contenttype: str,
+    ctime: str,
+    request: Request,
+    manager: Annotated[GuestRequestManager, Depends(GuestRequestManager)],
+    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
+) -> Union[GuestLogBlobResponse, RedirectResponse]:
+    return get_guest_log_blob(guestname, logname, contenttype, ctime, manager, logger)
 
 
 @router_guests.post('/{guestname}/reboot', status_code=status.HTTP_202_ACCEPTED)
