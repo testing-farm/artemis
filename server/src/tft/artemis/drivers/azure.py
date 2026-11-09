@@ -1,6 +1,7 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
+import contextlib
 import dataclasses
 import datetime
 import functools
@@ -1089,44 +1090,31 @@ class AzureDriver(
             return _Error(Failure.from_failure('failed to fetch instance information', r_output.unwrap_error()))
         return _Ok(cast(BackendInstance, r_output.unwrap()))
 
-    def fetch_pool_resources_metrics(
-        self, logger: gluetool.log.ContextAdapter
-    ) -> Result[PoolResourcesMetrics, Failure]:
-        r_resources = super().fetch_pool_resources_metrics(logger)
+    def _enter_pool_resources_metrics(
+        self, logger: gluetool.log.ContextAdapter, stack: contextlib.ExitStack, resources: PoolResourcesMetrics
+    ) -> Result[Any, Failure]:
+        return Ok(stack.enter_context(AzureSession(logger, self)))
 
-        if r_resources.is_error:
-            return Error(r_resources.unwrap_error())
+    def _list_pool_instances(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        resources: PoolResourcesMetrics,
+        ctx: Any,  # noqa: ANN401
+    ) -> Result[list[Any], Failure]:
+        return cast(Result[list[Any], Failure], ctx.run(logger, ['vm', 'list'], commandname='az.vm-list'))
 
-        resources = r_resources.unwrap()
+    # TODO: once we find the flavor name, we can update its usage - until then, no per-flavor accounting.
+    def _update_pool_instance_usage(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        usage: PoolResourcesUsage,
+        raw_instance: Any,  # noqa: ANN401
+        flavor: Optional[Flavor],
+        ctx: Any,  # noqa: ANN401
+    ) -> Result[None, Failure]:
+        usage.inc_instances(raw_instance.get('provisioningState'))
 
-        with AzureSession(logger, self) as session:
-            # Resource usage - instances and flavors
-            def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[list[Any], Failure]:
-                return cast(Result[list[Any], Failure], session.run(logger, ['vm', 'list'], commandname='az.vm-list'))
-
-            def _update_instance_usage(
-                logger: gluetool.log.ContextAdapter,
-                usage: PoolResourcesUsage,
-                raw_instance: Any,  # noqa: ANN401
-                flavor: Optional[Flavor],
-            ) -> Result[None, Failure]:
-                usage.inc_instances(raw_instance.get('provisioningState'))
-
-                return Ok(None)
-
-            r_instances_usage = self.do_fetch_pool_resources_metrics_flavor_usage(
-                logger,
-                resources.usage,
-                _fetch_instances,
-                # TODO: once we find the flavor name, we can update its usage.
-                lambda raw_instance: 'dummy-flavor-name-does-not-exist',
-                _update_instance_usage,
-            )
-
-        if r_instances_usage.is_error:
-            return Error(r_instances_usage.unwrap_error())
-
-        return Ok(resources)
+        return Ok(None)
 
     @override
     def fetch_pool_flavor_info(self) -> Result[list[AzureFlavor], Failure]:

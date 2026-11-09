@@ -1,6 +1,7 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
+import contextlib
 import dataclasses
 import datetime
 import enum
@@ -30,6 +31,7 @@ from tft.artemis.drivers.ibmcloud import (
     IBMCloudInstance,
     IBMCloudPoolData,
     IBMCloudPoolResourcesIDs,
+    IBMCloudResourcesMetricsContext,
     IBMCloudSession,
     InstanceCreationOutcome,
     InstanceCreationRequest,
@@ -297,114 +299,112 @@ class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstan
 
         return Ok(res)
 
-    def fetch_pool_resources_metrics(
-        self, logger: gluetool.log.ContextAdapter
-    ) -> Result[PoolResourcesMetrics, Failure]:
-        r_resources = super().fetch_pool_resources_metrics(logger)
+    def _enter_pool_resources_metrics(
+        self, logger: gluetool.log.ContextAdapter, stack: contextlib.ExitStack, resources: PoolResourcesMetrics
+    ) -> Result[Any, Failure]:
+        session = stack.enter_context(IBMCloudPowerSession(logger, self))
 
-        if r_resources.is_error:
-            return Error(r_resources.unwrap_error())
+        r_instances_with_flavors = self.get_instances_with_flavor_tags_names(logger, 'pvm-instance')
 
-        resources = r_resources.unwrap()
+        if r_instances_with_flavors.is_error:
+            return Error(r_instances_with_flavors.unwrap_error())
 
+        return Ok(IBMCloudResourcesMetricsContext(session, r_instances_with_flavors.unwrap()))
+
+    def _list_pool_instances(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        resources: PoolResourcesMetrics,
+        ctx: Any,  # noqa: ANN401
+    ) -> Result[list[dict[str, Any]], Failure]:
         subnet_id = self.pool_config['subnet-id']
 
-        with IBMCloudPowerSession(logger, self) as session:
-            # Resource usage - instances and flavors
-            def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[list[dict[str, Any]], Failure]:
-                r_list_instances = self.list_instances(logger)
-                if r_list_instances.is_error:
-                    return Error(Failure.from_failure('Could not list instances', r_list_instances.unwrap_error()))
+        r_list_instances = self.list_instances(logger)
+        if r_list_instances.is_error:
+            return Error(Failure.from_failure('Could not list instances', r_list_instances.unwrap_error()))
 
-                raw_instances: list[dict[str, Any]] = []
+        raw_instances: list[dict[str, Any]] = []
 
-                for raw_instance_entry in r_list_instances.unwrap():
-                    # To get network details need to additionally get instance details
-                    r_instance = self._query_backend_instance_sessionless(logger, raw_instance_entry.id, session)
+        for raw_instance_entry in r_list_instances.unwrap():
+            # To get network details need to additionally get instance details
+            r_instance = self._query_backend_instance_sessionless(logger, raw_instance_entry.id, ctx.session)
 
-                    if not is_successful(r_instance):
-                        return Error(
-                            Failure.from_failure(
-                                'Could not get instance details',
-                                r_instance.failure(),
-                                raw_instance_entry=raw_instance_entry,
-                            )
-                        )
-
-                    raw_instance = r_instance.unwrap()
-
-                    # Error instances carry no network information, so they would be dropped by the
-                    # pool-network filter below. Let's account for them here and skip any further processing, they
-                    # should not be counted towards used resources anyway.
-                    if raw_instance.get('status', '').lower() == 'error':
-                        resources.usage.inc_instances(raw_instance.get('status'))
-                        continue
-
-                    # Filter out instances not on pool network.
-                    if subnet_id not in raw_instance['networkIDs']:
-                        continue
-
-                    raw_instances.append(raw_instance)
-
-                return Ok(raw_instances)
-
-            r_instances_with_flavors = self.get_instances_with_flavor_tags_names(logger, 'pvm-instance')
-
-            if r_instances_with_flavors.is_error:
-                return Error(r_instances_with_flavors.unwrap_error())
-
-            instances_with_flavors = r_instances_with_flavors.unwrap()
-
-            def _update_instance_usage(
-                logger: gluetool.log.ContextAdapter,
-                usage: PoolResourcesUsage,
-                raw_instance: dict[str, Any],
-                flavor: Optional[Flavor],
-            ) -> Result[None, Failure]:
-                assert usage.cores is not None  # narrow type
-                assert usage.memory is not None  # narrow type
-
-                usage.inc_instances(raw_instance.get('status'))
-
-                usage.cores += int(raw_instance.get('virtualCores', {}).get('assigned', 0))
-                # Instance memory is in GB
-                usage.memory += UNITS.Quantity(raw_instance['memory'], UNITS.gigabytes).to('bytes').magnitude
-
-                # Record actual flavor used. A tagged instance whose flavor is no longer in the cache
-                # (e.g. the flavor was dropped from configuration) still has its real name in the
-                # mapping, so prefer that over the UNKNOWN_FLAVOR_NAME sentinel.
-                usage.record_flavor(
-                    flavor.name
-                    if flavor
-                    else instances_with_flavors.get(raw_instance['serverName'], UNKNOWN_FLAVOR_NAME)
+            if not is_successful(r_instance):
+                return Error(
+                    Failure.from_failure(
+                        'Could not get instance details',
+                        r_instance.failure(),
+                        raw_instance_entry=raw_instance_entry,
+                    )
                 )
 
-                return Ok(None)
+            raw_instance = r_instance.unwrap()
 
-            r_instances_usage = self.do_fetch_pool_resources_metrics_flavor_usage(
-                logger,
-                resources.usage,
-                _fetch_instances,
-                lambda raw_instance: instances_with_flavors.get(raw_instance['serverName'], UNKNOWN_FLAVOR_NAME),
-                _update_instance_usage,
-            )
+            # Error instances carry no network information, so they would be dropped by the
+            # pool-network filter below. Let's account for them here and skip any further processing, they
+            # should not be counted towards used resources anyway.
+            if raw_instance.get('status', '').lower() == 'error':
+                resources.usage.inc_instances(raw_instance.get('status'))
+                continue
 
-            if r_instances_usage.is_error:
-                return Error(r_instances_usage.unwrap_error())
+            # Filter out instances not on pool network.
+            if subnet_id not in raw_instance['networkIDs']:
+                continue
 
-            # Get pool network metrics
-            r_show_network = session.run(
-                logger, ['pi', 'subnet', 'get', subnet_id, '--json'], commandname='ibmcloud.power.show-network'
-            )
-            if r_show_network.is_error:
-                return Error(Failure.from_failure('Could not get network metrics', r_show_network.unwrap_error()))
+            raw_instances.append(raw_instance)
 
-            network = cast(dict[str, Any], r_show_network.unwrap())
+        return Ok(raw_instances)
 
-            resources.limits.networks[subnet_id] = PoolNetworkResources(addresses=network['ipAddressMetrics']['total'])
-            resources.usage.networks[subnet_id] = PoolNetworkResources(addresses=network['ipAddressMetrics']['used'])
+    def _pool_instance_flavor_name(self, raw_instance: dict[str, Any], ctx: Any) -> str:  # noqa: ANN401
+        return cast(str, ctx.instances_with_flavors.get(raw_instance['serverName'], UNKNOWN_FLAVOR_NAME))
 
-        return Ok(resources)
+    def _update_pool_instance_usage(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        usage: PoolResourcesUsage,
+        raw_instance: dict[str, Any],
+        flavor: Optional[Flavor],
+        ctx: Any,  # noqa: ANN401
+    ) -> Result[None, Failure]:
+        assert usage.cores is not None  # narrow type
+        assert usage.memory is not None  # narrow type
+
+        usage.inc_instances(raw_instance.get('status'))
+
+        usage.cores += int(raw_instance.get('virtualCores', {}).get('assigned', 0))
+        # Instance memory is in GB
+        usage.memory += UNITS.Quantity(raw_instance['memory'], UNITS.gigabytes).to('bytes').magnitude
+
+        # Record actual flavor used. A tagged instance whose flavor is no longer in the cache
+        # (e.g. the flavor was dropped from configuration) still has its real name in the
+        # mapping, so prefer that over the UNKNOWN_FLAVOR_NAME sentinel.
+        usage.record_flavor(
+            flavor.name if flavor else ctx.instances_with_flavors.get(raw_instance['serverName'], UNKNOWN_FLAVOR_NAME)
+        )
+
+        return Ok(None)
+
+    def _collect_pool_resource_limits(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        resources: PoolResourcesMetrics,
+        ctx: Any,  # noqa: ANN401
+    ) -> Result[None, Failure]:
+        subnet_id = self.pool_config['subnet-id']
+
+        # Get pool network metrics
+        r_show_network = ctx.session.run(
+            logger, ['pi', 'subnet', 'get', subnet_id, '--json'], commandname='ibmcloud.power.show-network'
+        )
+        if r_show_network.is_error:
+            return Error(Failure.from_failure('Could not get network metrics', r_show_network.unwrap_error()))
+
+        network = cast(dict[str, Any], r_show_network.unwrap())
+
+        resources.limits.networks[subnet_id] = PoolNetworkResources(addresses=network['ipAddressMetrics']['total'])
+        resources.usage.networks[subnet_id] = PoolNetworkResources(addresses=network['ipAddressMetrics']['used'])
+
+        return Ok(None)
 
     @override
     def _create_instance(

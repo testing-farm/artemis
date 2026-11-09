@@ -287,6 +287,17 @@ class IBMCloudSession(CLISessionPermanentDir):
         return Ok(None)
 
 
+@dataclasses.dataclass
+class IBMCloudResourcesMetricsContext:
+    """
+    Context shared between the resource-metrics hooks of IBM Cloud drivers: a single backend session kept alive for
+    the whole metrics gathering, plus the instance-to-flavor-name mapping recovered from instance tags.
+    """
+
+    session: IBMCloudSession
+    instances_with_flavors: dict[str, str]
+
+
 class IBMCloudDriver(
     FlavorBasedPoolDriver[ErrorCausesT, PoolImageInfo, IBMCloudFlavor, BackendFlavorT, IBMCloudInstanceT],
     abc.ABC,

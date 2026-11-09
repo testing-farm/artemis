@@ -1,6 +1,7 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
+import contextlib
 import dataclasses
 import enum
 import functools
@@ -30,6 +31,7 @@ from tft.artemis.drivers.ibmcloud import (
     IBMCloudInstance,
     IBMCloudPoolData,
     IBMCloudPoolResourcesIDs,
+    IBMCloudResourcesMetricsContext,
     IBMCloudSession,
     InstanceCreationOutcome,
     InstanceCreationRequest,
@@ -349,101 +351,101 @@ class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, 
 
         return Ok(res)
 
-    def fetch_pool_resources_metrics(
-        self, logger: gluetool.log.ContextAdapter
-    ) -> Result[PoolResourcesMetrics, Failure]:
-        r_resources = super().fetch_pool_resources_metrics(logger)
+    def _enter_pool_resources_metrics(
+        self, logger: gluetool.log.ContextAdapter, stack: contextlib.ExitStack, resources: PoolResourcesMetrics
+    ) -> Result[Any, Failure]:
+        session = stack.enter_context(IBMCloudSession(logger, self))
 
-        if r_resources.is_error:
-            return Error(r_resources.unwrap_error())
+        r_instances_with_flavors = self.get_instances_with_flavor_tags_names(logger, 'instance')
 
-        resources = r_resources.unwrap()
+        if r_instances_with_flavors.is_error:
+            return Error(r_instances_with_flavors.unwrap_error())
 
+        return Ok(IBMCloudResourcesMetricsContext(session, r_instances_with_flavors.unwrap()))
+
+    def _list_pool_instances(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        resources: PoolResourcesMetrics,
+        ctx: Any,  # noqa: ANN401
+    ) -> Result[list[dict[str, Any]], Failure]:
         subnet_id = self.pool_config['subnet-id']
 
-        with IBMCloudSession(logger, self) as session:
-            # Resource usage - instances and flavors
-            def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[list[dict[str, Any]], Failure]:
-                r_list_instances = session.run(
-                    logger, ['is', 'instances', '--json'], commandname='ibmcloud.is.instances-list'
-                )
+        r_list_instances = ctx.session.run(
+            logger, ['is', 'instances', '--json'], commandname='ibmcloud.is.instances-list'
+        )
 
-                if r_list_instances.is_error:
-                    return Error(Failure.from_failure('Could not list instances', r_list_instances.unwrap_error()))
+        if r_list_instances.is_error:
+            return Error(Failure.from_failure('Could not list instances', r_list_instances.unwrap_error()))
 
-                return Ok(
-                    [
-                        raw_instance
-                        for raw_instance in cast(list[dict[str, Any]], r_list_instances.unwrap())
-                        if subnet_id
-                        in [nics.get('subnet', {}).get('id') for nics in raw_instance.get('network_interfaces', [])]
-                    ]
-                )
+        return Ok(
+            [
+                raw_instance
+                for raw_instance in cast(list[dict[str, Any]], r_list_instances.unwrap())
+                if subnet_id
+                in [nics.get('subnet', {}).get('id') for nics in raw_instance.get('network_interfaces', [])]
+            ]
+        )
 
-            r_instances_with_flavors = self.get_instances_with_flavor_tags_names(logger, 'instance')
+    def _pool_instance_flavor_name(self, raw_instance: dict[str, Any], ctx: Any) -> str:  # noqa: ANN401
+        return cast(str, ctx.instances_with_flavors.get(raw_instance['name'], UNKNOWN_FLAVOR_NAME))
 
-            if r_instances_with_flavors.is_error:
-                return Error(r_instances_with_flavors.unwrap_error())
+    def _update_pool_instance_usage(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        usage: PoolResourcesUsage,
+        raw_instance: dict[str, Any],
+        flavor: Optional[Flavor],
+        ctx: Any,  # noqa: ANN401
+    ) -> Result[None, Failure]:
+        assert usage.cores is not None  # narrow type
+        assert usage.memory is not None  # narrow type
 
-            instances_with_flavors = r_instances_with_flavors.unwrap()
+        usage.inc_instances(raw_instance.get('status'))
 
-            def _update_instance_usage(
-                logger: gluetool.log.ContextAdapter,
-                usage: PoolResourcesUsage,
-                raw_instance: dict[str, Any],
-                flavor: Optional[Flavor],
-            ) -> Result[None, Failure]:
-                assert usage.cores is not None  # narrow type
-                assert usage.memory is not None  # narrow type
+        # ibmcloud is doesn't have info about cores per instance, but rather vcpus per instance. Anyway, will
+        # be storing this info under cores
+        usage.cores += int(raw_instance.get('vcpu', {}).get('count', 0))
+        # Instance memory is in GB
+        usage.memory += UNITS.Quantity(raw_instance['memory'], UNITS.gigabytes).to('bytes').magnitude
 
-                usage.inc_instances(raw_instance.get('status'))
+        # Record actual flavor used. A tagged instance whose flavor is no longer in the cache
+        # (e.g. the flavor was dropped from configuration) still has its real name in the
+        # mapping, so prefer that over the UNKNOWN_FLAVOR_NAME sentinel.
+        usage.record_flavor(
+            flavor.name if flavor else ctx.instances_with_flavors.get(raw_instance['name'], UNKNOWN_FLAVOR_NAME)
+        )
 
-                # ibmcloud is doesn't have info about cores per instance, but rather vcpus per instance. Anyway, will
-                # be storing this info under cores
-                usage.cores += int(raw_instance.get('vcpu', {}).get('count', 0))
-                # Instance memory is in GB
-                usage.memory += UNITS.Quantity(raw_instance['memory'], UNITS.gigabytes).to('bytes').magnitude
+        return Ok(None)
 
-                # Record actual flavor used. A tagged instance whose flavor is no longer in the cache
-                # (e.g. the flavor was dropped from configuration) still has its real name in the
-                # mapping, so prefer that over the UNKNOWN_FLAVOR_NAME sentinel.
-                usage.record_flavor(
-                    flavor.name if flavor else instances_with_flavors.get(raw_instance['name'], UNKNOWN_FLAVOR_NAME)
-                )
+    def _collect_pool_resource_limits(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        resources: PoolResourcesMetrics,
+        ctx: Any,  # noqa: ANN401
+    ) -> Result[None, Failure]:
+        subnet_id = self.pool_config['subnet-id']
 
-                return Ok(None)
+        # Get pool network metrics
+        r_show_network = ctx.session.run(
+            logger, ['is', 'subnet', subnet_id, '--json'], commandname='ibmcloud.is.show-network'
+        )
+        if r_show_network.is_error:
+            return Error(Failure.from_failure('Could not get network metrics', r_show_network.unwrap_error()))
 
-            r_instances_usage = self.do_fetch_pool_resources_metrics_flavor_usage(
-                logger,
-                resources.usage,
-                _fetch_instances,
-                lambda raw_instance: instances_with_flavors.get(raw_instance['name'], UNKNOWN_FLAVOR_NAME),
-                _update_instance_usage,
-            )
+        network = cast(dict[str, Any], r_show_network.unwrap())
 
-            if r_instances_usage.is_error:
-                return Error(r_instances_usage.unwrap_error())
+        # drop network address and broadcast
+        resources.limits.networks[subnet_id] = PoolNetworkResources(
+            addresses=int(network['total_ipv4_address_count']) - 2
+        )
+        # It's expected that used addresses won't precisely match number of instances on this network, as some
+        # ips from the subnet range are additionally reserved for dns/dhcp/etc
+        resources.usage.networks[subnet_id] = PoolNetworkResources(
+            addresses=int(network['total_ipv4_address_count']) - int(network['available_ipv4_address_count'])
+        )
 
-            # Get pool network metrics
-            r_show_network = session.run(
-                logger, ['is', 'subnet', subnet_id, '--json'], commandname='ibmcloud.is.show-network'
-            )
-            if r_show_network.is_error:
-                return Error(Failure.from_failure('Could not get network metrics', r_show_network.unwrap_error()))
-
-            network = cast(dict[str, Any], r_show_network.unwrap())
-
-            # drop network address and broadcast
-            resources.limits.networks[subnet_id] = PoolNetworkResources(
-                addresses=int(network['total_ipv4_address_count']) - 2
-            )
-            # It's expected that used addresses won't precisely match number of instances on this network, as some
-            # ips from the subnet range are additionally reserved for dns/dhcp/etc
-            resources.usage.networks[subnet_id] = PoolNetworkResources(
-                addresses=int(network['total_ipv4_address_count']) - int(network['available_ipv4_address_count'])
-            )
-
-        return Ok(resources)
+        return Ok(None)
 
     @override
     def list_instances(self, logger: gluetool.log.ContextAdapter) -> Result[list[IBMCloudVPCInstance], Failure]:

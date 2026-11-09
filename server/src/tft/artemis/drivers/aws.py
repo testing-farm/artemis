@@ -3615,63 +3615,57 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
             self.logger, self._query_backend_flavors, lambda raw_flavor: raw_flavor['InstanceType'], _constructor
         )
 
-    def fetch_pool_resources_metrics(
-        self, logger: gluetool.log.ContextAdapter
-    ) -> Result[PoolResourcesMetrics, Failure]:
-        subnet_id = self.pool_config['subnet-id']
-
-        r_resources = super().fetch_pool_resources_metrics(logger)
-
-        if r_resources.is_error:
-            return Error(r_resources.unwrap_error())
-
-        resources = r_resources.unwrap()
-
-        # Resource usage - instances and flavors
-        def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[list[dict[str, Any]], Failure]:
-            # Count only instance using our subnet
-            r = self._aws_command(
-                ['ec2', 'describe-instances', '--filter', f'Name=subnet-id,Values={subnet_id}'],
-                commandname='aws.ec2-describe-instances',
-            )
-
-            if r.is_error:
-                return Error(Failure.from_failure('failed to fetch instance information', r.unwrap_error()))
-
-            return Ok(list(JQ_QUERY_POOL_INSTANCES.input(r.unwrap()).all()))
-
-        def _update_instance_usage(
-            logger: gluetool.log.ContextAdapter,
-            usage: PoolResourcesUsage,
-            raw_instance: dict[str, Any],
-            flavor: Optional[Flavor],
-        ) -> Result[None, Failure]:
-            assert usage.cores is not None  # narrow type
-            assert usage.memory is not None  # narrow type
-
-            usage.inc_instances(raw_instance.get('State', {}).get('Name'))
-
-            if flavor is not None:
-                usage.cores += flavor.cpu.cores or 0
-                usage.memory += flavor.memory.to('bytes').magnitude if flavor.memory is not None else 0
-
-                if flavor.name not in usage.flavors:
-                    usage.flavors[flavor.name] = 0
-
-                usage.flavors[flavor.name] += 1
-
-            return Ok(None)
-
-        r_instances_usage = self.do_fetch_pool_resources_metrics_flavor_usage(
-            logger,
-            resources.usage,
-            _fetch_instances,
-            lambda raw_instance: raw_instance['InstanceType'],
-            _update_instance_usage,
+    def _list_pool_instances(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        resources: PoolResourcesMetrics,
+        ctx: Any,  # noqa: ANN401
+    ) -> Result[list[dict[str, Any]], Failure]:
+        # Count only instance using our subnet
+        r = self._aws_command(
+            ['ec2', 'describe-instances', '--filter', f'Name=subnet-id,Values={self.pool_config["subnet-id"]}'],
+            commandname='aws.ec2-describe-instances',
         )
 
-        if r_instances_usage.is_error:
-            return Error(r_instances_usage.unwrap_error())
+        if r.is_error:
+            return Error(Failure.from_failure('failed to fetch instance information', r.unwrap_error()))
+
+        return Ok(list(JQ_QUERY_POOL_INSTANCES.input(r.unwrap()).all()))
+
+    def _pool_instance_flavor_name(self, raw_instance: dict[str, Any], ctx: Any) -> str:  # noqa: ANN401
+        return cast(str, raw_instance['InstanceType'])
+
+    def _update_pool_instance_usage(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        usage: PoolResourcesUsage,
+        raw_instance: dict[str, Any],
+        flavor: Optional[Flavor],
+        ctx: Any,  # noqa: ANN401
+    ) -> Result[None, Failure]:
+        assert usage.cores is not None  # narrow type
+        assert usage.memory is not None  # narrow type
+
+        usage.inc_instances(raw_instance.get('State', {}).get('Name'))
+
+        if flavor is not None:
+            usage.cores += flavor.cpu.cores or 0
+            usage.memory += flavor.memory.to('bytes').magnitude if flavor.memory is not None else 0
+
+            if flavor.name not in usage.flavors:
+                usage.flavors[flavor.name] = 0
+
+            usage.flavors[flavor.name] += 1
+
+        return Ok(None)
+
+    def _collect_pool_resource_limits(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        resources: PoolResourcesMetrics,
+        ctx: Any,  # noqa: ANN401
+    ) -> Result[None, Failure]:
+        subnet_id = self.pool_config['subnet-id']
 
         # Inspect the subnet
         r_subnet = self._aws_command(
@@ -3696,7 +3690,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
             addresses=resources.limits.networks[subnet_id].addresses - available_ips
         )
 
-        return Ok(resources)
+        return Ok(None)
 
     def _fetch_guest_console_blob(
         self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest

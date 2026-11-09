@@ -817,71 +817,65 @@ class OpenStackDriver(
 
         return Ok(ReleasePoolResourcesState.RELEASED)
 
-    def fetch_pool_resources_metrics(
-        self, logger: gluetool.log.ContextAdapter
-    ) -> Result[PoolResourcesMetrics, Failure]:
-        r_resources = super().fetch_pool_resources_metrics(logger)
+    def _list_pool_instances(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        resources: PoolResourcesMetrics,
+        ctx: Any,  # noqa: ANN401
+    ) -> Result[list[dict[str, str]], Failure]:
+        raw_instances: list[dict[str, str]] = []
 
-        if r_resources.is_error:
-            return Error(r_resources.unwrap_error())
-
-        resources = r_resources.unwrap()
-
-        # Resource usage - instances and flavors
-        def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[list[dict[str, str]], Failure]:
-            raw_instances: list[dict[str, str]] = []
-
-            r_servers = self._run_os(
-                ['server', 'list'],
-                json_format=True,
-                commandname='os.server-list',
-            )
-
-            if r_servers.is_error:
-                return Error(Failure.from_failure('failed to fetch server list', r_servers.unwrap_error()))
-
-            # now match against pool-configured subnet
-            network_pattern = re.compile(self.pool_config['network-regex'])
-            for server in cast(list[dict[str, str]], r_servers.unwrap()):
-                # Error instances can have no network information, so they would be dropped by the
-                # pool-network filter below. Let's account for them here and skip any further processing, they
-                # should not be counted towards used resources anyway.
-                if server.get('Status', '').lower() == 'error':
-                    resources.usage.inc_instances(server.get('Status'))
-                    continue
-
-                if any(network_pattern.match(network) for network in server.get('Networks', [])):
-                    raw_instances.append(server)
-
-            return Ok(raw_instances)
-
-        def _update_instance_usage(
-            logger: gluetool.log.ContextAdapter,
-            usage: PoolResourcesUsage,
-            raw_instance: dict[str, str],
-            flavor: Optional[Flavor],
-        ) -> Result[None, Failure]:
-            usage.inc_instances(raw_instance.get('Status'))
-
-            if flavor is not None:
-                if flavor.name not in usage.flavors:
-                    usage.flavors[flavor.name] = 0
-
-                usage.flavors[flavor.name] += 1
-
-            return Ok(None)
-
-        r_instances_usage = self.do_fetch_pool_resources_metrics_flavor_usage(
-            logger,
-            resources.usage,
-            _fetch_instances,
-            lambda raw_instance: raw_instance['Flavor'],
-            _update_instance_usage,
+        r_servers = self._run_os(
+            ['server', 'list'],
+            json_format=True,
+            commandname='os.server-list',
         )
 
-        if r_instances_usage.is_error:
-            return Error(r_instances_usage.unwrap_error())
+        if r_servers.is_error:
+            return Error(Failure.from_failure('failed to fetch server list', r_servers.unwrap_error()))
 
+        # now match against pool-configured subnet
+        network_pattern = re.compile(self.pool_config['network-regex'])
+        for server in cast(list[dict[str, str]], r_servers.unwrap()):
+            # Error instances can have no network information, so they would be dropped by the
+            # pool-network filter below. Let's account for them here and skip any further processing, they
+            # should not be counted towards used resources anyway.
+            if server.get('Status', '').lower() == 'error':
+                resources.usage.inc_instances(server.get('Status'))
+                continue
+
+            if any(network_pattern.match(network) for network in server.get('Networks', [])):
+                raw_instances.append(server)
+
+        return Ok(raw_instances)
+
+    def _pool_instance_flavor_name(self, raw_instance: dict[str, str], ctx: Any) -> str:  # noqa: ANN401
+        return raw_instance['Flavor']
+
+    def _update_pool_instance_usage(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        usage: PoolResourcesUsage,
+        raw_instance: dict[str, str],
+        flavor: Optional[Flavor],
+        ctx: Any,  # noqa: ANN401
+    ) -> Result[None, Failure]:
+        usage.inc_instances(raw_instance.get('Status'))
+
+        if flavor is not None:
+            if flavor.name not in usage.flavors:
+                usage.flavors[flavor.name] = 0
+
+            usage.flavors[flavor.name] += 1
+
+        return Ok(None)
+
+    def _collect_pool_resource_limits(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        resources: PoolResourcesMetrics,
+        ctx: Any,  # noqa: ANN401
+    ) -> Result[None, Failure]:
         r_query_limits = self._run_os(
             ['limits', 'show', '--absolute', '--reserved'], json_format=True, commandname='os.limits-show'
         )
@@ -954,7 +948,7 @@ class OpenStackDriver(
             resources.usage.networks[network_name] = PoolNetworkResources(addresses=int(network['Used IPs']))
             resources.limits.networks[network_name] = PoolNetworkResources(addresses=int(network['Total IPs']))
 
-        return Ok(resources)
+        return Ok(None)
 
     @override
     def list_images(

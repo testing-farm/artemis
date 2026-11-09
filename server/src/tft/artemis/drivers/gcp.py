@@ -789,45 +789,26 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, 
             self.logger, self._query_backend_flavors, lambda raw_flavor: cast(str, raw_flavor['name']), _constructor
         )
 
-    def fetch_pool_resources_metrics(
-        self, logger: gluetool.log.ContextAdapter
-    ) -> Result[PoolResourcesMetrics, Failure]:
-        r_resources = super().fetch_pool_resources_metrics(logger)
+    def _list_pool_instances(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        resources: PoolResourcesMetrics,
+        ctx: Any,  # noqa: ANN401
+    ) -> Result[list[compute_v1.Instance], Failure]:
+        return Ok(list(self._instances_client.list(project=self.pool_config['project'], zone=self.pool_config['zone'])))
 
-        if r_resources.is_error:
-            return Error(r_resources.unwrap_error())
+    # TODO: once we find the flavor name, we can update its usage - until then, no per-flavor accounting.
+    def _update_pool_instance_usage(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        usage: PoolResourcesUsage,
+        raw_instance: compute_v1.Instance,
+        flavor: Optional[Flavor],
+        ctx: Any,  # noqa: ANN401
+    ) -> Result[None, Failure]:
+        usage.inc_instances(raw_instance.status)
 
-        resources = r_resources.unwrap()
-
-        # Resource usage - instances and flavors
-        def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[list[compute_v1.Instance], Failure]:
-            return Ok(
-                list(self._instances_client.list(project=self.pool_config['project'], zone=self.pool_config['zone']))
-            )
-
-        def _update_instance_usage(
-            logger: gluetool.log.ContextAdapter,
-            usage: PoolResourcesUsage,
-            raw_instance: compute_v1.Instance,
-            flavor: Optional[Flavor],
-        ) -> Result[None, Failure]:
-            usage.inc_instances(raw_instance.status)
-
-            return Ok(None)
-
-        r_instances_usage = self.do_fetch_pool_resources_metrics_flavor_usage(
-            logger,
-            resources.usage,
-            _fetch_instances,
-            # TODO: once we find the flavor name, we can update its usage.
-            lambda raw_instance: 'dummy-flavor-name-does-not-exist',
-            _update_instance_usage,
-        )
-
-        if r_instances_usage.is_error:
-            return Error(r_instances_usage.unwrap_error())
-
-        return Ok(resources)
+        return Ok(None)
 
     # The following are necessary implementations of abstract methods the driver does not have use for. They are
     # required, but we will remove them in the future.
