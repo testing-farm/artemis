@@ -78,6 +78,7 @@ from . import (
     run_cli_tool,
     run_remote,
 )
+from ._guest_log_http import fetch_guest_log_blob
 
 NodeRefType = Any
 
@@ -2807,16 +2808,9 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
 
         assert progress.url is not None
 
-        try:
-            response = requests.get(
-                progress.url, verify=not KNOB_DISABLE_CERT_VERIFICATION.value, timeout=KNOB_HTTP_TIMEOUT.value
-            )
-            response.raise_for_status()
-
-        except requests.exceptions.RequestException as exc:
-            return Error(Failure.from_exc('failed to fetch Beaker log URL', exc, url=progress.url))
-
-        return Ok(GuestLogUpdateProgress.from_unabridged(logger, guest_log, response.text))
+        return fetch_guest_log_blob(
+            logger, self.poolname, guest_log, progress.url, failure_message='failed to fetch Beaker log URL'
+        )
 
     def _update_guest_installation_log_blob(
         self, logger: gluetool.log.ContextAdapter, guest_request: GuestRequest, guest_log: GuestLog, beaker_logname: str

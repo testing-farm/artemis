@@ -404,6 +404,22 @@ KNOB_UPDATE_GUEST_REQUEST_LOG_TICK: Knob[int] = Knob(
     default=300,
 )
 
+KNOB_UPDATE_GUEST_REQUEST_LOG_MAX_SIZE: Knob[int] = Knob(
+    'pool.update-guest-request.log-max-size',
+    """
+    The maximum size, in bytes, of a guest log Artemis downloads over HTTP and stores as a blob. Larger logs are
+    truncated: only their tail is stored (or their head, when the remote server does not support range requests),
+    together with a note pointing to the full log.
+    """,
+    # TODO: enable DB backing, but that will require more handling in drivers if fetching this value fails.
+    has_db=False,
+    per_entity=True,
+    envvar='ARTEMIS_UPDATE_GUEST_REQUEST_LOG_MAX_SIZE',
+    cast_from_str=int,
+    default=32 * 1024 * 1024,
+    default_label='33554432 (32 MiB)',
+)
+
 KNOB_LOGGING_CLI_OUTPUT: Knob[bool] = Knob(
     'logging.cli.commands',
     """

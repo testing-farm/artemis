@@ -1531,6 +1531,24 @@ of crashed resources.
 
 5+|A delay, in seconds, between two calls of `update-guest-request` task checking provisioning progress.
 
+|`pool.update-guest-request.log-max-size`
+|`int`
+|`ARTEMIS_UPDATE_GUEST_REQUEST_LOG_MAX_SIZE`
+|`33554432 (32 MiB)`
+|no
+
+
+|`pool.update-guest-request.log-max-size:$entityname`
+|
+|`ARTEMIS_UPDATE_GUEST_REQUEST_LOG_MAX_SIZE_$entityname`
+|
+|
+
+
+5+|The maximum size, in bytes, of a guest log Artemis downloads over HTTP and stores as a blob. Larger logs are
+truncated: only their tail is stored (or their head, when the remote server does not support range requests),
+together with a note pointing to the full log.
+
 |`pool.update-guest-request.log-tick`
 |`int`
 |`ARTEMIS_UPDATE_GUEST_REQUEST_LOG_TICK`

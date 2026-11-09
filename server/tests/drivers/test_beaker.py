@@ -1263,3 +1263,29 @@ def test_run_bkr(
     assert r_output.is_ok
 
     assert mock_run_cli_tool.call_args.args[1] == expected_command
+
+
+def test_update_guest_log_blob(
+    logger: ContextAdapter,
+    mockpatch: MockPatcher,
+    pool: tft.artemis.drivers.beaker.BeakerDriver,
+    dummy_guest_request: MagicMock,
+) -> None:
+    url = 'https://beaker.example.com/recipes/1200665440/logs/anaconda.log'
+    guest_log = MagicMock(name='guest_log')
+
+    mockpatch(pool, '_update_guest_log_url').return_value = Ok(
+        tft.artemis.drivers.GuestLogUpdateProgress(state=tft.artemis.db.GuestLogState.COMPLETE, url=url)
+    )
+
+    mock_fetch = mockpatch(tft.artemis.drivers.beaker, 'fetch_guest_log_blob')
+    mock_fetch.return_value = Ok(MagicMock(name='progress'))
+
+    r_progress = pool._update_guest_log_blob(logger, dummy_guest_request, guest_log, 'anaconda.log')
+
+    assert r_progress.is_ok
+    assert r_progress.unwrap() is mock_fetch.return_value.unwrap()
+
+    mock_fetch.assert_called_once_with(
+        logger, pool.poolname, guest_log, url, failure_message='failed to fetch Beaker log URL'
+    )

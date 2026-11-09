@@ -37,6 +37,7 @@ from . import (
     create_error_cause_extractor,
     guest_log_updater,
 )
+from ._guest_log_http import fetch_guest_log_blob
 
 ARTEMIS_GUESTNAME_HEADER = 'Artemis-guestname'
 
@@ -419,16 +420,9 @@ class RestDriver(PoolDriver[RestErrorCauses, Instance]):
         if not url:
             return Ok(GuestLogUpdateProgress(state=GuestLogState.IN_PROGRESS))
 
-        try:
-            response = requests.get(
-                url, verify=not KNOB_DISABLE_CERT_VERIFICATION.value, timeout=KNOB_HTTP_TIMEOUT.value
-            )
-            response.raise_for_status()
-
-        except requests.exceptions.RequestException as exc:
-            return Error(Failure.from_exc('failed to fetch flasher log', exc, url=url))
-
-        return Ok(GuestLogUpdateProgress.from_unabridged(logger, guest_log, response.text))
+        return fetch_guest_log_blob(
+            logger, self.poolname, guest_log, url, failure_message='failed to fetch flasher log'
+        )
 
     @guest_log_updater('rest', 'flasher-debug:dump', GuestLogContentType.URL)  # type: ignore[arg-type]
     def _update_guest_log_cmd_all_url(

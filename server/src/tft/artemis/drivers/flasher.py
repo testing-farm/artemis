@@ -38,6 +38,7 @@ from . import (
     create_error_cause_extractor,
     guest_log_updater,
 )
+from ._guest_log_http import fetch_guest_log_blob
 
 FlasherErrorCauses = CommonErrorCauses
 
@@ -347,26 +348,24 @@ class FlasherDriver(PoolDriver[FlasherErrorCauses, Instance]):
 
         url = urljoin(self.url, f'/{self.poolname}/getlog/{pool_data.flasher_id}/{log_name}')
 
-        try:
-            response = requests.get(
-                url, verify=not KNOB_DISABLE_CERT_VERIFICATION.value, timeout=KNOB_HTTP_TIMEOUT.value
-            )
-        except requests.exceptions.RequestException as exc:
-            return Error(Failure.from_exc('_update_guest_log_blob request failed', exc, url=url))
-
-        if response.status_code != 200:
-            return Error(
-                Failure(
-                    'unexpected response',
-                    sentry=response.status_code != 404,
-                    url=url,
-                    status_code=response.status_code,
-                    body=response.text,
-                    recoverable=self._is_recoverable(response.status_code),
-                )
+        def _failure_from_response(response: requests.Response) -> Failure:
+            return Failure(
+                'unexpected response',
+                sentry=response.status_code != 404,
+                url=url,
+                status_code=response.status_code,
+                body=response.text,
+                recoverable=self._is_recoverable(response.status_code),
             )
 
-        return Ok(GuestLogUpdateProgress.from_unabridged(logger, guest_log, response.text))
+        return fetch_guest_log_blob(
+            logger,
+            self.poolname,
+            guest_log,
+            url,
+            failure_message='_update_guest_log_blob request failed',
+            failure_from_response=_failure_from_response,
+        )
 
     # The following are necessary implementations of abstract methods the driver does not have use for. They are
     # required, but we will remove them in the future.
