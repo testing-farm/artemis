@@ -3341,7 +3341,9 @@ class FlavorBasedPoolDriver(
         usage: PoolResourcesUsage,
         fetch: Callable[[gluetool.log.ContextAdapter], Result[list[T], Failure]],
         flavor_name_getter: Optional[Callable[[T], str]],
-        update: Callable[[gluetool.log.ContextAdapter, PoolResourcesUsage, T, Optional[Flavor]], Result[None, Failure]],
+        update: Callable[
+            [gluetool.log.ContextAdapter, PoolResourcesUsage, T, Optional[FlavorT]], Result[None, Failure]
+        ],
     ) -> Result[None, Failure]:
         """
         A helper implementation for constructing pool flavor usage metrics.
@@ -3410,6 +3412,134 @@ class FlavorBasedPoolDriver(
                 )
 
         return Ok(None)
+
+    def _enter_pool_resources_metrics(
+        self, logger: gluetool.log.ContextAdapter, stack: contextlib.ExitStack, resources: PoolResourcesMetrics
+    ) -> Result[Any, Failure]:
+        """
+        Driver-specific preparation for :py:meth:`fetch_pool_resources_metrics`.
+
+        Runs before instances and limits are fetched, and may open resources - typically a backend session - that
+        must stay alive for the whole metrics gathering. Such resources shall be registered with ``stack`` and will
+        be closed automatically once the metrics have been collected.
+
+        :returns: an opaque context object passed to the other hooks (:py:meth:`_list_pool_instances`,
+            :py:meth:`_pool_instance_flavor_name`, :py:meth:`_update_pool_instance_usage`,
+            :py:meth:`_collect_pool_resource_limits`). The default implementation returns ``None``.
+        """
+
+        return Ok(None)
+
+    @abc.abstractmethod
+    def _list_pool_instances(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        resources: PoolResourcesMetrics,
+        ctx: Any,  # noqa: ANN401
+    ) -> Result[list[Any], Failure]:
+        """
+        Return the raw instances belonging to this pool, to be accounted towards resource usage.
+
+        Where applicable, the driver may record usage of instances the common machinery cannot process (e.g.
+        instances with no network information) directly into ``resources``.
+
+        :param ctx: the context object returned by :py:meth:`_enter_pool_resources_metrics`.
+        """
+
+        raise NotImplementedError
+
+    def _pool_instance_flavor_name(self, raw_instance: Any, ctx: Any) -> str:  # noqa: ANN401
+        """
+        Return the flavor name of the given raw instance.
+
+        The default implementation returns :py:data:`UNKNOWN_FLAVOR_NAME`, i.e. the driver does not track
+        per-flavor usage. Drivers able to map an instance to a flavor shall override this method.
+
+        :param ctx: the context object returned by :py:meth:`_enter_pool_resources_metrics`.
+        """
+
+        return UNKNOWN_FLAVOR_NAME
+
+    @abc.abstractmethod
+    def _update_pool_instance_usage(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        usage: PoolResourcesUsage,
+        raw_instance: Any,  # noqa: ANN401
+        flavor: Optional[FlavorT],
+        ctx: Any,  # noqa: ANN401
+    ) -> Result[None, Failure]:
+        """
+        Update pool resource usage with data about a single raw instance (and its flavor, if known).
+
+        :param ctx: the context object returned by :py:meth:`_enter_pool_resources_metrics`.
+        """
+
+        raise NotImplementedError
+
+    def _collect_pool_resource_limits(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        resources: PoolResourcesMetrics,
+        ctx: Any,  # noqa: ANN401
+    ) -> Result[None, Failure]:
+        """
+        Populate pool resource limits (and any usage not tied to individual instances, e.g. network address usage).
+
+        Runs after instance usage has been collected. The default implementation does nothing, leaving limits as
+        initialized from the pool configuration.
+
+        :param ctx: the context object returned by :py:meth:`_enter_pool_resources_metrics`.
+        """
+
+        return Ok(None)
+
+    def fetch_pool_resources_metrics(
+        self, logger: gluetool.log.ContextAdapter
+    ) -> Result[PoolResourcesMetrics, Failure]:
+        """
+        Fetch the most up-to-date resource metrics for a flavor-based pool.
+
+        Common implementation of the shared steps - load configured limits, list instances, update usage, collect
+        limits - delegating the backend-specific parts to :py:meth:`_enter_pool_resources_metrics`,
+        :py:meth:`_list_pool_instances`, :py:meth:`_pool_instance_flavor_name`,
+        :py:meth:`_update_pool_instance_usage` and :py:meth:`_collect_pool_resource_limits`.
+        """
+
+        r_resources = super().fetch_pool_resources_metrics(logger)
+
+        if r_resources.is_error:
+            return Error(r_resources.unwrap_error())
+
+        resources = r_resources.unwrap()
+
+        with contextlib.ExitStack() as stack:
+            r_ctx = self._enter_pool_resources_metrics(logger, stack, resources)
+
+            if r_ctx.is_error:
+                return Error(r_ctx.unwrap_error())
+
+            ctx = r_ctx.unwrap()
+
+            r_usage = self.do_fetch_pool_resources_metrics_flavor_usage(
+                logger,
+                resources.usage,
+                lambda log: self._list_pool_instances(log, resources, ctx),
+                lambda raw_instance: self._pool_instance_flavor_name(raw_instance, ctx),
+                lambda log, usage, raw_instance, flavor: self._update_pool_instance_usage(
+                    log, usage, raw_instance, flavor, ctx
+                ),
+            )
+
+            if r_usage.is_error:
+                return Error(r_usage.unwrap_error())
+
+            r_limits = self._collect_pool_resource_limits(logger, resources, ctx)
+
+            if r_limits.is_error:
+                return Error(r_limits.unwrap_error())
+
+        return Ok(resources)
 
 
 def vm_info_to_ip(
