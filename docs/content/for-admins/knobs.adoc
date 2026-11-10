@@ -538,6 +538,40 @@ for the requested action.
 
 5+|Artemis tag to hold the actual instance flavor
 
+|`artemis.instance.guest-label.tag`
+|`str`
+|`ARTEMIS_INSTANCE_GUEST_LABEL_TAG`
+|`ArtemisGuestLabel`
+|no
+
+
+|`artemis.instance.guest-label.tag:$entityname`
+|
+|`ARTEMIS_INSTANCE_GUEST_LABEL_TAG_$entityname`
+|
+|
+
+
+5+|Artemis tag to hold the guest label, the name of the guest instance. Some drivers use it to find names of
+instances, changing it on a pool with existing guests makes their instances impossible to find.
+
+|`artemis.instance.guest-name.tag`
+|`str`
+|`ARTEMIS_INSTANCE_GUEST_NAME_TAG`
+|`ArtemisGuestName`
+|no
+
+
+|`artemis.instance.guest-name.tag:$entityname`
+|
+|`ARTEMIS_INSTANCE_GUEST_NAME_TAG_$entityname`
+|
+|
+
+
+5+|Artemis tag to hold the guest name. Some drivers use it to find resources of a guest request, changing it on a
+pool with existing guests makes their resources impossible to find.
+
 |`artemis.mapping.instance-name.template`
 |`str`
 |`ARTEMIS_INSTANCE_NAME_TEMPLATE`
