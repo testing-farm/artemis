@@ -107,7 +107,7 @@ artemis-internals
 
 ==== Guest resource group
 
-By default, the driver creates a dedicated resource group for each guest VM, making cleanup fast and simple (the entire group is deleted on release). The resource group name is generated from a configurable template:
+By default, the driver creates a dedicated resource group for each guest VM, making cleanup fast and simple (the entire group is deleted on release). The resource group name is generated from a configurable template, see <<drivers.adoc#_resource_naming,"Resource naming">>:
 
 .Environment variable
 ....
@@ -116,7 +116,7 @@ ARTEMIS_AZURE_RESOURCE_GROUP_NAME_TEMPLATE
 
 .Default value
 ....
-artemis-{{ GUESTNAME }}
+empty, the common resource name template applies: artemis-{{ GUESTNAME }}
 ....
 
 Alternatively, a fixed pre-created resource group can be used for all guests:

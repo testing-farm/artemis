@@ -111,6 +111,10 @@ security-group-rules:
 
 When using `create-security-group-per-guest: true`, if you also specify `security-group`, both the pool-level security group(s) and the guest-specific security group will be attached to the instance.
 
+Guest-specific security groups are named after the `aws.mapping.guest-security-group-name.template` knob (`ARTEMIS_AWS_GUEST_SECURITY_GROUP_NAME_TEMPLATE`), see <<drivers.adoc#_resource_naming,"Resource naming">>. By default, the common resource name template applies, `artemis-{{ GUESTNAME }}`.
+
+NOTE: Before, the default name was `artemis-guest-{{ GUESTNAME }}`. Security groups are found by the guest name tag, therefore existing ones are still reused or released. To keep the old name, set `ARTEMIS_AWS_GUEST_SECURITY_GROUP_NAME_TEMPLATE='artemis-guest-{{ GUESTNAME }}'`.
+
 === Expose Public IP address
 
 By default, Artemis will expose the private IP address of the instance. In case you want to rather expose the public IP, use the `use-public-ip` setting in the pool configuration.

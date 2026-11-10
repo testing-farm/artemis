@@ -303,12 +303,13 @@ IP_ADDRESS_PATTERN = re.compile(r'((?:[0-9]{1,3}\.){3}[0-9]{1,3})')
 
 KNOB_INSTANCE_NAME_TEMPLATE: Knob[str] = Knob(
     'artemis.mapping.instance-name.template',
-    'A pattern for artemis guest name',
+    'A pattern for artemis guest name. When empty, ``artemis.mapping.resource-name.template`` is used.',
     has_db=False,
     per_entity=True,
     envvar='ARTEMIS_INSTANCE_NAME_TEMPLATE',
     cast_from_str=str,
-    default='artemis-{{ GUESTNAME }}',
+    default='',
+    default_label='empty',
 )
 
 KNOB_INSTANCE_FLAVOR_TAG: Knob[str] = Knob(

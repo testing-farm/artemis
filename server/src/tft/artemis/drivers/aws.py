@@ -360,12 +360,13 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
 
 KNOB_GUEST_SECURITY_GROUP_NAME_TEMPLATE: Knob[str] = Knob(
     'aws.mapping.guest-security-group-name.template',
-    'A pattern for guest security group name.',
+    'A pattern for guest security group name. When empty, ``artemis.mapping.resource-name.template`` is used.',
     has_db=False,
     per_entity=True,
     envvar='ARTEMIS_AWS_GUEST_SECURITY_GROUP_NAME_TEMPLATE',
     cast_from_str=str,
-    default='artemis-guest-{{ GUESTNAME }}',
+    default='',
+    default_label='empty',
 )
 
 KNOB_REMOVE_SECURITY_GROUP_DELAY: Knob[int] = Knob(

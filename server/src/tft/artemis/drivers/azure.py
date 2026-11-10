@@ -86,12 +86,13 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
 
 KNOB_RESOURCE_GROUP_NAME_TEMPLATE: Knob[str] = Knob(
     'azure.mapping.resource-group-name.template',
-    'A pattern for guest resource group name',
+    'A pattern for guest resource group name. When empty, ``artemis.mapping.resource-name.template`` is used.',
     has_db=False,
     per_entity=True,
     envvar='ARTEMIS_AZURE_RESOURCE_GROUP_NAME_TEMPLATE',
     cast_from_str=str,
-    default='artemis-{{ GUESTNAME }}',
+    default='',
+    default_label='empty',
 )
 
 

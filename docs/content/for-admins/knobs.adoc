@@ -575,7 +575,7 @@ pool with existing guests makes their resources impossible to find.
 |`artemis.mapping.instance-name.template`
 |`str`
 |`ARTEMIS_INSTANCE_NAME_TEMPLATE`
-|`artemis-{{ GUESTNAME }}`
+|`empty`
 |no
 
 
@@ -586,7 +586,7 @@ pool with existing guests makes their resources impossible to find.
 |
 
 
-5+|A pattern for artemis guest name
+5+|A pattern for artemis guest name. When empty, ``artemis.mapping.resource-name.template`` is used.
 
 |`artemis.mapping.resource-name.template`
 |`str`
@@ -650,7 +650,7 @@ name template knob is left empty.
 |`aws.mapping.guest-security-group-name.template`
 |`str`
 |`ARTEMIS_AWS_GUEST_SECURITY_GROUP_NAME_TEMPLATE`
-|`artemis-guest-{{ GUESTNAME }}`
+|`empty`
 |no
 
 
@@ -661,7 +661,7 @@ name template knob is left empty.
 |
 
 
-5+|A pattern for guest security group name.
+5+|A pattern for guest security group name. When empty, ``artemis.mapping.resource-name.template`` is used.
 
 |`aws.pending-timeout`
 |`int`
@@ -730,7 +730,7 @@ until cancelled and reprovisioned.
 |`azure.mapping.resource-group-name.template`
 |`str`
 |`ARTEMIS_AZURE_RESOURCE_GROUP_NAME_TEMPLATE`
-|`artemis-{{ GUESTNAME }}`
+|`empty`
 |no
 
 
@@ -741,7 +741,7 @@ until cancelled and reprovisioned.
 |
 
 
-5+|A pattern for guest resource group name
+5+|A pattern for guest resource group name. When empty, ``artemis.mapping.resource-name.template`` is used.
 
 |`beaker.command-timeout.termination`
 |`int`

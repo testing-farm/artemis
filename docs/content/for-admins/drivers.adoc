@@ -458,6 +458,49 @@ $ http POST https://$hostname/_cache/pools/$poolname/image-info
 $ http POST https://$hostname/_cache/pools/$poolname/flavor-info
 ....
 
+=== Resource naming
+
+Supported by: `aws` `azure` [line-through]#`beaker`# `gcp` `ibmcloud-power` `ibmcloud-vpc` [line-through]#`localhost`# `openstack`
+
+Resources Artemis creates for a guest request - instances, AWS security groups, Azure resource groups - are named after a template. One template, `artemis.mapping.resource-name.template` (`ARTEMIS_RESOURCE_NAME_TEMPLATE`), applies to all of them, `artemis-{{ GUESTNAME }}` by default. A resource type may use its own template instead:
+
+[%header,cols="1,1"]
+|===
+|Resource
+|Knob
+
+|instance
+|`artemis.mapping.instance-name.template`
+
+|AWS security group
+|`aws.mapping.guest-security-group-name.template`
+
+|Azure resource group
+|`azure.mapping.resource-group-name.template`
+|===
+
+An empty template falls back to `artemis.mapping.resource-name.template`. All these knobs may be set per pool.
+
+Templates may use the following variables:
+
+* `GUESTNAME`: name of the guest request.
+* `ENVIRONMENT`: environment requested by the guest request.
+* `DEPLOYMENT` and `DEPLOYMENT_ENVIRONMENT`: name and environment of the Artemis deployment.
+* `POOLNAME`: name of the pool.
+* `RESOURCE_TYPE`: type of the resource, e.g. `instance` or `security_group`.
+* `TAGS`: guest tags, e.g. `{{ TAGS.owner }}`. The guest label tag is not available to instance names, the label is derived from them.
+
+.Example
+....
+ARTEMIS_RESOURCE_NAME_TEMPLATE='artemis-{{ DEPLOYMENT }}-{{ GUESTNAME }}'
+....
+
+Rendered names are adjusted to the rules of the backend: for example, GCP and IBM Cloud VPC names are converted to lowercase, and characters a backend does not allow are replaced with `-`. A name longer than the backend allows is shortened, and its end is replaced with a hash of the full name, keeping names of different guests distinct.
+
+When Artemis looks for resources it created for a guest request, it accepts resources named exactly after the template, or followed by `-<number>`. Such a postfix is used when a leftover resource still holds the name. If the name with the postfix would be too long, the name is shortened to make room for it. AWS instances and security groups are found by the guest name tag instead, therefore a change of the template does not hide existing resources.
+
+Guest name and guest label tags are named `ArtemisGuestName` and `ArtemisGuestLabel` by default, and can be renamed with the `artemis.instance.guest-name.tag` and `artemis.instance.guest-label.tag` knobs. Changing them on a pool with existing guests makes their resources impossible to find.
+
 === Guest logs
 
 Supported by: `aws` `azure` `beaker` [line-through]#`gcp`# `ibmcloud-power` [line-through]#`ibmcloud-vpc`# [line-through]#`localhost`# `openstack`
