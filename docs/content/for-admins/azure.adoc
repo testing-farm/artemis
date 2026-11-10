@@ -116,7 +116,7 @@ ARTEMIS_AZURE_RESOURCE_GROUP_NAME_TEMPLATE
 
 .Default value
 ....
-{{ TAGS.ArtemisGuestLabel }}-{{ GUESTNAME }}
+artemis-{{ GUESTNAME }}
 ....
 
 Alternatively, a fixed pre-created resource group can be used for all guests:

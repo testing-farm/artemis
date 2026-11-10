@@ -441,23 +441,9 @@ class AzureDriver(
         if self.pool_config.get('guest-resource-group'):
             return _Ok(ResourceGroupCreationRequest(name=self.pool_config['guest-resource-group']))
 
-        r_resource_group_template = KNOB_RESOURCE_GROUP_NAME_TEMPLATE.get_value(entityname=self.poolname)
-        if r_resource_group_template.is_error:
-            return _Error(
-                Failure.from_failure(
-                    'Could not get resource_group_name template', r_resource_group_template.unwrap_error()
-                )
-            )
-
-        r_rendered = render_template(
-            r_resource_group_template.unwrap(),
-            GUESTNAME=guest_request.guestname,
-            ENVIRONMENT=guest_request.environment,
+        return self._render_resource_group_name(session, guest_request).map(
+            lambda name: ResourceGroupCreationRequest(name=name)
         )
-        if not is_successful(r_rendered):
-            return _Error(Failure.from_failure('Could not render resource_group_name template', r_rendered.failure()))
-
-        return _Ok(ResourceGroupCreationRequest(name=r_rendered.unwrap()))
 
     def _reuse_resource_group(
         self,
@@ -498,7 +484,7 @@ class AzureDriver(
                     '--location',
                     self.pool_config['default-location'],
                     '--name',
-                    resource_group_request.name,
+                    resource_group_name,
                     *tags_options,
                 ],
                 commandname='az.resource-group-create',
