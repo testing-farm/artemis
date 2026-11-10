@@ -1835,10 +1835,13 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
         tags_include_label=False,
     )
 
+    # Security groups are found by their guest name tag, names do not matter. Security groups named by an older
+    # name template are therefore still recognized.
     SECURITY_GROUP_NAMING = NamingStrategy(
         resource_type='security_group',
         template_knob=KNOB_GUEST_SECURITY_GROUP_NAME_TEMPLATE,
         constraints=AWS_SECURITY_GROUP,
+        lookup=LookupMethod.BACKEND,
     )
 
     _image_map_hook_name = 'AWS_ENVIRONMENT_TO_IMAGE'
@@ -2579,17 +2582,16 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
     def _query_security_groups_by_guest_request(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> _Result[list[SecurityGroup], Failure]:
-        r_expected_name = self.render_resource_name(session, guest_request, self.SECURITY_GROUP_NAMING)
-        if not is_successful(r_expected_name):
-            return _Error(Failure.from_failure('failed to get expected security group name', r_expected_name.failure()))
-        expected_name = r_expected_name.unwrap()
+        r_name_tag = self._guest_name_tag
+        if r_name_tag.is_error:
+            return _Error(r_name_tag.unwrap_error())
 
         r_security_groups = self._aws_command(
             [
                 'ec2',
                 'describe-security-groups',
                 '--filters',
-                f'Name=group-name,Values={expected_name}*',
+                f'Name=tag:{r_name_tag.unwrap()},Values={guest_request.guestname}',
                 f'Name=vpc-id,Values={self.pool_config["vpc-id"]}',
             ],
             key='SecurityGroups',

@@ -76,3 +76,29 @@ def test_query_instances(
 
     for command in commands:
         assert 'Name=tag:CustomGuestName,Values=dummy-guest' in command
+
+
+@pytest.mark.usefixtures('custom_tags')
+def test_query_security_groups(
+    aws_pool: AWSDriver, logger: gluetool.log.ContextAdapter, guest_request: mock.MagicMock
+) -> None:
+    aws_pool.pool_config['vpc-id'] = 'dummy-vpc'
+
+    # Security groups are found by tag, whatever their names: the legacy one must be found as well.
+    raw_security_groups = [
+        {'GroupName': 'artemis-guest-dummy-guest', 'GroupId': 'sg-1'},
+        {'GroupName': 'artemis-dummy-guest', 'GroupId': 'sg-2'},
+    ]
+
+    with mock.patch.object(aws_pool, '_aws_command', return_value=Ok(raw_security_groups)) as mock_aws_command:
+        security_groups = aws_pool._query_security_groups_by_guest_request(
+            logger, mock.MagicMock(), guest_request
+        ).unwrap()
+
+    assert [security_group.id for security_group in security_groups] == ['sg-1', 'sg-2']
+    assert AWSDriver.SECURITY_GROUP_NAMING.select('artemis-dummy-guest', security_groups) == security_groups
+
+    command = mock_aws_command.call_args.args[0]
+
+    assert 'Name=tag:CustomGuestName,Values=dummy-guest' in command
+    assert 'Name=vpc-id,Values=dummy-vpc' in command
