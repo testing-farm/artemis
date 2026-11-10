@@ -13,7 +13,6 @@ from typing import Any, Generic, Optional, TypedDict, TypeVar, cast, override
 import gluetool.log
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
-from returns.pipeline import is_successful
 from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 
 from tft.artemis.drivers import (
@@ -315,7 +314,7 @@ class IBMCloudDriver(
             pool=self,
             resource_type='instance',
             list_resources=self._query_instances_by_guest_request,
-            resource_name=self._render_instance_name,
+            naming=self.INSTANCE_NAMING,
             create_resource_request=self._create_instance_request,
             create_resource=self._create_instance,
             reuse_resource=self._reuse_instance,
@@ -521,7 +520,10 @@ class IBMCloudDriver(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> _Result[list[IBMCloudInstanceT], Failure]:
         """
-        Fetch list of instances for a given guest request from the backend infrastructure.
+        Fetch list of candidate instances for a given guest request from the backend infrastructure.
+
+        Instances belonging to the guest request are picked by the resource manager, according to the instance
+        naming strategy.
 
         :returns: list of instances, sorted by their time of creation, from the newest to the oldest.
         """
@@ -530,13 +532,7 @@ class IBMCloudDriver(
         if r_instances_list.is_error:
             return _Error(Failure.from_failure('failed to list instances', r_instances_list.unwrap_error()))
 
-        # Let's get expected name to match against
-        r_expected_name = self._render_instance_name(session, guest_request)
-        if not is_successful(r_expected_name):
-            return _Error(Failure.from_failure('failed to get expected instance name', r_expected_name.failure()))
-        expected_name = r_expected_name.unwrap()
-
-        res = [instance for instance in r_instances_list.unwrap() if instance.name.startswith(expected_name)]
+        res = r_instances_list.unwrap()
 
         # Now order result ourselves by creation date in case ibmcloud API changes, oldest come first
         try:

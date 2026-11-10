@@ -16,7 +16,6 @@ import google.api_core.exceptions
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 from google.cloud import compute_v1
-from returns.pipeline import is_successful
 from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
 
@@ -26,6 +25,7 @@ from ..environment import Flavor, FlavorBoot, FlavorCpu, FlavorNetworks, FlavorV
 from ..knobs import Knob
 from ..metrics import PoolResourcesMetrics, PoolResourcesUsage
 from . import (
+    KNOB_INSTANCE_NAME_TEMPLATE,
     CommonErrorCauses,
     ConfigImageFilter,
     ConsoleUrlData,
@@ -49,6 +49,7 @@ from . import (
     create_error_cause_extractor,
     create_sanitize_tags,
 )
+from .naming import GCP_INSTANCE, NamingStrategy
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
     'gcp.mapping.environment-to-image.pattern-map.filepath',
@@ -209,6 +210,13 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, 
 
     datetime_format = GCP_DATETIME_FORMAT
 
+    INSTANCE_NAMING = NamingStrategy(
+        resource_type='instance',
+        template_knob=KNOB_INSTANCE_NAME_TEMPLATE,
+        constraints=GCP_INSTANCE,
+        tags_include_label=False,
+    )
+
     _image_map_hook_name = 'GCP_ENVIRONMENT_TO_IMAGE'
 
     _flavor_filter_hook_name = 'GCP_FLAVOR_FILTERS'
@@ -223,7 +231,7 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, 
             pool=self,
             resource_type='instance',
             list_resources=self._query_instances_by_guest_request,
-            resource_name=self._render_instance_name,
+            naming=self.INSTANCE_NAMING,
             create_resource_request=self._create_instance_request,
             create_resource=self._create_instance,
             reuse_resource=self._reuse_instance,
@@ -354,12 +362,7 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, 
         if r_instances_list.is_error:
             return _Error(Failure.from_failure('failed to list instances', r_instances_list.unwrap_error()))
 
-        r_expected_name = self._render_instance_name(session, guest_request)
-        if not is_successful(r_expected_name):
-            return _Error(Failure.from_failure('failed to get expected instance name', r_expected_name.failure()))
-        expected_name = r_expected_name.unwrap()
-
-        res = [instance for instance in r_instances_list.unwrap() if instance.name.startswith(expected_name)]
+        res = r_instances_list.unwrap()
 
         try:
             res = sorted(res, key=lambda x: x.created_at)

@@ -88,6 +88,7 @@ from ..environment import (
 from ..knobs import KNOB_POOL_ENABLED, Knob
 from ..metrics import PoolCostsMetrics, PoolMetrics, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from ..script import hook_engine
+from .naming import NamingStrategy
 
 if TYPE_CHECKING:
     from ._image_flavor_filtering import FilterReturnType, FilterRuling
@@ -1623,6 +1624,11 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
 
     datetime_format: str = RESOURCE_CTIME_FMT
 
+    #: Naming of instances. Drivers override it to apply their backend's constraints on instance names.
+    INSTANCE_NAMING: ClassVar[NamingStrategy] = NamingStrategy(
+        resource_type='instance', template_knob=KNOB_INSTANCE_NAME_TEMPLATE, tags_include_label=False
+    )
+
     def __init__(self, logger: gluetool.log.ContextAdapter, poolname: str, pool_config: dict[str, Any]) -> None:
         super().__init__(logger)
 
@@ -1778,20 +1784,41 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
 
         return Ok(r_value.unwrap())
 
-    def _render_instance_name(
-        self, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
+    def render_resource_name(
+        self, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest, naming: NamingStrategy
     ) -> _Result[str, Failure]:
-        r_instance_name_template = KNOB_INSTANCE_NAME_TEMPLATE.get_value(entityname=self.poolname)
-        if r_instance_name_template.is_error:
-            return _Error(
-                Failure.from_failure('Could not get instance_name template', r_instance_name_template.unwrap_error())
+        """
+        Render the expected name of a resource of the given guest request.
+
+        :param naming: naming strategy of the resource type.
+        :returns: name of the resource.
+        """
+
+        r_template = naming.get_template(self.poolname)
+
+        if not is_successful(r_template):
+            return r_template
+
+        template = r_template.unwrap()
+
+        # The name template may reference tags (TAGS.<key>). Building the tags costs a couple of DB reads and this
+        # renders on every acquire (both to name a new resource and to match existing ones), so only pay that cost
+        # when the template actually uses TAGS - the default template does not.
+        tags: Optional[Tags] = None
+
+        if 'TAGS' in template:
+            r_tags = (
+                self.get_guest_tags(self.logger, session, guest_request)
+                if naming.tags_include_label
+                else self.get_base_guest_tags(self.logger, session, guest_request)
             )
 
-        return render_template(
-            r_instance_name_template.unwrap(),
-            GUESTNAME=guest_request.guestname,
-            ENVIRONMENT=guest_request.environment,
-        ).alt(lambda failure: Failure.from_failure('Could not render instance name template', failure))
+            if r_tags.is_error:
+                return _Error(Failure.from_failure('Could not get guest tags', r_tags.unwrap_error()))
+
+            tags = r_tags.unwrap()
+
+        return naming.render(template, self.poolname, guest_request, tags=tags)
 
     def _guest_request_to_image_or_none(
         self,
@@ -2258,14 +2285,43 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
         """
         Get all tags applicable for a given guest request.
 
+        Collects all tags provided by :py:meth:`get_base_guest_tags`, and adds the following guest-level tag:
+
+        * ``ArtemisGuestLabel``: nice, human-readable label assigned to the guest, the expected name of its instance.
+          This label **does** change over time.
+        """
+
+        r_tags = self.get_base_guest_tags(logger, session, guest_request, extra_tags=extra_tags)
+
+        if r_tags.is_error:
+            return Error(r_tags.unwrap_error())
+
+        tags = r_tags.unwrap()
+
+        r_guest_label = self.render_resource_name(session, guest_request, self.INSTANCE_NAMING)
+        if not is_successful(r_guest_label):
+            return Error(Failure.from_failure('failed to get expected instance name', r_guest_label.failure()))
+
+        tags['ArtemisGuestLabel'] = r_guest_label.unwrap()
+
+        return Ok(tags)
+
+    def get_base_guest_tags(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        guest_request: GuestRequest,
+        extra_tags: Optional[dict[str, str]] = None,
+    ) -> Result[Tags, Failure]:
+        """
+        Get tags applicable for a given guest request that do not depend on names of its resources.
+
         Collects all system, pool, guest-level tags, and guest user data.
 
         Currently provided guest-level tags:
 
         * ``ArtemisGuestName``: guestname as known to Artemis, identifying the guest request. This tag does not change
           over time.
-        * ``ArtemisGuestLabel``: nice, human-readable label assigned to the guest, usable e.g. for naming instances.
-          This label **does** change over time.
         """
         extra_tags = extra_tags or {}
 
@@ -2291,12 +2347,6 @@ class PoolDriver(gluetool.log.LoggerMixin, Generic[ErrorCausesT, InstanceT]):
             )
 
         tags['ArtemisGuestName'] = guest_request.guestname
-
-        r_guest_name = self._render_instance_name(session, guest_request)
-        if not is_successful(r_guest_name):
-            return Error(Failure.from_failure('failed to get expected instance name', r_guest_name.failure()))
-
-        tags['ArtemisGuestLabel'] = r_guest_name.unwrap()
 
         r_rendered_tags = render_tags(
             logger, tags, {'GUESTNAME': guest_request.guestname, 'ENVIRONMENT': guest_request.environment}
@@ -4128,7 +4178,8 @@ class ResourceCreationOutcome(Generic[ResourceT]):
     resource: ResourceT
 
 
-#: When invoked, provide a list of resources for the given guest request.
+#: When invoked, provide a list of resources for the given guest request. Depending on the naming strategy of the
+#: resource type, the list may contain candidates only, to be narrowed down by their names.
 RMListResourcesCallback = Callable[
     [
         gluetool.log.ContextAdapter,
@@ -4177,16 +4228,6 @@ RMReuseResourceCallback = Callable[
 ]
 
 
-#: When invoked, provide name of the resource for the given guest request.
-RMResourceNameCallback = Callable[
-    [
-        sqlalchemy.orm.session.Session,
-        GuestRequest,
-    ],
-    _Result[str, Failure],
-]
-
-
 #: When invoked, decide whether an existing resource may be reused to satisfy the given creation request.
 #: A resource that is otherwise reusable (pending/ready) but incompatible with the request - e.g. a spot
 #: instance for a request that no longer wants spot - must not be reused, and is cleaned up instead.
@@ -4209,7 +4250,7 @@ class ResourceManager(Generic[ResourceT, ResourceCreationRequestT, ResourceCreat
         pool: PoolDriver[Any, Any],
         resource_type: str,
         list_resources: RMListResourcesCallback[ResourceT],
-        resource_name: RMResourceNameCallback,
+        naming: NamingStrategy,
         create_resource_request: RMCreateResourceRequestCallback[ResourceCreationRequestT],
         create_resource: RMCreateResourceCallback[ResourceCreationRequestT, ResourceCreationOutcomeT],
         reuse_resource: RMReuseResourceCallback[ResourceCreationRequestT, ResourceT, ResourceCreationOutcomeT],
@@ -4223,7 +4264,7 @@ class ResourceManager(Generic[ResourceT, ResourceCreationRequestT, ResourceCreat
         self.create_resource = create_resource
         self.reuse_resource = reuse_resource
         self.list_resources = list_resources
-        self.resource_name = resource_name
+        self.naming = naming
         self.create_resource_request = create_resource_request
         self.can_reuse_resource = can_reuse_resource
 
@@ -4244,7 +4285,7 @@ class ResourceManager(Generic[ResourceT, ResourceCreationRequestT, ResourceCreat
         resource_request = r_resource_request.unwrap()
         failure_details['resource_request'] = resource_request.serialize()
 
-        r_resource_name = self.resource_name(session, guest_request)
+        r_resource_name = self.pool.render_resource_name(session, guest_request, self.naming)
         if not is_successful(r_resource_name):
             return _Error(
                 Failure.from_failure('Could not get resource name', r_resource_name.failure(), **failure_details)
@@ -4265,7 +4306,7 @@ class ResourceManager(Generic[ResourceT, ResourceCreationRequestT, ResourceCreat
                     **failure_details,
                 )
             )
-        existing_resources = r_existing_resources.unwrap()
+        existing_resources = self.naming.select(resource_name, r_existing_resources.unwrap())
 
         if not existing_resources:
             return self.create_resource(logger, session, guest_request, resource_name, resource_request).alt(
@@ -4351,7 +4392,7 @@ class ResourceManager(Generic[ResourceT, ResourceCreationRequestT, ResourceCreat
         # to pick up a new one
         expected_resource_name = resource_name
         for postfix in range(1, r_max_resources_limit.unwrap()):
-            resource_name = f'{expected_resource_name}-{postfix}'
+            resource_name = self.naming.with_postfix(expected_resource_name, postfix)
             if resource_name not in claimed_names:
                 return self.create_resource(logger, session, guest_request, resource_name, resource_request).alt(
                     lambda failure: failure.update(**failure_details)

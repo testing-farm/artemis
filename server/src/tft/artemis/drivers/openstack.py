@@ -41,6 +41,7 @@ from ..environment import (
 from ..knobs import Knob
 from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from . import (
+    KNOB_INSTANCE_NAME_TEMPLATE,
     ConsoleUrlData,
     FlavorBasedPoolDriver,
     GuestLogUpdateProgress,
@@ -65,6 +66,7 @@ from . import (
     guest_log_updater,
     run_cli_tool,
 )
+from .naming import OPENSTACK_INSTANCE, NamingStrategy
 
 KNOB_BUILD_TIMEOUT: Knob[int] = Knob(
     'openstack.build-timeout',
@@ -218,6 +220,13 @@ class OpenStackDriver(
 
     pool_data_class = OpenStackPoolData
 
+    INSTANCE_NAMING = NamingStrategy(
+        resource_type='instance',
+        template_knob=KNOB_INSTANCE_NAME_TEMPLATE,
+        constraints=OPENSTACK_INSTANCE,
+        tags_include_label=False,
+    )
+
     error_cause_extractor = staticmethod(error_cause_extractor)
 
     _image_map_hook_name = 'OPENSTACK_ENVIRONMENT_TO_IMAGE'
@@ -234,7 +243,7 @@ class OpenStackDriver(
             pool=self,
             resource_type='instance',
             list_resources=self._query_backend_instances_by_guest_request,
-            resource_name=self._render_instance_name,
+            naming=self.INSTANCE_NAMING,
             create_resource_request=self._create_instance_request,
             create_resource=self._create_instance,
             reuse_resource=self._reuse_instance,
@@ -308,11 +317,7 @@ class OpenStackDriver(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> _Result[list[OpenStackInstance], Failure]:
         return (
-            _Result.do(
-                [instance for instance in instances if instance.name.startswith(expected_name)]
-                for instances in self._query_backend_instances(logger)
-                for expected_name in self._render_instance_name(session, guest_request)
-            )
+            self._query_backend_instances(logger)
             .map(lambda instances: sorted(instances, key=lambda x: x.created_at))
             .alt(
                 lambda failure: Failure.from_failure(

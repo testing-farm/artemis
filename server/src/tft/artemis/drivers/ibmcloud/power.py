@@ -41,6 +41,7 @@ from ...environment import Flavor, FlavorBoot
 from ...knobs import Knob
 from ...metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from .. import (
+    KNOB_INSTANCE_NAME_TEMPLATE,
     GuestLogUpdateProgress,
     PoolCapabilities,
     PoolImageSSHInfo,
@@ -56,6 +57,7 @@ from .._image_flavor_filtering import (
     FilterRuling,
     image_flavor_filter,
 )
+from ..naming import IBM_POWER_INSTANCE, NamingStrategy
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
     'ibmcloud-power.mapping.environment-to-image.pattern-map.filepath',
@@ -197,6 +199,13 @@ def filter_flavors_required_fields_defined(
 
 class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstance, IBMCloudPowerInstance, None]):
     drivername = 'ibmcloud-power'
+
+    INSTANCE_NAMING = NamingStrategy(
+        resource_type='instance',
+        template_knob=KNOB_INSTANCE_NAME_TEMPLATE,
+        constraints=IBM_POWER_INSTANCE,
+        tags_include_label=False,
+    )
 
     image_info_class = IBMCloudPowerPoolImageInfo
     pool_data_class = IBMCloudPoolData

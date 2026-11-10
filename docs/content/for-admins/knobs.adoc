@@ -554,6 +554,23 @@ for the requested action.
 
 5+|A pattern for artemis guest name
 
+|`artemis.mapping.resource-name.template`
+|`str`
+|`ARTEMIS_RESOURCE_NAME_TEMPLATE`
+|`artemis-{{ GUESTNAME }}`
+|no
+
+
+|`artemis.mapping.resource-name.template:$entityname`
+|
+|`ARTEMIS_RESOURCE_NAME_TEMPLATE_$entityname`
+|
+|
+
+
+5+|A pattern for names of backend resources created for a guest request. Used for every resource type whose own
+name template knob is left empty.
+
 |`aws.logs.console.interactive.url`
 |`str`
 |`ARTEMIS_AWS_LOGS_CONSOLE_INTERACTIVE_URL`

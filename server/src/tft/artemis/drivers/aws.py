@@ -43,7 +43,6 @@ from .. import (
     SerializableContainer,
     log_dict_yaml,
     logging_filter,
-    render_template,
     rewrap_to_gluetool,
 )
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, Transaction
@@ -63,6 +62,7 @@ from ..metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, P
 from ..routing_policies import KNOB_USE_SPOT_LABEL
 from ..security_group_rules import SecurityGroupRule, SecurityGroupRules
 from . import (
+    KNOB_INSTANCE_NAME_TEMPLATE,
     ConsoleUrlData,
     FlavorBasedPoolDriver,
     GuestLogUpdateProgress,
@@ -94,6 +94,7 @@ from ._image_flavor_filtering import (
     FilterRuling,
     image_flavor_filter,
 )
+from .naming import AWS_INSTANCE, AWS_SECURITY_GROUP, LookupMethod, NamingStrategy
 
 #
 # Custom typing types
@@ -1825,6 +1826,21 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
 
     datetime_format = AWS_DATETIME_FORMAT
 
+    # Instances are found by their guest name tag, their names are kept in the guest label tag.
+    INSTANCE_NAMING = NamingStrategy(
+        resource_type='instance',
+        template_knob=KNOB_INSTANCE_NAME_TEMPLATE,
+        constraints=AWS_INSTANCE,
+        lookup=LookupMethod.BACKEND,
+        tags_include_label=False,
+    )
+
+    SECURITY_GROUP_NAMING = NamingStrategy(
+        resource_type='security_group',
+        template_knob=KNOB_GUEST_SECURITY_GROUP_NAME_TEMPLATE,
+        constraints=AWS_SECURITY_GROUP,
+    )
+
     _image_map_hook_name = 'AWS_ENVIRONMENT_TO_IMAGE'
 
     _flavor_filter_hook_name = 'AWS_FLAVOR_FILTERS'
@@ -1846,7 +1862,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
             pool=self,
             resource_type='instance',
             list_resources=self._query_instances_by_guest_request,
-            resource_name=self._render_instance_name,
+            naming=self.INSTANCE_NAMING,
             create_resource_request=self._create_instance_request,
             create_resource=self._create_instance,
             reuse_resource=self._reuse_instance,
@@ -1860,7 +1876,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
             pool=self,
             resource_type='security_group',
             list_resources=self._query_security_groups_by_guest_request,
-            resource_name=self._render_security_group_name,
+            naming=self.SECURITY_GROUP_NAMING,
             create_resource_request=self._create_security_group_request,
             create_resource=self._create_security_group,
             reuse_resource=self._reuse_security_group,
@@ -2560,40 +2576,10 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
 
         return Ok(None)
 
-    def _render_security_group_name(
-        self, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
-    ) -> _Result[str, Failure]:
-        r_security_group_template = KNOB_GUEST_SECURITY_GROUP_NAME_TEMPLATE.get_value(entityname=self.poolname)
-        if r_security_group_template.is_error:
-            return _Error(
-                Failure.from_failure(
-                    'Could not get guest security group name template', r_security_group_template.unwrap_error()
-                )
-            )
-
-        template = r_security_group_template.unwrap()
-
-        # The name template may reference tags (TAGS.<key>). Building the tags costs a couple of DB reads and this
-        # renders on every acquire (both to name a new group and to match existing ones), so only pay that cost when
-        # the template actually uses TAGS - the default template does not.
-        tags: Tags = {}
-        if 'TAGS' in template:
-            r_tags = self.get_guest_tags(self.logger, session, guest_request)
-            if r_tags.is_error:
-                return _Error(Failure.from_failure('Could not get guest tags', r_tags.unwrap_error()))
-            tags = r_tags.unwrap()
-
-        return render_template(
-            template,
-            GUESTNAME=guest_request.guestname,
-            ENVIRONMENT=guest_request.environment,
-            TAGS=tags,
-        ).alt(lambda failure: Failure.from_failure('Could not render guest security group name template', failure))
-
     def _query_security_groups_by_guest_request(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> _Result[list[SecurityGroup], Failure]:
-        r_expected_name = self._render_security_group_name(session, guest_request)
+        r_expected_name = self.render_resource_name(session, guest_request, self.SECURITY_GROUP_NAMING)
         if not is_successful(r_expected_name):
             return _Error(Failure.from_failure('failed to get expected security group name', r_expected_name.failure()))
         expected_name = r_expected_name.unwrap()
@@ -2618,7 +2604,6 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
                     name=sg['GroupName'], id=sg['GroupId'], is_shared=sg['GroupId'] in self._pool_security_groups
                 )
                 for sg in cast(list[dict[str, str]], r_security_groups.unwrap())
-                if sg['GroupName'].startswith(expected_name)
             ]
         )
 

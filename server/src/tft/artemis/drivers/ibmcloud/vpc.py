@@ -51,12 +51,14 @@ from ...environment import (
 from ...knobs import Knob
 from ...metrics import PoolMetrics, PoolNetworkResources, PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from .. import (
+    KNOB_INSTANCE_NAME_TEMPLATE,
     PoolImageSSHInfo,
     ProvisioningProgress,
     ProvisioningState,
     ReleasePoolResourcesState,
     SerializedPoolResourcesIDs,
 )
+from ..naming import IBM_VPC_INSTANCE, NamingStrategy
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
     'ibmcloud.mapping.environment-to-image.pattern-map.filepath',
@@ -175,6 +177,13 @@ class IBMCloudVPCPoolImageInfo(PoolImageInfo):
 
 class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, IBMCloudVPCInstance, BackendFlavor]):
     drivername = 'ibmcloud-vpc'
+
+    INSTANCE_NAMING = NamingStrategy(
+        resource_type='instance',
+        template_knob=KNOB_INSTANCE_NAME_TEMPLATE,
+        constraints=IBM_VPC_INSTANCE,
+        tags_include_label=False,
+    )
 
     image_info_class = IBMCloudVPCPoolImageInfo
     flavor_info_class = IBMCloudFlavor

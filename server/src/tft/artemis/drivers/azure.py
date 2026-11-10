@@ -17,7 +17,7 @@ from returns.pipeline import is_successful
 from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 from tmt.hardware import UNITS
 
-from .. import Failure, JSONType, render_template, rewrap_to_gluetool
+from .. import Failure, JSONType, rewrap_to_gluetool
 from ..db import GuestLog, GuestLogContentType, GuestLogState, GuestRequest, Transaction
 from ..environment import (
     Flavor,
@@ -33,6 +33,7 @@ from ..environment import (
 from ..knobs import Knob
 from ..metrics import PoolResourcesMetrics, PoolResourcesUsage, ResourceType
 from . import (
+    KNOB_INSTANCE_NAME_TEMPLATE,
     CanAcquire,
     CLISessionTemporaryDir,
     CommonErrorCauses,
@@ -61,6 +62,7 @@ from . import (
     guest_log_updater,
     vm_info_to_ip,
 )
+from .naming import AZURE_RESOURCE_GROUP, AZURE_VM, LookupMethod, NamingStrategy
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
     'azure.mapping.environment-to-image.pattern-map.filepath',
@@ -349,6 +351,22 @@ class AzureDriver(
 
     datetime_format = AZURE_DATETIME_FORMAT
 
+    INSTANCE_NAMING = NamingStrategy(
+        resource_type='instance',
+        template_knob=KNOB_INSTANCE_NAME_TEMPLATE,
+        constraints=AZURE_VM,
+        tags_include_label=False,
+    )
+
+    # Resource groups are matched by the driver itself: a shared resource group set by the pool does not follow
+    # the naming scheme.
+    RESOURCE_GROUP_NAMING = NamingStrategy(
+        resource_type='resource_group',
+        template_knob=KNOB_RESOURCE_GROUP_NAME_TEMPLATE,
+        constraints=AZURE_RESOURCE_GROUP,
+        lookup=LookupMethod.BACKEND,
+    )
+
     _image_map_hook_name = 'AZURE_ENVIRONMENT_TO_IMAGE'
 
     _flavor_filter_hook_name = 'AZURE_FLAVOR_FILTERS'
@@ -367,7 +385,7 @@ class AzureDriver(
             pool=self,
             resource_type='instance',
             list_resources=self._query_instances_by_guest_request,
-            resource_name=self._render_instance_name,
+            naming=self.INSTANCE_NAMING,
             create_resource_request=self._create_instance_request,
             create_resource=self._create_instance,
             reuse_resource=self._reuse_instance,
@@ -380,7 +398,7 @@ class AzureDriver(
             pool=self,
             resource_type='resource_group',
             list_resources=self.query_resource_groups_by_guest_request,
-            resource_name=self._render_resource_group_name,
+            naming=self.RESOURCE_GROUP_NAMING,
             create_resource_request=self._create_resource_group_request,
             create_resource=self._create_resource_group,
             reuse_resource=self._reuse_resource_group,
@@ -412,23 +430,6 @@ class AzureDriver(
                 Failure.from_exc('failed to parse timestamp', exc, timestamp=timestamp, strptime_format=ts_format)
             )
 
-    def _render_resource_group_name(
-        self, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
-    ) -> _Result[str, Failure]:
-        r_resource_group_template = KNOB_RESOURCE_GROUP_NAME_TEMPLATE.get_value(entityname=self.poolname)
-        if r_resource_group_template.is_error:
-            return _Error(
-                Failure.from_failure(
-                    'Could not get resource group name template', r_resource_group_template.unwrap_error()
-                )
-            )
-
-        return render_template(
-            r_resource_group_template.unwrap(),
-            GUESTNAME=guest_request.guestname,
-            ENVIRONMENT=guest_request.environment,
-        ).alt(lambda failure: Failure.from_failure('Could not render resource group name template', failure))
-
     def _create_resource_group_request(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -441,7 +442,7 @@ class AzureDriver(
         if self.pool_config.get('guest-resource-group'):
             return _Ok(ResourceGroupCreationRequest(name=self.pool_config['guest-resource-group']))
 
-        return self._render_resource_group_name(session, guest_request).map(
+        return self.render_resource_name(session, guest_request, self.RESOURCE_GROUP_NAMING).map(
             lambda name: ResourceGroupCreationRequest(name=name)
         )
 
@@ -520,14 +521,15 @@ class AzureDriver(
             return _Ok([predefined_rg])
 
         # Let's get expected name to match against
-        r_expected_name = self._render_resource_group_name(session, guest_request)
+        r_expected_name = self.render_resource_name(session, guest_request, self.RESOURCE_GROUP_NAMING)
         if not is_successful(r_expected_name):
             return _Error(Failure.from_failure('failed to get expected resouce group name', r_expected_name.failure()))
+        expected_name = r_expected_name.unwrap()
 
         with AzureSession(logger, self) as az_session:
             r_resource_groups_list = az_session.run(
                 logger,
-                ['group', 'list', '--query', f"[?starts_with(name, '{r_expected_name.unwrap()}')]"],
+                ['group', 'list', '--query', f"[?starts_with(name, '{expected_name}')]"],
                 commandname='az.resource-groups-list',
             )
             if r_resource_groups_list.is_error:
@@ -542,6 +544,7 @@ class AzureDriver(
                         is_shared=self._is_resource_group_shared(rg['name']),
                     )
                     for rg in cast(list[dict[str, str]], r_resource_groups_list.unwrap())
+                    if self.RESOURCE_GROUP_NAMING.matches(expected_name, rg['name'])
                 ]
             )
 
@@ -789,7 +792,10 @@ class AzureDriver(
         self, logger: gluetool.log.ContextAdapter, session: sqlalchemy.orm.session.Session, guest_request: GuestRequest
     ) -> _Result[list[AzureInstance], Failure]:
         """
-        Fetch list of instances for a given guest request from the backend infrastructure.
+        Fetch list of candidate instances for a given guest request from the backend infrastructure.
+
+        Instances belonging to the guest request are picked by the resource manager, according to the instance
+        naming strategy.
 
         :returns: list of instances, sorted by their time of creation, from the newest to the oldest.
         """
@@ -798,13 +804,7 @@ class AzureDriver(
         if r_instances_list.is_error:
             return _Error(Failure.from_failure('failed to list instances', r_instances_list.unwrap_error()))
 
-        # Let's get expected name to match against
-        r_expected_name = self._render_instance_name(session, guest_request)
-        if not is_successful(r_expected_name):
-            return _Error(Failure.from_failure('failed to get expected instance name', r_expected_name.failure()))
-        expected_name = r_expected_name.unwrap()
-
-        res = [instance for instance in r_instances_list.unwrap() if instance.name.startswith(expected_name)]
+        res = r_instances_list.unwrap()
 
         try:
             res = sorted(res, key=lambda x: x.created_at)
