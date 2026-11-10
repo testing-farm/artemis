@@ -197,6 +197,11 @@ properties:
   installation-method-map:
     type: object
 
+  task-fetch-urls:
+    type: object
+    additionalProperties:
+      type: string
+
 additionalProperties: false
 
 required: []
