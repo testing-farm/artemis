@@ -362,3 +362,24 @@ installation-method-map:
 installation-method-map:
   "(?i)^fedora-55.*": "http"
 ....
+
+=== Fetching tasks from URLs
+
+By default, Beaker installs tasks like `/distribution/check-install` or `/distribution/reservesys` as RPMs from its task library. Some distros cannot install these RPMs, e.g. Fedora ELN rejects them with `does not verify: no digest`. The `task-fetch-urls` key maps task names to URLs, and Artemis adds a `<fetch/>` element with the URL to each matching task in the job XML. The harness then fetches the task from the URL instead of installing its RPM. Task names stay the same, so patterns like `failed-avc-result-patterns` keep matching.
+
+.Specification
+[source,yaml]
+....
+task-fetch-urls:
+  <task name>: <url>
+  <task name>: <url>
+  ...
+....
+
+.Example
+[source,yaml]
+....
+task-fetch-urls:
+  /distribution/check-install: "https://github.com/beaker-project/beaker-core-tasks/archive/master.tar.gz#check-install"
+  /distribution/reservesys: "https://github.com/beaker-project/beaker-core-tasks/archive/master.tar.gz#reservesys"
+....

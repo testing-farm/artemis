@@ -1330,6 +1330,33 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
 
         return Ok(patterns_out)
 
+    @property
+    def task_fetch_urls(self) -> dict[str, str]:
+        return cast(dict[str, str], self.pool_config.get('task-fetch-urls', {}))
+
+    def _apply_task_fetch_urls(self, logger: gluetool.log.ContextAdapter, job_xml: bs4.BeautifulSoup) -> None:
+        """
+        Make Beaker fetch tasks from given URLs instead of installing them from the Beaker task library.
+
+        Task RPMs from the task library cannot be installed on some distros, e.g. Fedora ELN refuses them
+        with ``does not verify: no digest``.
+        """
+
+        task_fetch_urls = self.task_fetch_urls
+
+        if not task_fetch_urls:
+            return
+
+        for task in job_xml.find_all('task'):
+            url = task_fetch_urls.get(_normalize_attribute(task, 'name'))
+
+            if url is None or task.find('fetch') is not None:
+                continue
+
+            task.insert(0, _new_tag('fetch', url=url))
+
+        log_xml(logger.debug, 'job with fetched tasks', job_xml)
+
     def _run_bkr(
         self,
         logger: gluetool.log.ContextAdapter,
@@ -1795,6 +1822,8 @@ class BeakerDriver(PoolDriver[BeakerErrorCauses, Instance]):
 
         except Exception as exc:
             return Error(Failure.from_exc('failed to parse job XML', exc, command_output=bkr_output.process_output))
+
+        self._apply_task_fetch_urls(logger, job_xml)
 
         if beaker_filter is None:
             return Ok((job_xml, is_bootc))

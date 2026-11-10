@@ -1263,3 +1263,64 @@ def test_run_bkr(
     assert r_output.is_ok
 
     assert mock_run_cli_tool.call_args.args[1] == expected_command
+
+
+JOB_XML_WITH_TASKS = """
+<job>
+  <recipeSet>
+    <recipe>
+      <task name="/distribution/check-install" role="STANDALONE"/>
+      <task name="/distribution/reservesys" role="STANDALONE">
+        <params>
+          <param name="RESERVETIME" value="86400"/>
+        </params>
+      </task>
+      <task name="/distribution/dummy" role="STANDALONE">
+        <fetch url="https://example.com/already-fetched.tar.gz#dummy"/>
+      </task>
+    </recipe>
+  </recipeSet>
+</job>
+"""
+
+
+@pytest.mark.parametrize(
+    ('pool_config', 'expected'),
+    [
+        ({}, [None, None, 'https://example.com/already-fetched.tar.gz#dummy']),
+        (
+            {
+                'task-fetch-urls': {
+                    '/distribution/check-install': 'https://example.com/tasks.tar.gz#check-install',
+                    '/distribution/reservesys': 'https://example.com/tasks.tar.gz#reservesys',
+                    '/distribution/dummy': 'https://example.com/tasks.tar.gz#dummy',
+                }
+            },
+            [
+                'https://example.com/tasks.tar.gz#check-install',
+                'https://example.com/tasks.tar.gz#reservesys',
+                'https://example.com/already-fetched.tar.gz#dummy',
+            ],
+        ),
+    ],
+    ids=['no-urls', 'with-urls'],
+)
+def test_apply_task_fetch_urls(
+    logger: ContextAdapter, pool_config: dict[str, Any], expected: list[Optional[str]]
+) -> None:
+    pool = tft.artemis.drivers.beaker.BeakerDriver(logger, 'beaker', pool_config)
+
+    job_xml = bs4.BeautifulSoup(JOB_XML_WITH_TASKS, 'xml')
+
+    pool._apply_task_fetch_urls(logger, job_xml)
+
+    tasks = job_xml.find_all('task')
+    fetches = [task.find('fetch') for task in tasks]
+
+    assert [fetch['url'] if fetch else None for fetch in fetches] == expected
+
+    # `fetch` must precede `params`, Beaker's job schema requires that order.
+    reservesys = tasks[1]
+    assert [child.name for child in reservesys.find_all(recursive=False)] == (
+        ['fetch', 'params'] if expected[1] else ['params']
+    )
