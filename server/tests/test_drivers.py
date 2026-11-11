@@ -17,6 +17,8 @@ import yaml
 from gluetool.result import Error, Ok, Result
 
 import tft.artemis
+import tft.artemis.context
+import tft.artemis.db
 import tft.artemis.drivers
 import tft.artemis.drivers.localhost
 from tft.artemis.drivers import vm_info_to_ip
@@ -358,6 +360,29 @@ def test_get_command_deadline_overrides_invalid(monkeypatch: _pytest.monkeypatch
     r_deadline = tft.artemis.drivers.get_command_deadline('dummy-pool', ['dummy', 'command'])
 
     assert r_deadline.is_error
+
+
+@pytest.mark.usefixtures('schema_actual')
+def test_get_command_deadline_from_db(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+) -> None:
+    session.execute(
+        sqlalchemy.insert(tft.artemis.db.Knob).values(knobname='cli.command.timeout.termination:dummy-pool', value=42)
+    )
+
+    session.commit()
+
+    token = tft.artemis.context.SESSION.set(session)
+
+    try:
+        r_deadline = tft.artemis.drivers.get_command_deadline('dummy-pool', ['aws', 'ec2', 'describe-instances'])
+
+        assert r_deadline.is_ok
+        assert r_deadline.unwrap() == datetime.timedelta(seconds=42)
+
+    finally:
+        tft.artemis.context.SESSION.reset(token)
 
 
 @pytest.mark.parametrize(

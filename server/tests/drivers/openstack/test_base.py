@@ -7,8 +7,13 @@ from unittest.mock import MagicMock
 import _pytest.monkeypatch
 import gluetool.log
 import keystoneauth1.session
+import pytest
+import sqlalchemy
+import sqlalchemy.orm.session
 from gluetool.result import Ok
 
+import tft.artemis.context
+import tft.artemis.db
 import tft.artemis.drivers.openstack
 
 from ... import MockPatcher
@@ -94,3 +99,32 @@ def test_login_session_connect_retries(
     assert r_session.is_ok
 
     assert mock_session_class.call_args.kwargs['connect_retries'] == 3
+
+
+@pytest.mark.usefixtures('schema_actual')
+def test_login_session_timeout_from_db(
+    logger: gluetool.log.ContextAdapter,
+    openstack_pool: tft.artemis.drivers.openstack.OpenStackDriver,
+    mockpatch: MockPatcher,
+    session: sqlalchemy.orm.session.Session,
+) -> None:
+    session.execute(
+        sqlalchemy.insert(tft.artemis.db.Knob).values(knobname='openstack.api-timeout:dummy-openstack-pool', value=42)
+    )
+
+    session.commit()
+
+    mock_session_class = mockpatch(keystoneauth1.session, 'Session')
+    mock_session_class.return_value = MagicMock()
+
+    token = tft.artemis.context.SESSION.set(session)
+
+    try:
+        r_session = openstack_pool.login_session(logger)
+
+    finally:
+        tft.artemis.context.SESSION.reset(token)
+
+    assert r_session.is_ok
+
+    assert mock_session_class.call_args.kwargs['timeout'] == 42

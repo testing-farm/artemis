@@ -6,7 +6,11 @@ from unittest.mock import MagicMock
 import _pytest.monkeypatch
 import gluetool.log
 import pytest
+import sqlalchemy
+import sqlalchemy.orm.session
 
+import tft.artemis.context
+import tft.artemis.db
 import tft.artemis.drivers.gcp
 
 
@@ -108,3 +112,21 @@ def test_api_retry_deadline_disabled(
     monkeypatch.setenv('ARTEMIS_GCP_API_RETRY_DEADLINE_dummy_gcp_pool', '0')
 
     assert gcp_pool._api_retry is None
+
+
+@pytest.mark.usefixtures('schema_actual')
+def test_api_timeout_from_db(
+    gcp_pool: tft.artemis.drivers.gcp.GCPDriver,
+    session: sqlalchemy.orm.session.Session,
+) -> None:
+    session.execute(sqlalchemy.insert(tft.artemis.db.Knob).values(knobname='gcp.api-timeout:dummy-gcp-pool', value=123))
+
+    session.commit()
+
+    token = tft.artemis.context.SESSION.set(session)
+
+    try:
+        assert gcp_pool._api_timeout == 123
+
+    finally:
+        tft.artemis.context.SESSION.reset(token)

@@ -961,7 +961,7 @@ for full list of connection parameters that can be specified via URL.
 |`str`
 |`ARTEMIS_CLI_COMMAND_TIMEOUT_OVERRIDES`
 |`600:az vm restart .*;600:az resource delete .*;600:ibmcloud pi instance action .*;900:az storage account create .*;900:az vm create .*;900:az group delete .*;900:ibmcloud is instance-create .*;900:ibmcloud pi instance create .*;900:ibmcloud pi instance delete .*;900:openstack .*server delete.*`
-|no
+|yes
 
 
 |`cli.command.timeout.overrides:$entityname`
@@ -998,7 +998,7 @@ these patterns.
 |`int`
 |`ARTEMIS_CLI_COMMAND_TIMEOUT_TERMINATION`
 |`300`
-|no
+|yes
 
 
 |`cli.command.timeout.termination:$entityname`
@@ -1159,7 +1159,7 @@ deployments.
 |`int`
 |`ARTEMIS_GCP_API_RETRY_DEADLINE`
 |`180`
-|no
+|yes
 
 
 |`gcp.api-retry-deadline:$entityname`
@@ -1176,7 +1176,7 @@ or less to disable retries. Mutating API calls, e.g. creating or deleting an ins
 |`int`
 |`ARTEMIS_GCP_API_TIMEOUT`
 |`60`
-|no
+|yes
 
 
 |`gcp.api-timeout:$entityname`
@@ -1442,7 +1442,7 @@ https://docs.python.org/3.7/library/logging.html#levels[logging subsystem].
 |`int`
 |`ARTEMIS_OPENSTACK_API_CONNECT_RETRIES`
 |`0`
-|no
+|yes
 
 
 |`openstack.api-connect-retries:$entityname`
@@ -1460,7 +1460,7 @@ may add up to `openstack.api-timeout` seconds before the call fails.
 |`int`
 |`ARTEMIS_OPENSTACK_API_TIMEOUT`
 |`60`
-|no
+|yes
 
 
 |`openstack.api-timeout:$entityname`

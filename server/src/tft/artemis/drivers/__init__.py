@@ -361,7 +361,6 @@ KNOB_CLI_COMMAND_TIMEOUT_OVERRIDES: Knob[str] = Knob(
     Can be set per pool by using `ARTEMIS_CLI_COMMAND_TIMEOUT_OVERRIDES_<poolname>` environment variable - such
     pool-specific list then replaces the global one.
     """,
-    has_db=False,
     per_entity=True,
     envvar='ARTEMIS_CLI_COMMAND_TIMEOUT_OVERRIDES',
     cast_from_str=str,
@@ -396,7 +395,6 @@ KNOB_COMMAND_TERMINATION_TIMEOUT: Knob[int] = Knob(
     disable the explicit deadline, and fall back to `cli.command.timeout.patterns` instead. Commands matching
     one of the `cli.command.timeout.overrides` patterns are not affected by this knob.
     """,
-    has_db=False,
     per_entity=True,
     envvar='ARTEMIS_CLI_COMMAND_TIMEOUT_TERMINATION',
     cast_from_str=int,

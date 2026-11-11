@@ -77,7 +77,6 @@ KNOB_API_TIMEOUT: Knob[int] = Knob(
     Timeout, in seconds, for GCP API calls made by the driver. Set to zero or less to use the client library's
     default timeout.
     """,
-    has_db=False,
     per_entity=True,
     envvar='ARTEMIS_GCP_API_TIMEOUT',
     cast_from_str=int,
@@ -90,7 +89,6 @@ KNOB_API_RETRY_DEADLINE: Knob[int] = Knob(
     Total time, in seconds, a read-only GCP API call - including any retries - is allowed to take. Set to zero
     or less to disable retries. Mutating API calls, e.g. creating or deleting an instance, are never retried.
     """,
-    has_db=False,
     per_entity=True,
     envvar='ARTEMIS_GCP_API_RETRY_DEADLINE',
     cast_from_str=int,

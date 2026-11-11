@@ -157,6 +157,26 @@ class KnobSourceDB(KnobSource[T]):
     This is a base class for sources that read the values from the database and provides necessary primitives.
     """
 
+    def _get_session(self, session: Optional[Session]) -> tuple[Optional[Session], bool]:
+        """
+        Return the given session or, when not available, the session provided by the current context, together
+        with the information whether the session was taken from the context.
+
+        Makes it possible to resolve database-backed knobs without threading a session through all their callers:
+        inside task doers, for instance, the session is provided by the ``SESSION`` context variable. When no
+        session can be found, the source simply provides no value, and the knob falls back to its other sources.
+        """
+
+        if session is not None:
+            return session, False
+
+        # Import lazily to avoid issues with circular imports.
+        from .context import SESSION
+
+        session = SESSION.get(None)
+
+        return session, session is not None
+
     def _fetch_from_db(self, session: Session, knobname: str) -> Result[Optional[T], 'Failure']:
         from . import Failure
         from .db import Knob as KnobRecord, SafeQuery
@@ -173,6 +193,23 @@ class KnobSourceDB(KnobSource[T]):
 
         return Ok(cast(T, record.value))
 
+    def _handle_fetch_result(
+        self, r_value: Result[Optional[T], 'Failure'], *, from_context: bool
+    ) -> Result[Optional[T], 'Failure']:
+        """
+        Handle the outcome of a database fetch.
+
+        When the session was provided by the current context rather than by the caller, a failed fetch does not
+        fail the whole resolution. The session from the context may be stale or no longer usable, e.g. once its
+        task doer finished - and since the database is an optional source, the knob can always fall back to its
+        other sources. Callers that do provide a session explicitly still learn about the failure.
+        """
+
+        if r_value.is_error and from_context:
+            return Ok(None)
+
+        return r_value
+
     def to_repr(self) -> list[str]:
         return ['has-db=yes']
 
@@ -182,10 +219,15 @@ class KnobSourceDBGlobal(KnobSourceDB[T]):
     Read knob value from a database.
     """
 
-    def get_value(  # type: ignore[override]  # match parent
-        self, *, session: Session, **kwargs: Any
-    ) -> Result[Optional[T], 'Failure']:
-        return self._fetch_from_db(session, self.knob.knobname)
+    def get_value(self, *, session: Optional[Session] = None, **kwargs: Any) -> Result[Optional[T], 'Failure']:
+        actual_session, from_context = self._get_session(session)
+
+        if actual_session is None:
+            return Ok(None)
+
+        return self._handle_fetch_result(
+            self._fetch_from_db(actual_session, self.knob.knobname), from_context=from_context
+        )
 
 
 class KnobSourceDBPerEntity(KnobSourceDB[T]):
@@ -199,13 +241,22 @@ class KnobSourceDBPerEntity(KnobSourceDB[T]):
     * ``${original knob name}``
     """
 
-    def get_value(  # type: ignore[override]  # match parent
-        self, *, session: Session, entityname: Optional[str] = None, **kwargs: Any
+    def get_value(
+        self, *, session: Optional[Session] = None, entityname: Optional[str] = None, **kwargs: Any
     ) -> Result[Optional[T], 'Failure']:
+        from . import Failure
+
         if entityname is None:
             return Error(Failure('entityname must be specified'))
 
-        r_value = self._fetch_from_db(session, f'{self.knob.knobname}:{entityname}')
+        actual_session, from_context = self._get_session(session)
+
+        if actual_session is None:
+            return Ok(None)
+
+        r_value = self._handle_fetch_result(
+            self._fetch_from_db(actual_session, f'{self.knob.knobname}:{entityname}'), from_context=from_context
+        )
 
         if r_value.is_error:
             return r_value
@@ -215,7 +266,9 @@ class KnobSourceDBPerEntity(KnobSourceDB[T]):
         if value is not None:
             return r_value
 
-        return self._fetch_from_db(session, self.knob.knobname)
+        return self._handle_fetch_result(
+            self._fetch_from_db(actual_session, self.knob.knobname), from_context=from_context
+        )
 
 
 class KnobError(ValueError):
@@ -243,6 +296,10 @@ class Knob(Generic[T]):
     1. the database, if the knob declaration specifies the database may be used.
     2. the environment variable.
     3. the default value.
+
+    When resolving a database-backed knob without providing a session, the session provided by the current
+    context is used, if there is one. Without a session, the database source is skipped, and the knob falls
+    back to its other sources.
 
     A typical knob may look like this:
 

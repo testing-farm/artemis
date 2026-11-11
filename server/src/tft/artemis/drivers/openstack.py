@@ -73,7 +73,6 @@ KNOB_API_TIMEOUT: Knob[int] = Knob(
     Timeout, in seconds, for OpenStack API calls made by the driver's Python clients, e.g. nova or glance.
     Set to zero or less to use the client library's default (no timeout).
     """,
-    has_db=False,
     per_entity=True,
     envvar='ARTEMIS_OPENSTACK_API_TIMEOUT',
     cast_from_str=int,
@@ -87,7 +86,6 @@ KNOB_API_CONNECT_RETRIES: Knob[int] = Knob(
     e.g. nova or glance. Disabled by default. Keep in mind that with the API timeout in effect, every retry
     may add up to `openstack.api-timeout` seconds before the call fails.
     """,
-    has_db=False,
     per_entity=True,
     envvar='ARTEMIS_OPENSTACK_API_CONNECT_RETRIES',
     cast_from_str=int,
