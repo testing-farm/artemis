@@ -19,6 +19,7 @@ from .. import Failure
 from ..db import DB
 from ..drivers import KNOB_UPDATE_GUEST_REQUEST_TICK, ProvisioningProgress, ProvisioningState
 from ..guest import GuestState
+from ..pool_health import record_pool_failure, record_pool_success
 from . import (
     _ROOT_LOGGER,
     DoerReturnType,
@@ -73,6 +74,8 @@ class Workspace(_Workspace):
                 r_progress = self.pool.update_guest(self.logger, self.session, self.gr)
 
                 if r_progress.is_error:
+                    record_pool_failure(self.logger, self.gr.poolname, 'update-guest')
+
                     return self._error(transaction, r_progress, 'failed to update guest')
 
                 provisioning_progress = r_progress.unwrap()
@@ -101,7 +104,12 @@ class Workspace(_Workspace):
 
             # not returning here - pool was able to recover and proceed
             for failure in provisioning_progress.pool_failures:
+                record_pool_failure(self.logger, self.gr.poolname, 'pool-failure')
+
                 self._fail(transaction, failure, 'pool encountered failure during update', no_effect=True)
+
+            if self.is_pool_enabled and not provisioning_progress.pool_failures:
+                record_pool_success(self.logger, self.gr.poolname)
 
             if provisioning_progress.state == ProvisioningState.PENDING:
                 self._progress(transaction, 'pending')

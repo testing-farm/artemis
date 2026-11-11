@@ -36,6 +36,7 @@ import tft.artemis.drivers.localhost
 import tft.artemis.routing_policies
 from tft.artemis.drivers import PoolDriver
 from tft.artemis.metrics import PoolMetrics
+from tft.artemis.pool_health import PoolHealth, PoolHealthState
 
 from . import MockPatcher
 from .tasks import DummyPool
@@ -854,3 +855,71 @@ def test_policy_use_only_when_addressed_marked_pool_with_requested(mock_inputs: 
     do_test_policy_use_only_when_addressed(
         mock_inputs, 'not-so-dummy-pool', 'dummy-pool', [pool.poolname for pool in mock_inputs.pools]
     )
+
+
+def test_policy_pool_health(mock_inputs: MockInputs, mockpatch: MockPatcher) -> None:
+    mock_logger, mock_session, _, mock_pools, mock_guest_request = mock_inputs
+
+    mock_get_state = mockpatch(PoolHealth, 'get_state')
+    mock_get_state.side_effect = lambda poolname: Ok(
+        {
+            'dummy-pool': PoolHealthState.OPEN,
+            'not-so-dummy-pool': PoolHealthState.CLOSED,
+            'another-cool-pool': PoolHealthState.HALF_OPEN,
+        }[poolname]
+    )
+
+    mock_acquire_probe = mockpatch(PoolHealth, 'acquire_probe')
+    mock_acquire_probe.return_value = Ok(True)
+
+    r_ruling = tft.artemis.routing_policies.policy_pool_health(
+        mock_logger, mock_session, mock_pools, mock_guest_request
+    )
+
+    assert r_ruling.is_ok
+
+    by_poolname = {ruling.pool.poolname: ruling for ruling in r_ruling.unwrap().pools}
+
+    assert by_poolname['dummy-pool'].allowed is False
+    assert by_poolname['not-so-dummy-pool'].allowed is True
+
+    # A half-open pool is probed: the one guest request that acquired the probe is allowed to try.
+    assert by_poolname['another-cool-pool'].allowed is True
+    mock_acquire_probe.assert_called_once_with('another-cool-pool', mock_guest_request.guestname)
+
+
+def test_policy_pool_health_busy_probe(mock_inputs: MockInputs, mockpatch: MockPatcher) -> None:
+    mock_logger, mock_session, _, mock_pools, mock_guest_request = mock_inputs
+
+    mock_get_state = mockpatch(PoolHealth, 'get_state')
+    mock_get_state.return_value = Ok(PoolHealthState.HALF_OPEN)
+
+    mock_acquire_probe = mockpatch(PoolHealth, 'acquire_probe')
+    mock_acquire_probe.return_value = Ok(False)
+
+    r_ruling = tft.artemis.routing_policies.policy_pool_health(
+        mock_logger, mock_session, mock_pools, mock_guest_request
+    )
+
+    assert r_ruling.is_ok
+
+    # A probe is already in flight, other guest requests must wait for its outcome.
+    for ruling in r_ruling.unwrap().pools:
+        assert ruling.allowed is False
+
+
+def test_policy_pool_health_broken_tracker(mock_inputs: MockInputs, mockpatch: MockPatcher) -> None:
+    mock_logger, mock_session, _, mock_pools, mock_guest_request = mock_inputs
+
+    mock_get_state = mockpatch(PoolHealth, 'get_state')
+    mock_get_state.return_value = Error(tft.artemis.Failure('failed to resolve pool health state'))
+
+    r_ruling = tft.artemis.routing_policies.policy_pool_health(
+        mock_logger, mock_session, mock_pools, mock_guest_request
+    )
+
+    assert r_ruling.is_ok
+
+    # A broken circuit breaker must not make pools unroutable.
+    for ruling in r_ruling.unwrap().pools:
+        assert ruling.allowed is True

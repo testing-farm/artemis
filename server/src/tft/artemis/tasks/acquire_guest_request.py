@@ -10,6 +10,7 @@ from .. import Failure, log_dict_yaml
 from ..db import DB
 from ..drivers import KNOB_UPDATE_GUEST_REQUEST_TICK, PoolData, ProvisioningProgress, ProvisioningState
 from ..guest import GuestState
+from ..pool_health import record_pool_failure, record_pool_success
 from . import (
     _ROOT_LOGGER,
     DoerReturnType,
@@ -60,13 +61,20 @@ class Workspace(_Workspace):
                 result = self.pool.acquire_guest(self.logger, self.session, transaction, self.gr)
 
                 if result.is_error:
+                    record_pool_failure(self.logger, self.gr.poolname, 'acquire-guest')
+
                     return self._error(transaction, result, 'failed to provision')
 
                 provisioning_progress = result.unwrap()
 
                 # not returning here - pool was able to recover and proceed
                 for failure in provisioning_progress.pool_failures:
+                    record_pool_failure(self.logger, self.gr.poolname, 'pool-failure')
+
                     self._fail(transaction, failure, 'pool encountered failure during acquisition', no_effect=True)
+
+                if not provisioning_progress.pool_failures:
+                    record_pool_success(self.logger, self.gr.poolname)
 
                 # We have a guest, we can move the guest record to the next state. The guest may be unfinished,
                 # in that case we should schedule a task for driver's update_guest method. Otherwise, we must

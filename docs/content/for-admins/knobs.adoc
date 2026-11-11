@@ -1722,6 +1722,91 @@ avoid them.
 5+|A time, in seconds, after which a pool error during a guest provisioning is ignored and pool becomes eligible
 for said guest request again.
 
+|`route.pool.health.cooldown`
+|`int`
+|`ARTEMIS_POOL_HEALTH_COOLDOWN`
+|`300`
+|yes
+
+
+|`route.pool.health.cooldown:$entityname`
+|
+|`ARTEMIS_POOL_HEALTH_COOLDOWN_$entityname`
+|
+|
+
+
+5+|How long, in seconds, does the pool health circuit breaker stay open before letting a probe guest request
+through. Every failed probe doubles the cooldown, up to `route.pool.health.cooldown-max`.
+
+|`route.pool.health.cooldown-max`
+|`int`
+|`ARTEMIS_POOL_HEALTH_COOLDOWN_MAX`
+|`3600`
+|yes
+
+
+|`route.pool.health.cooldown-max:$entityname`
+|
+|`ARTEMIS_POOL_HEALTH_COOLDOWN_MAX_$entityname`
+|
+|
+
+
+5+|The maximum cooldown, in seconds, of the pool health circuit breaker, no matter how many probes failed.
+
+|`route.pool.health.probe-timeout`
+|`int`
+|`ARTEMIS_POOL_HEALTH_PROBE_TIMEOUT`
+|`600`
+|yes
+
+
+|`route.pool.health.probe-timeout:$entityname`
+|
+|`ARTEMIS_POOL_HEALTH_PROBE_TIMEOUT_$entityname`
+|
+|
+
+
+5+|How long, in seconds, to wait for the outcome of a probe guest request before allowing another one.
+This is a safety net - the probe lock is released as soon as the pool reports a success or a failure.
+Set to zero or less to not limit the number of probes at all.
+
+|`route.pool.health.threshold`
+|`int`
+|`ARTEMIS_POOL_HEALTH_THRESHOLD`
+|`3`
+|yes
+
+
+|`route.pool.health.threshold:$entityname`
+|
+|`ARTEMIS_POOL_HEALTH_THRESHOLD_$entityname`
+|
+|
+
+
+5+|How many pool failures within the failure window trip the pool health circuit breaker. Once tripped,
+the pool is not routed to new guest requests until it recovers. Set to zero or less to disable
+the circuit breaker.
+
+|`route.pool.health.window`
+|`int`
+|`ARTEMIS_POOL_HEALTH_WINDOW`
+|`300`
+|yes
+
+
+|`route.pool.health.window:$entityname`
+|
+|`ARTEMIS_POOL_HEALTH_WINDOW_$entityname`
+|
+|
+
+
+5+|How long, in seconds, do pool failures count towards tripping the pool health circuit breaker.
+
 |`route.pool.resource-threshold`
 |`float`
 |`ARTEMIS_ROUTE_POOL_RESOURCE_THRESHOLD`

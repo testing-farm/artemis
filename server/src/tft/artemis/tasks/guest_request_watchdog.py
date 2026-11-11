@@ -19,6 +19,7 @@ from ..db import DB
 from ..drivers import WatchdogState
 from ..guest import GuestState
 from ..knobs import Knob
+from ..pool_health import record_pool_failure, record_pool_success
 from . import (
     _ROOT_LOGGER,
     DoerReturnType,
@@ -95,9 +96,13 @@ class Workspace(_Workspace):
                 r = self.pool.guest_watchdog(self.logger, self.session, transaction, self.gr)
 
                 if r.is_error:
+                    record_pool_failure(self.logger, self.gr.poolname, 'guest-watchdog')
+
                     return self._error(transaction, r, 'failed to watchdog guest')
 
                 watchdog_state: WatchdogState = r.unwrap()
+
+                record_pool_success(self.logger, self.gr.poolname)
 
                 if watchdog_state == WatchdogState.COMPLETE:
                     return None

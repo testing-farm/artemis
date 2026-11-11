@@ -23,6 +23,7 @@ from .db import GuestRequest, Transaction
 from .drivers import CanAcquire, PoolCapabilities, PoolDriver, PoolLogger, Tags
 from .knobs import Knob
 from .metrics import PoolMetrics
+from .pool_health import PoolHealth, PoolHealthState
 
 
 @dataclasses.dataclass(repr=False)
@@ -778,6 +779,58 @@ def policy_most_free_addresses(
             ]
         )
     )
+
+
+@policy_boilerplate
+def policy_pool_health(
+    logger: gluetool.log.ContextAdapter,
+    session: sqlalchemy.orm.session.Session,
+    pools: list[PoolDriver[Any, Any]],
+    guest_request: GuestRequest,
+) -> PolicyReturnType:
+    """
+    Disallow pools whose health circuit breaker is open. The breaker trips when the pool reports too many
+    failures within a given window - see :py:class:`tft.artemis.pool_health.PoolHealth` for the details -
+    and this policy then keeps guest requests away from the pool until it recovers.
+    """
+
+    rulings: list[PoolPolicyRuling] = []
+
+    for pool in pools:
+        r_state = PoolHealth.get_state(pool.poolname)
+
+        if r_state.is_error:
+            # A broken circuit breaker must not make pools unroutable.
+            r_state.unwrap_error().log(logger.warning, label='failed to resolve pool health state')
+
+            rulings.append(PoolPolicyRuling(pool=pool, allowed=True, note='failed to resolve pool health state'))
+
+            continue
+
+        state = r_state.unwrap()
+
+        if state is PoolHealthState.CLOSED:
+            rulings.append(PoolPolicyRuling(pool=pool, allowed=True))
+
+            continue
+
+        if state is PoolHealthState.OPEN:
+            rulings.append(PoolPolicyRuling(pool=pool, allowed=False, note='pool health circuit breaker is open'))
+
+            continue
+
+        # The breaker is half-open: allow a single guest request - the probe - to find out whether the pool
+        # recovered, while all other requests keep being routed elsewhere.
+        r_probe = PoolHealth.acquire_probe(pool.poolname, guest_request.guestname)
+
+        if r_probe.is_ok and r_probe.unwrap() is True:
+            rulings.append(PoolPolicyRuling(pool=pool, allowed=True, note='probing pool health circuit breaker'))
+
+            continue
+
+        rulings.append(PoolPolicyRuling(pool=pool, allowed=False, note='waiting for the pool health probe outcome'))
+
+    return Ok(PolicyRuling(pools=rulings))
 
 
 @policy_boilerplate

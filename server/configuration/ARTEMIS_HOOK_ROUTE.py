@@ -33,6 +33,7 @@ from tft.artemis.routing_policies import (
     policy_one_attempt_forgiving,
     policy_one_shot_only,
     policy_pool_enabled,
+    policy_pool_health,
     policy_prefer_spot_instances,
     policy_supports_architecture,
     policy_supports_guest_logs,
@@ -71,6 +72,9 @@ POLICIES = [
     policy_timeout_reached,
     policy_one_shot_only,
     policy_pool_enabled,
+    # Keep the pool health policy before `policy_can_acquire`: there is no point in asking a broken pool
+    # whether it can acquire a guest request.
+    policy_pool_health,
     policy_use_only_when_addressed,
     policy_match_pool_name,
     policy_can_acquire,
