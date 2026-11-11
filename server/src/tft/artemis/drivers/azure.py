@@ -5,6 +5,7 @@ import dataclasses
 import datetime
 import functools
 import re
+import string
 from collections.abc import Iterator
 from typing import Any, Optional, TypeAlias, TypedDict, Union, cast, override
 
@@ -62,7 +63,8 @@ from . import (
     guest_log_updater,
     vm_info_to_ip,
 )
-from .naming import AZURE_RESOURCE_GROUP, AZURE_VM, LookupMethod, NamingStrategy
+from .naming import LookupMethod, NamingStrategy
+from .sanitizers import ShorteningMethod, StringSanitizer
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
     'azure.mapping.environment-to-image.pattern-map.filepath',
@@ -339,6 +341,28 @@ class AzureSession(CLISessionTemporaryDir):
         return Ok(None)
 
 
+#: Linux VM names, up to 64 alphanumeric characters, hyphens and periods, not ending with a hyphen or a period.
+AZURE_VM_NAME_SANITIZER = StringSanitizer(
+    allowed_charset=string.ascii_letters + string.digits + '.-',
+    replacement='-',
+    squash=True,
+    strip_chars='-.',
+    max_length=64,
+    shortening=ShorteningMethod.HASH,
+)
+
+#: Resource group names, up to 90 alphanumeric characters, underscores, parentheses, hyphens and periods, not
+#: ending with a period.
+AZURE_RESOURCE_GROUP_NAME_SANITIZER = StringSanitizer(
+    allowed_charset=string.ascii_letters + string.digits + '_().-',
+    replacement='-',
+    squash=True,
+    strip_chars='.',
+    max_length=90,
+    shortening=ShorteningMethod.HASH,
+)
+
+
 class AzureDriver(
     FlavorBasedPoolDriver[AzureErrorCauses, AzurePoolImageInfo, AzureFlavor, BackendFlavor, AzureInstance]
 ):
@@ -355,7 +379,7 @@ class AzureDriver(
     INSTANCE_NAMING = NamingStrategy(
         resource_type='instance',
         template_knob=KNOB_INSTANCE_NAME_TEMPLATE,
-        constraints=AZURE_VM,
+        sanitizer=AZURE_VM_NAME_SANITIZER,
         tags_include_label=False,
     )
 
@@ -364,7 +388,7 @@ class AzureDriver(
     RESOURCE_GROUP_NAMING = NamingStrategy(
         resource_type='resource_group',
         template_knob=KNOB_RESOURCE_GROUP_NAME_TEMPLATE,
-        constraints=AZURE_RESOURCE_GROUP,
+        sanitizer=AZURE_RESOURCE_GROUP_NAME_SANITIZER,
         lookup=LookupMethod.BACKEND,
     )
 

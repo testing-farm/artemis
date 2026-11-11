@@ -66,7 +66,8 @@ from . import (
     guest_log_updater,
     run_cli_tool,
 )
-from .naming import OPENSTACK_INSTANCE, NamingStrategy
+from .naming import NamingStrategy
+from .sanitizers import ShorteningMethod, StringSanitizer
 
 KNOB_BUILD_TIMEOUT: Knob[int] = Knob(
     'openstack.build-timeout',
@@ -213,6 +214,12 @@ class InstanceCreationOutcome(ResourceCreationOutcome[OpenStackInstance]):
     image: PoolImageInfo
 
 
+#: Instance names, up to 255 characters.
+OPENSTACK_INSTANCE_NAME_SANITIZER = StringSanitizer(
+    sanitize_charset=False, max_length=255, shortening=ShorteningMethod.HASH
+)
+
+
 class OpenStackDriver(
     FlavorBasedPoolDriver[OpenStackErrorCauses, PoolImageInfo, Flavor, novaclient.v2.flavors.Flavor, Instance]
 ):
@@ -223,7 +230,7 @@ class OpenStackDriver(
     INSTANCE_NAMING = NamingStrategy(
         resource_type='instance',
         template_knob=KNOB_INSTANCE_NAME_TEMPLATE,
-        constraints=OPENSTACK_INSTANCE,
+        sanitizer=OPENSTACK_INSTANCE_NAME_SANITIZER,
         tags_include_label=False,
     )
 

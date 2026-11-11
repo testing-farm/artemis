@@ -2,36 +2,34 @@
 # SPDX-License-Identifier: Apache-2.0
 import dataclasses
 import re
+import string
 from unittest import mock
 
 import pytest
 from gluetool.result import Ok
 
 from tft.artemis.drivers import PoolDriver
-from tft.artemis.drivers.naming import (
-    AWS_SECURITY_GROUP,
-    AZURE_RESOURCE_GROUP,
-    AZURE_VM,
-    GCP_INSTANCE,
-    IBM_POWER_INSTANCE,
-    IBM_VPC_INSTANCE,
-    OPENSTACK_INSTANCE,
-    LookupMethod,
-    NameConstraints,
-    NamingStrategy,
-)
+from tft.artemis.drivers.aws import AWS_INSTANCE_NAME_SANITIZER, AWS_SECURITY_GROUP_NAME_SANITIZER
+from tft.artemis.drivers.azure import AZURE_RESOURCE_GROUP_NAME_SANITIZER, AZURE_VM_NAME_SANITIZER
+from tft.artemis.drivers.gcp import GCP_INSTANCE_NAME_SANITIZER
+from tft.artemis.drivers.ibmcloud.power import IBM_POWER_INSTANCE_NAME_SANITIZER
+from tft.artemis.drivers.ibmcloud.vpc import IBM_VPC_INSTANCE_NAME_SANITIZER
+from tft.artemis.drivers.naming import LookupMethod, NamingStrategy
+from tft.artemis.drivers.openstack import OPENSTACK_INSTANCE_NAME_SANITIZER
+from tft.artemis.drivers.sanitizers import StringSanitizer
 from tft.artemis.knobs import Knob
 
 GUESTNAME = '3f1ab0c2-6a1d-4a4e-9a8b-0f4c2d6e8a10'
 
-ALL_CONSTRAINTS = [
-    AWS_SECURITY_GROUP,
-    AZURE_RESOURCE_GROUP,
-    AZURE_VM,
-    GCP_INSTANCE,
-    IBM_POWER_INSTANCE,
-    IBM_VPC_INSTANCE,
-    OPENSTACK_INSTANCE,
+ALL_SANITIZERS = [
+    AWS_INSTANCE_NAME_SANITIZER,
+    AWS_SECURITY_GROUP_NAME_SANITIZER,
+    AZURE_RESOURCE_GROUP_NAME_SANITIZER,
+    AZURE_VM_NAME_SANITIZER,
+    GCP_INSTANCE_NAME_SANITIZER,
+    IBM_POWER_INSTANCE_NAME_SANITIZER,
+    IBM_VPC_INSTANCE_NAME_SANITIZER,
+    OPENSTACK_INSTANCE_NAME_SANITIZER,
 ]
 
 TEMPLATE_KNOB: Knob[str] = Knob(
@@ -58,12 +56,12 @@ def fixture_guest_request() -> mock.MagicMock:
     return guest_request
 
 
-@pytest.mark.parametrize('constraints', ALL_CONSTRAINTS)
-def test_sanitize_default_name_unchanged(constraints: NameConstraints) -> None:
+@pytest.mark.parametrize('sanitizer', ALL_SANITIZERS)
+def test_sanitize_default_name_unchanged(sanitizer: StringSanitizer) -> None:
     # Default names must not change, existing resources would not be recognized otherwise.
     name = f'artemis-{GUESTNAME}'
 
-    assert constraints.sanitize(name) == name
+    assert sanitizer(name) == name
 
 
 @pytest.mark.parametrize(
@@ -76,64 +74,51 @@ def test_sanitize_default_name_unchanged(constraints: NameConstraints) -> None:
     ],
 )
 def test_sanitize_gcp(name: str, expected: str) -> None:
-    assert GCP_INSTANCE.sanitize(name) == expected
+    assert GCP_INSTANCE_NAME_SANITIZER(name) == expected
 
 
 @pytest.mark.parametrize(
-    ('constraints', 'name'),
+    ('sanitizer', 'name'),
     [
-        (AWS_SECURITY_GROUP, '-team--artemis-'),
-        (AZURE_RESOURCE_GROUP, '-team--artemis-'),
-        (AZURE_VM, 'team--artemis'),
-        (GCP_INSTANCE, 'team--artemis'),
-        (IBM_VPC_INSTANCE, 'team--artemis'),
+        (AWS_SECURITY_GROUP_NAME_SANITIZER, '-team--artemis-'),
+        (AWS_SECURITY_GROUP_NAME_SANITIZER, 'team artemis (guest) #1'),
+        (AZURE_RESOURCE_GROUP_NAME_SANITIZER, '-team--artemis-'),
+        (AZURE_VM_NAME_SANITIZER, 'team--artemis'),
+        (GCP_INSTANCE_NAME_SANITIZER, 'team--artemis'),
+        (IBM_VPC_INSTANCE_NAME_SANITIZER, 'team--artemis'),
     ],
 )
-def test_sanitize_valid_name_unchanged(constraints: NameConstraints, name: str) -> None:
+def test_sanitize_valid_name_unchanged(sanitizer: StringSanitizer, name: str) -> None:
     # Names a backend accepts must not change, existing resources would not be recognized otherwise.
-    assert constraints.sanitize(name) == name
+    assert sanitizer(name) == name
 
 
 @pytest.mark.parametrize(
-    ('constraints', 'name', 'expected'),
+    ('sanitizer', 'name', 'expected'),
     [
-        (AZURE_VM, 'artemis-guest.', 'artemis-guest'),
-        (AZURE_RESOURCE_GROUP, 'artemis guest.', 'artemis-guest'),
+        (AZURE_VM_NAME_SANITIZER, 'artemis-guest.', 'artemis-guest'),
+        (AZURE_RESOURCE_GROUP_NAME_SANITIZER, 'artemis guest.', 'artemis-guest'),
     ],
 )
-def test_sanitize_azure(constraints: NameConstraints, name: str, expected: str) -> None:
-    assert constraints.sanitize(name) == expected
+def test_sanitize_azure(sanitizer: StringSanitizer, name: str, expected: str) -> None:
+    assert sanitizer(name) == expected
 
 
-def test_sanitize_no_constraints() -> None:
-    assert NameConstraints().sanitize('Foo_Bar--baz') == 'Foo_Bar--baz'
+@pytest.mark.parametrize('sanitizer', ALL_SANITIZERS)
+def test_sanitize_shorten(sanitizer: StringSanitizer) -> None:
+    assert sanitizer.max_length is not None
 
+    name = 'a' * (sanitizer.max_length + 20)
+    sanitized = sanitizer(name)
 
-@pytest.mark.parametrize('constraints', ALL_CONSTRAINTS)
-def test_sanitize_truncate(constraints: NameConstraints) -> None:
-    assert constraints.max_length is not None
-
-    name = 'a' * (constraints.max_length + 20)
-    sanitized = constraints.sanitize(name)
-
-    assert len(sanitized) <= constraints.max_length
+    assert len(sanitized) <= sanitizer.max_length
     assert re.fullmatch(r'a+-[0-9a-f]{8}', sanitized)
 
     # Deterministic...
-    assert constraints.sanitize(name) == sanitized
+    assert sanitizer(name) == sanitized
 
     # ... and unique.
-    assert constraints.sanitize(f'{name}b') != sanitized
-
-
-def test_sanitize_full_length_unchanged() -> None:
-    # A name using the whole length limit is kept, no room is reserved for a postfix.
-    assert NameConstraints(max_length=10).sanitize('a' * 10) == 'a' * 10
-
-
-def test_sanitize_truncate_tiny() -> None:
-    # No room for the head, the hash must suffice.
-    assert re.fullmatch(r'[0-9a-f]{8}', NameConstraints(max_length=9).sanitize('a' * 20))
+    assert sanitizer(f'{name}b') != sanitized
 
 
 @pytest.mark.parametrize(
@@ -165,13 +150,13 @@ def test_matches_escapes_expected_name() -> None:
     ],
 )
 def test_with_postfix_shortens(postfix: int, expected: str) -> None:
-    naming = NamingStrategy('instance', constraints=NameConstraints(max_length=12))
+    naming = NamingStrategy('instance', sanitizer=StringSanitizer(max_length=12))
 
     assert naming.with_postfix('artemis-foo', postfix) == expected
 
 
 def test_with_postfix_fits() -> None:
-    naming = NamingStrategy('instance', constraints=NameConstraints(max_length=20))
+    naming = NamingStrategy('instance', sanitizer=StringSanitizer(max_length=20))
 
     assert naming.with_postfix('artemis-foo', 3) == 'artemis-foo-3'
 
@@ -190,7 +175,7 @@ def test_with_postfix_fits() -> None:
     ],
 )
 def test_matches_shortened(name: str, expected: bool) -> None:
-    naming = NamingStrategy('instance', constraints=NameConstraints(max_length=12))
+    naming = NamingStrategy('instance', sanitizer=StringSanitizer(max_length=12))
 
     assert naming.matches('artemis-foo', name) is expected
 
@@ -227,7 +212,10 @@ def test_get_template_knob(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_render(guest_request: mock.MagicMock) -> None:
     naming = NamingStrategy(
-        'security_group', constraints=NameConstraints(lowercase=True, invalid_chars=re.compile(r'[^a-z0-9\-]'))
+        'security_group',
+        sanitizer=StringSanitizer(
+            allowed_charset=string.ascii_lowercase + string.digits + '-', replacement='-', lowercase=True
+        ),
     )
 
     r_name = naming.render(

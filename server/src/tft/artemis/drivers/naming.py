@@ -7,20 +7,22 @@ Naming of backend resources.
 Every resource Artemis creates in a backend for a guest request - an instance, a security group, a resource group -
 needs a name. A :py:class:`NamingStrategy` describes how the name of a particular kind of resource is rendered,
 sanitized to satisfy the backend's rules, and matched against names of resources found in the backend.
+
+Each driver defines its naming strategies, together with :py:class:`StringSanitizer` instances describing the rules
+its backend imposes on names.
 """
 
 import dataclasses
 import enum
-import hashlib
 import re
 from collections.abc import Mapping
-from re import Pattern
 from typing import TYPE_CHECKING, Optional, Protocol, TypeVar
 
 from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 
 from .. import Failure, render_template
 from ..knobs import KNOB_DEPLOYMENT, KNOB_DEPLOYMENT_ENVIRONMENT, Knob
+from .sanitizers import NOOP_SANITIZER, StringSanitizer
 
 if TYPE_CHECKING:
     from ..db import GuestRequest
@@ -40,10 +42,6 @@ KNOB_RESOURCE_NAME_TEMPLATE: Knob[str] = Knob(
 )
 
 
-#: Hash length used when a name needs to be shortened.
-NAME_HASH_LENGTH = 8
-
-
 class LookupMethod(enum.Enum):
     """
     How resources belonging to a guest request are recognized among resources reported by the backend.
@@ -56,101 +54,6 @@ class LookupMethod(enum.Enum):
     #: The backend reports only resources belonging to the guest request, e.g. by filtering on a tag. Names are
     #: not checked.
     BACKEND = 'backend'
-
-
-@dataclasses.dataclass(frozen=True)
-class NameConstraints:
-    """
-    Rules a backend imposes on names of a resource type.
-    """
-
-    #: Maximal length of the name.
-    max_length: Optional[int] = None
-
-    #: If set, the name is converted to lowercase.
-    lowercase: bool = False
-
-    #: If set, every run of characters matching this pattern is replaced with a single ``-``.
-    invalid_chars: Optional[Pattern[str]] = None
-
-    #: Characters a name must not start or end with. They are stripped from both ends of the name.
-    edge_chars: str = ''
-
-    #: If set, a name not starting with a letter is prefixed with one.
-    must_start_with_letter: bool = False
-
-    def sanitize(self, name: str) -> str:
-        """
-        Adjust a name to satisfy constraints.
-
-        :param name: name to sanitize.
-        :returns: sanitized name. A name that already satisfies all constraints is returned unchanged.
-        """
-
-        if self.lowercase:
-            name = name.lower()
-
-        if self.invalid_chars is not None:
-            name = self.invalid_chars.sub('-', name)
-
-        if self.edge_chars:
-            name = name.strip(self.edge_chars)
-
-        if self.must_start_with_letter and not name[:1].isalpha():
-            name = f'a{name}'
-
-        if self.max_length is None or len(name) <= self.max_length:
-            return name
-
-        # Shortened names must stay unique: keep the head of the name, and replace the rest with a hash of the full
-        # name.
-        digest = hashlib.sha1(name.encode()).hexdigest()[:NAME_HASH_LENGTH]  # noqa: S324
-        head = name[: max(self.max_length - NAME_HASH_LENGTH - 1, 0)].rstrip('-')
-
-        return f'{head}-{digest}' if head else digest
-
-
-#: No constraints at all.
-NO_CONSTRAINTS = NameConstraints()
-
-#: AWS: security group names, up to 255 characters.
-AWS_SECURITY_GROUP = NameConstraints(
-    max_length=255, invalid_chars=re.compile(r'[^a-zA-Z0-9 ._\-:/()#,@\[\]+=&;{}!$*]+')
-)
-
-#: AWS: instance name, stored as a tag value, up to 256 characters.
-AWS_INSTANCE = NameConstraints(max_length=256)
-
-#: Azure: Linux VM names, up to 64 alphanumeric characters, hyphens and periods, not ending with a hyphen or a period.
-AZURE_VM = NameConstraints(max_length=64, invalid_chars=re.compile(r'[^a-zA-Z0-9.\-]+'), edge_chars='-.')
-
-#: Azure: resource group names, up to 90 alphanumeric characters, underscores, parentheses, hyphens and periods,
-#: not ending with a period.
-AZURE_RESOURCE_GROUP = NameConstraints(max_length=90, invalid_chars=re.compile(r'[^a-zA-Z0-9_().\-]+'), edge_chars='.')
-
-#: GCP: instance names, RFC 1035 labels, up to 63 lowercase characters.
-GCP_INSTANCE = NameConstraints(
-    max_length=63,
-    lowercase=True,
-    invalid_chars=re.compile(r'[^a-z0-9\-]+'),
-    edge_chars='-',
-    must_start_with_letter=True,
-)
-
-#: IBM Cloud Power: instance names, up to 47 characters.
-IBM_POWER_INSTANCE = NameConstraints(max_length=47)
-
-#: IBM Cloud VPC: instance names, up to 63 lowercase alphanumeric characters and hyphens.
-IBM_VPC_INSTANCE = NameConstraints(
-    max_length=63,
-    lowercase=True,
-    invalid_chars=re.compile(r'[^a-z0-9\-]+'),
-    edge_chars='-',
-    must_start_with_letter=True,
-)
-
-#: OpenStack: instance names, up to 255 characters.
-OPENSTACK_INSTANCE = NameConstraints(max_length=255)
 
 
 class NamedResource(Protocol):
@@ -175,7 +78,7 @@ class NamingStrategy:
     template_knob: Optional[Knob[str]] = None
 
     #: Backend rules for the name.
-    constraints: NameConstraints = NO_CONSTRAINTS
+    sanitizer: StringSanitizer = NOOP_SANITIZER
 
     #: How resources belonging to a guest request are recognized.
     lookup: LookupMethod = LookupMethod.NAME
@@ -241,7 +144,7 @@ class NamingStrategy:
                 RESOURCE_TYPE=self.resource_type,
                 TAGS=tags or {},
             )
-            .map(lambda name: self.constraints.sanitize(name))
+            .map(self.sanitizer)
             .alt(
                 lambda failure: Failure.from_failure(
                     'could not render resource name template', failure, resource_type=self.resource_type
@@ -259,8 +162,8 @@ class NamingStrategy:
 
         suffix = f'-{postfix}'
 
-        if self.constraints.max_length is not None:
-            name = name[: self.constraints.max_length - len(suffix)]
+        if self.sanitizer.max_length is not None:
+            name = name[: self.sanitizer.max_length - len(suffix)]
 
         return f'{name}{suffix}'
 

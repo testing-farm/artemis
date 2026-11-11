@@ -57,7 +57,8 @@ from .._image_flavor_filtering import (
     FilterRuling,
     image_flavor_filter,
 )
-from ..naming import IBM_POWER_INSTANCE, NamingStrategy
+from ..naming import NamingStrategy
+from ..sanitizers import ShorteningMethod, StringSanitizer
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
     'ibmcloud-power.mapping.environment-to-image.pattern-map.filepath',
@@ -197,13 +198,19 @@ def filter_flavors_required_fields_defined(
     )
 
 
+#: Instance names, up to 47 characters.
+IBM_POWER_INSTANCE_NAME_SANITIZER = StringSanitizer(
+    sanitize_charset=False, max_length=47, shortening=ShorteningMethod.HASH
+)
+
+
 class IBMCloudPowerDriver(IBMCloudDriver[IBMCloudPowerErrorCauses, BackendInstance, IBMCloudPowerInstance, None]):
     drivername = 'ibmcloud-power'
 
     INSTANCE_NAMING = NamingStrategy(
         resource_type='instance',
         template_knob=KNOB_INSTANCE_NAME_TEMPLATE,
-        constraints=IBM_POWER_INSTANCE,
+        sanitizer=IBM_POWER_INSTANCE_NAME_SANITIZER,
         tags_include_label=False,
     )
 

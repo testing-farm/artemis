@@ -6,6 +6,7 @@ import enum
 import functools
 import json
 import re
+import string
 from collections.abc import Iterator
 from typing import Any, Optional, TypeAlias, TypedDict, cast, override
 
@@ -58,7 +59,8 @@ from .. import (
     ReleasePoolResourcesState,
     SerializedPoolResourcesIDs,
 )
-from ..naming import IBM_VPC_INSTANCE, NamingStrategy
+from ..naming import NamingStrategy
+from ..sanitizers import ShorteningMethod, StringSanitizer
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
     'ibmcloud.mapping.environment-to-image.pattern-map.filepath',
@@ -175,13 +177,26 @@ class IBMCloudVPCPoolImageInfo(PoolImageInfo):
     user_data_format: str
 
 
+#: Instance names, up to 63 lowercase alphanumeric characters and hyphens.
+IBM_VPC_INSTANCE_NAME_SANITIZER = StringSanitizer(
+    allowed_charset=string.ascii_lowercase + string.digits + '-',
+    replacement='-',
+    squash=True,
+    lowercase=True,
+    strip_chars='-',
+    must_start_with_letter=True,
+    max_length=63,
+    shortening=ShorteningMethod.HASH,
+)
+
+
 class IBMCloudVPCDriver(IBMCloudDriver[IBMCloudVPCErrorCauses, BackendInstance, IBMCloudVPCInstance, BackendFlavor]):
     drivername = 'ibmcloud-vpc'
 
     INSTANCE_NAMING = NamingStrategy(
         resource_type='instance',
         template_knob=KNOB_INSTANCE_NAME_TEMPLATE,
-        constraints=IBM_VPC_INSTANCE,
+        sanitizer=IBM_VPC_INSTANCE_NAME_SANITIZER,
         tags_include_label=False,
     )
 

@@ -49,7 +49,8 @@ from . import (
     create_error_cause_extractor,
     create_sanitize_tags,
 )
-from .naming import GCP_INSTANCE, NamingStrategy
+from .naming import NamingStrategy
+from .sanitizers import ShorteningMethod, StringSanitizer
 
 KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_FILEPATH: Knob[str] = Knob(
     'gcp.mapping.environment-to-image.pattern-map.filepath',
@@ -199,6 +200,19 @@ class InstanceCreationOutcome(ResourceCreationOutcome[GCPInstance]):
     flavor: GCPFlavor
 
 
+#: Instance names, RFC 1035 labels, up to 63 lowercase characters.
+GCP_INSTANCE_NAME_SANITIZER = StringSanitizer(
+    allowed_charset=string.ascii_lowercase + string.digits + '-',
+    replacement='-',
+    squash=True,
+    lowercase=True,
+    strip_chars='-',
+    must_start_with_letter=True,
+    max_length=63,
+    shortening=ShorteningMethod.HASH,
+)
+
+
 class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, BackendFlavor, Instance]):
     drivername = 'gcp'
 
@@ -213,7 +227,7 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, 
     INSTANCE_NAMING = NamingStrategy(
         resource_type='instance',
         template_knob=KNOB_INSTANCE_NAME_TEMPLATE,
-        constraints=GCP_INSTANCE,
+        sanitizer=GCP_INSTANCE_NAME_SANITIZER,
         tags_include_label=False,
     )
 

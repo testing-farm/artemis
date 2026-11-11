@@ -18,7 +18,8 @@ from tft.artemis.drivers import (
     ResourceCreationRequest,
     ResourceManager,
 )
-from tft.artemis.drivers.naming import LookupMethod, NameConstraints, NamingStrategy
+from tft.artemis.drivers.naming import LookupMethod, NamingStrategy
+from tft.artemis.drivers.sanitizers import StringSanitizer
 
 GUESTNAME = 'dummy-guest'
 
@@ -182,7 +183,7 @@ def test_postfix_exhausted(logger: gluetool.log.ContextAdapter, pool: mock.Magic
 def test_postfix_within_length_limit(logger: gluetool.log.ContextAdapter, pool: mock.MagicMock) -> None:
     # The expected name uses the whole length limit, the postfix makes room for itself by shortening the name.
     expected_name = f'artemis-{GUESTNAME}'
-    naming = NamingStrategy('dummy', constraints=NameConstraints(max_length=len(expected_name)))
+    naming = NamingStrategy('dummy', sanitizer=StringSanitizer(max_length=len(expected_name)))
 
     backend = Backend()
     _acquire(logger, pool, backend, naming).unwrap()
@@ -213,7 +214,7 @@ def test_name_independent_of_resources_limit(
     logger: gluetool.log.ContextAdapter, pool: mock.MagicMock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Changing the limit must not rename resources of guest requests in flight.
-    naming = NamingStrategy('dummy', constraints=NameConstraints(max_length=len(f'artemis-{GUESTNAME}')))
+    naming = NamingStrategy('dummy', sanitizer=StringSanitizer(max_length=len(f'artemis-{GUESTNAME}')))
 
     names = []
 

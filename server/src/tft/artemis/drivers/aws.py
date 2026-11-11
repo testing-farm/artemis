@@ -94,7 +94,8 @@ from ._image_flavor_filtering import (
     FilterRuling,
     image_flavor_filter,
 )
-from .naming import AWS_INSTANCE, AWS_SECURITY_GROUP, LookupMethod, NamingStrategy
+from .naming import LookupMethod, NamingStrategy
+from .sanitizers import ShorteningMethod, StringSanitizer
 
 #
 # Custom typing types
@@ -1816,6 +1817,19 @@ def filter_flavors_image_boot_method(
     return Ok(FilterRuling.from_flavors(image, flavors, matcher=_boot_method_requested))
 
 
+#: Instance names, stored as a tag value, up to 256 characters.
+AWS_INSTANCE_NAME_SANITIZER = StringSanitizer(sanitize_charset=False, max_length=256, shortening=ShorteningMethod.HASH)
+
+#: Security group names, up to 255 characters.
+AWS_SECURITY_GROUP_NAME_SANITIZER = StringSanitizer(
+    allowed_charset=string.ascii_letters + string.digits + ' ._-:/()#,@[]+=&;{}!$*',
+    replacement='-',
+    squash=True,
+    max_length=255,
+    shortening=ShorteningMethod.HASH,
+)
+
+
 class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavor, BackendFlavor, Instance]):
     drivername = 'aws'
 
@@ -1831,7 +1845,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
     INSTANCE_NAMING = NamingStrategy(
         resource_type='instance',
         template_knob=KNOB_INSTANCE_NAME_TEMPLATE,
-        constraints=AWS_INSTANCE,
+        sanitizer=AWS_INSTANCE_NAME_SANITIZER,
         lookup=LookupMethod.BACKEND,
         tags_include_label=False,
     )
@@ -1841,7 +1855,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
     SECURITY_GROUP_NAMING = NamingStrategy(
         resource_type='security_group',
         template_knob=KNOB_GUEST_SECURITY_GROUP_NAME_TEMPLATE,
-        constraints=AWS_SECURITY_GROUP,
+        sanitizer=AWS_SECURITY_GROUP_NAME_SANITIZER,
         lookup=LookupMethod.BACKEND,
     )
 
