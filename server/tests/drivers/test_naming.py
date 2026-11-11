@@ -242,6 +242,13 @@ def test_render_error(guest_request: mock.MagicMock) -> None:
     assert r_name.failure().message == 'could not render resource name template'
 
 
+@pytest.mark.parametrize('template', ['artemis-{{ POOLNAME }}', 'artemis-{{ GUESTNAME[:8] }}'])
+def test_render_without_guestname(guest_request: mock.MagicMock, template: str) -> None:
+    r_name = NamingStrategy('instance').render(template, 'dummy-pool', guest_request)
+
+    assert r_name.failure().message == 'resource name does not contain guest name'
+
+
 @pytest.mark.parametrize(
     ('tags_include_label', 'expected'),
     [

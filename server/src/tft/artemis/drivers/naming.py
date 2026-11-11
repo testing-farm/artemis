@@ -18,6 +18,7 @@ import re
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Optional, Protocol, TypeVar
 
+from returns.pipeline import is_successful
 from returns.result import Failure as _Error, Result as _Result, Success as _Ok
 
 from .. import Failure, render_template
@@ -131,26 +132,43 @@ class NamingStrategy:
         :param poolname: name of the pool the resource belongs to.
         :param guest_request: guest request the resource belongs to.
         :param tags: guest tags, available to the template as ``TAGS``.
+        :returns: sanitized name, or a failure when the template could not be rendered, or when the rendered name
+            does not contain the guest name.
         """
 
-        return (
-            render_template(
-                template,
-                GUESTNAME=guest_request.guestname,
-                ENVIRONMENT=guest_request.environment,
-                DEPLOYMENT=KNOB_DEPLOYMENT.value,
-                DEPLOYMENT_ENVIRONMENT=KNOB_DEPLOYMENT_ENVIRONMENT.value,
-                POOLNAME=poolname,
-                RESOURCE_TYPE=self.resource_type,
-                TAGS=tags or {},
-            )
-            .map(self.sanitizer)
-            .alt(
-                lambda failure: Failure.from_failure(
-                    'could not render resource name template', failure, resource_type=self.resource_type
+        r_name = render_template(
+            template,
+            GUESTNAME=guest_request.guestname,
+            ENVIRONMENT=guest_request.environment,
+            DEPLOYMENT=KNOB_DEPLOYMENT.value,
+            DEPLOYMENT_ENVIRONMENT=KNOB_DEPLOYMENT_ENVIRONMENT.value,
+            POOLNAME=poolname,
+            RESOURCE_TYPE=self.resource_type,
+            TAGS=tags or {},
+        )
+
+        if not is_successful(r_name):
+            return _Error(
+                Failure.from_failure(
+                    'could not render resource name template', r_name.failure(), resource_type=self.resource_type
                 )
             )
-        )
+
+        name = r_name.unwrap()
+
+        # The guest name is what makes the name unique, and what keeps resources of one guest from being mistaken
+        # for those of another guest.
+        if guest_request.guestname not in name:
+            return _Error(
+                Failure(
+                    'resource name does not contain guest name',
+                    resource_type=self.resource_type,
+                    template=template,
+                    resource_name=name,
+                )
+            )
+
+        return _Ok(self.sanitizer(name))
 
     def with_postfix(self, name: str, postfix: int) -> str:
         """

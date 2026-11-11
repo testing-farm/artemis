@@ -490,6 +490,8 @@ Templates may use the following variables:
 * `RESOURCE_TYPE`: type of the resource, e.g. `instance` or `security_group`.
 * `TAGS`: guest tags, e.g. `{{ TAGS.owner }}`. The guest label tag is not available to instance names, the label is derived from them.
 
+A rendered name must contain the whole `GUESTNAME`, which keeps names of different guests distinct. Provisioning of a guest fails when its name does not.
+
 .Example
 ....
 ARTEMIS_RESOURCE_NAME_TEMPLATE='artemis-{{ DEPLOYMENT }}-{{ GUESTNAME }}'
