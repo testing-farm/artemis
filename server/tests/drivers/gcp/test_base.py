@@ -65,6 +65,14 @@ def test_api_call_explicit_timeout_not_overridden(gcp_pool: tft.artemis.drivers.
     mock_fn.assert_called_once_with(request='dummy-request', timeout=5)
 
 
+def test_api_call_retry_passed_through(gcp_pool: tft.artemis.drivers.gcp.GCPDriver) -> None:
+    mock_fn = MagicMock()
+
+    gcp_pool._api_call(mock_fn, request='dummy-request', retry=None)
+
+    mock_fn.assert_called_once_with(request='dummy-request', timeout=60, retry=None)
+
+
 def test_api_call_invalid_knob_value(
     gcp_pool: tft.artemis.drivers.gcp.GCPDriver, monkeypatch: _pytest.monkeypatch.MonkeyPatch
 ) -> None:
@@ -76,3 +84,27 @@ def test_api_call_invalid_knob_value(
 
     # Invalid knob value is reported, and the client library's default timeout is used.
     mock_fn.assert_called_once_with(request='dummy-request')
+
+
+def test_api_retry_deadline_default(gcp_pool: tft.artemis.drivers.gcp.GCPDriver) -> None:
+    retry = gcp_pool._api_retry
+
+    assert retry is not None
+    assert retry._deadline == 180
+
+
+def test_api_retry_deadline_per_pool(
+    gcp_pool: tft.artemis.drivers.gcp.GCPDriver, monkeypatch: _pytest.monkeypatch.MonkeyPatch
+) -> None:
+    monkeypatch.setenv('ARTEMIS_GCP_API_RETRY_DEADLINE_dummy_gcp_pool', '123')
+
+    assert gcp_pool._api_retry is not None
+    assert gcp_pool._api_retry._deadline == 123
+
+
+def test_api_retry_deadline_disabled(
+    gcp_pool: tft.artemis.drivers.gcp.GCPDriver, monkeypatch: _pytest.monkeypatch.MonkeyPatch
+) -> None:
+    monkeypatch.setenv('ARTEMIS_GCP_API_RETRY_DEADLINE_dummy_gcp_pool', '0')
+
+    assert gcp_pool._api_retry is None

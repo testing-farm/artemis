@@ -2163,7 +2163,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
 
         command = [self.pool_config['command'], *args]
 
-        r_deadline = get_command_deadline(self.poolname)
+        r_deadline = get_command_deadline(self.poolname, command)
 
         if r_deadline.is_error:
             return Error(r_deadline.unwrap_error())

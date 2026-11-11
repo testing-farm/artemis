@@ -957,6 +957,21 @@ for full list of connection parameters that can be specified via URL.
 
 5+|How long to wait before sending SIGKILL to commands that did not finish after running out of time.
 
+|`cli.command.timeout.overrides`
+|`str`
+|`ARTEMIS_CLI_COMMAND_TIMEOUT_OVERRIDES`
+|`600:az vm restart .*;600:az resource delete .*;600:ibmcloud pi instance action .*;900:az storage account create .*;900:az vm create .*;900:az group delete .*;900:ibmcloud is instance-create .*;900:ibmcloud pi instance create .*;900:ibmcloud pi instance delete .*;900:openstack .*server delete.*`
+|no
+
+
+
+5+|Timeout and command patterns for commands that need a budget different from `cli.command.timeout.termination`:
+"<timeout1>:<pattern1>;<timeout2>:<pattern2>;...". Patterns are matched against the beginning of the complete
+command, and the timeout of the first matching pattern is used. When a command matches one of these patterns,
+the matching timeout is used even if `cli.command.timeout.termination` says otherwise - this makes it possible
+to give a larger budget to commands known to take their time, e.g. `az vm create`. Set the timeout to zero
+or less to let the matching command fall back to `cli.command.timeout.patterns`.
+
 |`cli.command.timeout.patterns`
 |`str`
 |`ARTEMIS_CLI_COMMAND_TIMEOUT_PATTERNS`
@@ -986,7 +1001,8 @@ these patterns.
 
 5+|Timeout, in seconds, for CLI commands executed by pool drivers when talking to the infrastructure, e.g. `aws`
 or `az` CLI tools. After this many seconds, the command will be sent `SIGTERM`. Set to zero or less to
-disable the explicit deadline, and fall back to `cli.command.timeout.patterns` instead.
+disable the explicit deadline, and fall back to `cli.command.timeout.patterns` instead. Commands matching
+one of the `cli.command.timeout.overrides` patterns are not affected by this knob.
 
 |`config.dirpath`
 |`<lambda>`
@@ -1129,6 +1145,23 @@ deployments.
 
 
 5+|How old must the guest log blobs be to be removed, in seconds.
+
+|`gcp.api-retry-deadline`
+|`int`
+|`ARTEMIS_GCP_API_RETRY_DEADLINE`
+|`180`
+|no
+
+
+|`gcp.api-retry-deadline:$entityname`
+|
+|`ARTEMIS_GCP_API_RETRY_DEADLINE_$entityname`
+|
+|
+
+
+5+|Total time, in seconds, a read-only GCP API call - including any retries - is allowed to take. Set to zero
+or less to disable retries. Mutating API calls, e.g. creating or deleting an instance, are never retried.
 
 |`gcp.api-timeout`
 |`int`
@@ -1395,6 +1428,24 @@ https://docs.python.org/3.7/library/logging.html#levels[logging subsystem].
 
 
 5+|When enabled, Artemis would log more debuginfo related to singleton task locking.
+
+|`openstack.api-connect-retries`
+|`int`
+|`ARTEMIS_OPENSTACK_API_CONNECT_RETRIES`
+|`0`
+|no
+
+
+|`openstack.api-connect-retries:$entityname`
+|
+|`ARTEMIS_OPENSTACK_API_CONNECT_RETRIES_$entityname`
+|
+|
+
+
+5+|How many times to retry a connection error in OpenStack API calls made by the driver's Python clients,
+e.g. nova or glance. Disabled by default. Keep in mind that with the API timeout in effect, every retry
+may add up to `openstack.api-timeout` seconds before the call fails.
 
 |`openstack.api-timeout`
 |`int`

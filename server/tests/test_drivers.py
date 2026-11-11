@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import datetime
+import re
 from re import Pattern
 from types import SimpleNamespace
 from typing import Any, Optional, cast
@@ -268,7 +269,7 @@ def test_generate_post_install_script_from_template_default(
 
 
 def test_get_command_deadline_default() -> None:
-    r_deadline = tft.artemis.drivers.get_command_deadline('dummy-pool')
+    r_deadline = tft.artemis.drivers.get_command_deadline('dummy-pool', ['aws', 'ec2', 'describe-instances'])
 
     assert r_deadline.is_ok
     assert r_deadline.unwrap() == datetime.timedelta(seconds=300)
@@ -277,7 +278,7 @@ def test_get_command_deadline_default() -> None:
 def test_get_command_deadline_per_pool(monkeypatch: _pytest.monkeypatch.MonkeyPatch) -> None:
     monkeypatch.setenv('ARTEMIS_CLI_COMMAND_TIMEOUT_TERMINATION_dummy_pool', '42')
 
-    r_deadline = tft.artemis.drivers.get_command_deadline('dummy-pool')
+    r_deadline = tft.artemis.drivers.get_command_deadline('dummy-pool', ['aws', 'ec2', 'describe-instances'])
 
     assert r_deadline.is_ok
     assert r_deadline.unwrap() == datetime.timedelta(seconds=42)
@@ -286,7 +287,56 @@ def test_get_command_deadline_per_pool(monkeypatch: _pytest.monkeypatch.MonkeyPa
 def test_get_command_deadline_disabled(monkeypatch: _pytest.monkeypatch.MonkeyPatch) -> None:
     monkeypatch.setenv('ARTEMIS_CLI_COMMAND_TIMEOUT_TERMINATION_dummy_pool', '0')
 
-    r_deadline = tft.artemis.drivers.get_command_deadline('dummy-pool')
+    r_deadline = tft.artemis.drivers.get_command_deadline('dummy-pool', ['aws', 'ec2', 'describe-instances'])
+
+    assert r_deadline.is_ok
+    assert r_deadline.unwrap() is None
+
+
+@pytest.mark.parametrize(
+    ('command', 'expected_deadline'),
+    [
+        (['az', 'vm', 'create', '--name', 'dummy'], datetime.timedelta(seconds=900)),
+        (['az', 'storage', 'account', 'create', '--name', 'dummy'], datetime.timedelta(seconds=900)),
+        (['az', 'group', 'delete', '--name', 'dummy'], datetime.timedelta(seconds=900)),
+        (['az', 'resource', 'delete', '--ids', 'dummy'], datetime.timedelta(seconds=600)),
+        (['az', 'vm', 'restart', '--force', '--ids', 'dummy'], datetime.timedelta(seconds=600)),
+        (['ibmcloud', 'pi', 'instance', 'create', 'dummy'], datetime.timedelta(seconds=900)),
+        (['ibmcloud', 'pi', 'instance', 'delete', 'dummy'], datetime.timedelta(seconds=900)),
+        (['ibmcloud', 'pi', 'instance', 'action', '-o', 'hard-reboot', 'dummy'], datetime.timedelta(seconds=600)),
+        (['ibmcloud', 'is', 'instance-create', 'dummy'], datetime.timedelta(seconds=900)),
+        (['openstack', 'server', 'delete', '--wait', 'dummy'], datetime.timedelta(seconds=900)),
+    ],
+)
+def test_get_command_deadline_slow_command_override(command: list[str], expected_deadline: datetime.timedelta) -> None:
+    r_deadline = tft.artemis.drivers.get_command_deadline('dummy-pool', command)
+
+    assert r_deadline.is_ok
+    assert r_deadline.unwrap() == expected_deadline
+
+
+def test_get_command_deadline_slow_command_override_beats_per_pool(
+    monkeypatch: _pytest.monkeypatch.MonkeyPatch,
+) -> None:
+    # A per-pool override of the generic timeout must not affect commands matching an override pattern.
+    monkeypatch.setenv('ARTEMIS_CLI_COMMAND_TIMEOUT_TERMINATION_dummy_pool', '42')
+
+    r_deadline = tft.artemis.drivers.get_command_deadline('dummy-pool', ['az', 'vm', 'create', '--name', 'dummy'])
+
+    assert r_deadline.is_ok
+    assert r_deadline.unwrap() == datetime.timedelta(seconds=900)
+
+
+def test_get_command_deadline_slow_command_override_disabled(
+    monkeypatch: _pytest.monkeypatch.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        tft.artemis.drivers,
+        'CLI_COMMAND_TIMEOUT_OVERRIDES',
+        [(re.compile('dummy .*'), 0)],
+    )
+
+    r_deadline = tft.artemis.drivers.get_command_deadline('dummy-pool', ['dummy', 'command'])
 
     assert r_deadline.is_ok
     assert r_deadline.unwrap() is None

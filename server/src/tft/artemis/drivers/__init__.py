@@ -348,6 +348,33 @@ KNOB_CLI_COMMAND_TIMEOUT_PATTERNS: Knob[str] = Knob(
     default=r'120:(ssh|scp) .*;600:.*',
 )
 
+KNOB_CLI_COMMAND_TIMEOUT_OVERRIDES: Knob[str] = Knob(
+    'cli.command.timeout.overrides',
+    """
+    Timeout and command patterns for commands that need a budget different from `cli.command.timeout.termination`:
+    "<timeout1>:<pattern1>;<timeout2>:<pattern2>;...". Patterns are matched against the beginning of the complete
+    command, and the timeout of the first matching pattern is used. When a command matches one of these patterns,
+    the matching timeout is used even if `cli.command.timeout.termination` says otherwise - this makes it possible
+    to give a larger budget to commands known to take their time, e.g. `az vm create`. Set the timeout to zero
+    or less to let the matching command fall back to `cli.command.timeout.patterns`.
+    """,
+    has_db=False,
+    envvar='ARTEMIS_CLI_COMMAND_TIMEOUT_OVERRIDES',
+    cast_from_str=str,
+    default=(
+        r'600:az vm restart .*;'
+        r'600:az resource delete .*;'
+        r'600:ibmcloud pi instance action .*;'
+        r'900:az storage account create .*;'
+        r'900:az vm create .*;'
+        r'900:az group delete .*;'
+        r'900:ibmcloud is instance-create .*;'
+        r'900:ibmcloud pi instance create .*;'
+        r'900:ibmcloud pi instance delete .*;'
+        r'900:openstack .*server delete.*'
+    ),
+)
+
 KNOB_CLI_COMMAND_TIMEOUT_KILL_DELAY: Knob[int] = Knob(
     'cli.command.timeout.kill-delay',
     'How long to wait before sending SIGKILL to commands that did not finish after running out of time.',
@@ -362,7 +389,8 @@ KNOB_COMMAND_TERMINATION_TIMEOUT: Knob[int] = Knob(
     """
     Timeout, in seconds, for CLI commands executed by pool drivers when talking to the infrastructure, e.g. `aws`
     or `az` CLI tools. After this many seconds, the command will be sent `SIGTERM`. Set to zero or less to
-    disable the explicit deadline, and fall back to `cli.command.timeout.patterns` instead.
+    disable the explicit deadline, and fall back to `cli.command.timeout.patterns` instead. Commands matching
+    one of the `cli.command.timeout.overrides` patterns are not affected by this knob.
     """,
     has_db=False,
     per_entity=True,
@@ -525,6 +553,23 @@ except Exception as exc:
         'failed to compile ARTEMIS_CLI_COMMAND_TIMEOUT_PATTERNS pattern',
         exc,
         pattern=KNOB_CLI_COMMAND_TIMEOUT_PATTERNS.value,
+    ).handle(LOGGER.get())
+
+    sys.exit(1)
+
+
+# Precompile the timeout command overrides
+try:
+    CLI_COMMAND_TIMEOUT_OVERRIDES: list[tuple[Pattern[str], int]] = [
+        (re.compile(command_pattern.split(':', 1)[1]), int(command_pattern.split(':', 1)[0]))
+        for command_pattern in KNOB_CLI_COMMAND_TIMEOUT_OVERRIDES.value.split(';')
+    ]
+
+except Exception as exc:
+    Failure.from_exc(
+        'failed to compile ARTEMIS_CLI_COMMAND_TIMEOUT_OVERRIDES pattern',
+        exc,
+        pattern=KNOB_CLI_COMMAND_TIMEOUT_OVERRIDES.value,
     ).handle(LOGGER.get())
 
     sys.exit(1)
@@ -3431,18 +3476,34 @@ def vm_info_to_ip(
     return Ok(match_obj.group(1))
 
 
-def get_command_deadline(poolname: str) -> Result[Optional[datetime.timedelta], Failure]:
+def get_command_deadline(poolname: str, command: list[str]) -> Result[Optional[datetime.timedelta], Failure]:
     """
     Resolve the deadline for CLI commands run by a pool driver.
 
-    Uses the per-pool ``cli.command.timeout.termination`` knob. If the knob is set to zero or less, no explicit
-    deadline is returned, and :py:func:`run_cli_tool` falls back to its command timeout patterns to decide
-    the timeout.
+    Commands matching one of the ``cli.command.timeout.overrides`` patterns are given the timeout attached
+    to the matching pattern - such patterns exist for commands known to take their time, e.g. ``az vm create``.
+    All other commands are given the timeout from the per-pool ``cli.command.timeout.termination`` knob. If
+    that knob is set to zero or less, no explicit deadline is returned, and :py:func:`run_cli_tool` falls back
+    to its command timeout patterns to decide the timeout.
 
     :param poolname: name of the pool the command is run for.
+    :param command: the command that will be run.
     :returns: either a valid result, the deadline to use, possibly ``None``, or an error with a :py:class:`Failure`
         describing the problem.
     """
+
+    joined_command = command_join(command)
+
+    for pattern, timeout in CLI_COMMAND_TIMEOUT_OVERRIDES:
+        if pattern.match(joined_command) is None:
+            continue
+
+        # Zero or negative timeout means "no explicit deadline" - `run_cli_tool` will fall back to its
+        # command timeout patterns.
+        if timeout <= 0:
+            return Ok(None)
+
+        return Ok(datetime.timedelta(seconds=timeout))
 
     r_timeout = KNOB_COMMAND_TERMINATION_TIMEOUT.get_value(entityname=poolname)
 
@@ -3976,14 +4037,16 @@ class CLISessionTemporaryDir(CLISessionDir):
     ) -> Result[Union[JSONType, str], Failure]:
         environ = {**os.environ, self.cli_config_dir_env_var: self.session_directory.name}
 
-        r_deadline = get_command_deadline(self.pool.poolname)
+        command = [self.cli_cmd, *options]
+
+        r_deadline = get_command_deadline(self.pool.poolname, command)
 
         if r_deadline.is_error:
             return Error(r_deadline.unwrap_error())
 
         r_run = run_cli_tool(
             logger,
-            [self.cli_cmd, *options],
+            command,
             env=environ,
             json_output=json_format,
             command_scrubber=lambda cmd: [self.cli_prefix, *options],
@@ -4076,7 +4139,9 @@ class CLISessionPermanentDir(CLISessionDir):
     ) -> Result[Union[JSONType, str], Failure]:
         environ = {**os.environ, self.cli_config_dir_env_var: self.session_dir_path}
 
-        r_deadline = get_command_deadline(self.pool.poolname)
+        command = [self.cli_cmd, *options]
+
+        r_deadline = get_command_deadline(self.pool.poolname, command)
 
         if r_deadline.is_error:
             return Error(r_deadline.unwrap_error())
@@ -4117,7 +4182,7 @@ class CLISessionPermanentDir(CLISessionDir):
         # Run command, isolation should be guaranteed now
         r_run = run_cli_tool(
             logger,
-            [self.cli_cmd, *options],
+            command,
             env=environ,
             json_output=json_format,
             command_scrubber=lambda cmd: [self.cli_prefix, *options],

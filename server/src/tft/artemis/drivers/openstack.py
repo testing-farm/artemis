@@ -80,6 +80,20 @@ KNOB_API_TIMEOUT: Knob[int] = Knob(
     default=60,
 )
 
+KNOB_API_CONNECT_RETRIES: Knob[int] = Knob(
+    'openstack.api-connect-retries',
+    """
+    How many times to retry a connection error in OpenStack API calls made by the driver's Python clients,
+    e.g. nova or glance. Disabled by default. Keep in mind that with the API timeout in effect, every retry
+    may add up to `openstack.api-timeout` seconds before the call fails.
+    """,
+    has_db=False,
+    per_entity=True,
+    envvar='ARTEMIS_OPENSTACK_API_CONNECT_RETRIES',
+    cast_from_str=int,
+    default=0,
+)
+
 KNOB_BUILD_TIMEOUT: Knob[int] = Knob(
     'openstack.build-timeout',
     'How long, in seconds, is an instance allowed to stay in `BUILD` state until cancelled and reprovisioned.',
@@ -500,11 +514,22 @@ class OpenStackDriver(
         if r_timeout.is_error:
             return Error(r_timeout.unwrap_error())
 
+        r_connect_retries = KNOB_API_CONNECT_RETRIES.get_value(entityname=self.poolname)
+
+        if r_connect_retries.is_error:
+            return Error(r_connect_retries.unwrap_error())
+
         api_timeout = r_timeout.unwrap()
+        connect_retries = r_connect_retries.unwrap()
 
         try:
             # Zero or negative timeout means "no timeout" - the client library's default behavior.
-            sess = keystoneauth1.session.Session(auth=auth, timeout=api_timeout if api_timeout > 0 else None)
+            sess = keystoneauth1.session.Session(
+                auth=auth,
+                timeout=api_timeout if api_timeout > 0 else None,
+                # Zero or negative number of retries means "no retries" - the session's default behavior.
+                connect_retries=max(0, connect_retries),
+            )
             return Ok(sess)
         except Exception as exc:
             return Error(
@@ -551,14 +576,16 @@ class OpenStackDriver(
         if json_format:
             options += ['-f', 'json']
 
-        r_deadline = get_command_deadline(self.poolname)
+        command = os_base + options
+
+        r_deadline = get_command_deadline(self.poolname, command)
 
         if r_deadline.is_error:
             return Error(r_deadline.unwrap_error())
 
         r_run = run_cli_tool(
             self.logger,
-            os_base + options,
+            command,
             json_output=json_format,
             command_scrubber=lambda cmd: ['openstack', *options],
             guestname=guestname,

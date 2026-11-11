@@ -13,6 +13,7 @@ from typing import Any, Optional, TypeAlias, cast, override
 import gluetool.log
 import google.api_core
 import google.api_core.exceptions
+import google.api_core.retry
 import sqlalchemy.orm.session
 from gluetool.result import Error, Ok, Result
 from google.cloud import compute_v1
@@ -81,6 +82,19 @@ KNOB_API_TIMEOUT: Knob[int] = Knob(
     envvar='ARTEMIS_GCP_API_TIMEOUT',
     cast_from_str=int,
     default=60,
+)
+
+KNOB_API_RETRY_DEADLINE: Knob[int] = Knob(
+    'gcp.api-retry-deadline',
+    """
+    Total time, in seconds, a read-only GCP API call - including any retries - is allowed to take. Set to zero
+    or less to disable retries. Mutating API calls, e.g. creating or deleting an instance, are never retried.
+    """,
+    has_db=False,
+    per_entity=True,
+    envvar='ARTEMIS_GCP_API_RETRY_DEADLINE',
+    cast_from_str=int,
+    default=180,
 )
 
 DEFAULT_DISK_SIZE: SizeType = UNITS('20 GiB')
@@ -287,6 +301,42 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, 
 
         return timeout
 
+    @functools.cached_property
+    def _api_retry(self) -> Optional[google.api_core.retry.Retry]:
+        """
+        Bounded retry policy for read-only GCP API calls, or ``None`` if retries are disabled.
+
+        GCP client libraries retry read-only API calls by default, with a fairly generous deadline of 600
+        seconds - which would undermine the per-call timeout. We replace the default with our own policy,
+        bounded by the ``gcp.api-retry-deadline`` knob, so a read-only call cannot take too long even when
+        the infrastructure is unresponsive. A read-only call may fail because of our own per-attempt timeout,
+        and such failures are retried until the deadline of this policy is reached.
+        """
+
+        r_deadline = KNOB_API_RETRY_DEADLINE.get_value(entityname=self.poolname)
+
+        if r_deadline.is_error:
+            r_deadline.unwrap_error().log(self.logger.warning, label='failed to resolve the GCP API retry deadline')
+
+            return None
+
+        deadline = r_deadline.unwrap()
+
+        # Zero or negative deadline means "no retries".
+        if deadline is None or deadline <= 0:
+            return None
+
+        return google.api_core.retry.Retry(
+            initial=0.1,
+            maximum=60.0,
+            multiplier=1.3,
+            predicate=google.api_core.retry.if_exception_type(
+                google.api_core.exceptions.DeadlineExceeded,
+                google.api_core.exceptions.ServiceUnavailable,
+            ),
+            deadline=deadline,
+        )
+
     def _api_call(self, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:  # noqa: ANN401  # Pass-through
         """
         Run a GCP API call, making sure it is limited by the driver's API timeout.
@@ -294,6 +344,10 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, 
         GCP client library methods accept a ``timeout`` argument, given in seconds. Unless the caller provides
         their own timeout, we pass the value resolved from the ``gcp.api-timeout`` knob, to prevent calls from
         hanging for too long when the infrastructure is unresponsive.
+
+        The caller is responsible for the ``retry`` argument: read-only calls are given the bounded retry policy
+        resolved from the ``gcp.api-retry-deadline`` knob, while mutating calls are pinned to ``retry=None`` to
+        make sure they are never retried.
 
         .. note::
 
@@ -341,7 +395,9 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, 
 
         try:
             images_client = compute_v1.ImagesClient.from_service_account_info(self._service_account_info)
-            image_description = self._api_call(images_client.get, project=image_project, image=image_name)
+            image_description = self._api_call(
+                images_client.get, project=image_project, image=image_name, retry=self._api_retry
+            )
         except google.api_core.exceptions.NotFound as exc:
             return Error(Failure.from_exc('The given imagename was not found.', exc, imagename=image_name))
 
@@ -376,7 +432,7 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, 
         zone = self.pool_config['zone']
 
         try:
-            flavors = self._api_call(self._flavors_client.list, project=project, zone=zone)
+            flavors = self._api_call(self._flavors_client.list, project=project, zone=zone, retry=self._api_retry)
         except Exception as exc:
             return _Error(Failure.from_exc('failed to list flavors', exc))
 
@@ -387,7 +443,9 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, 
         zone = self.pool_config['zone']
 
         try:
-            raw_instances = list(self._api_call(self._instances_client.list, project=project, zone=zone))
+            raw_instances = list(
+                self._api_call(self._instances_client.list, project=project, zone=zone, retry=self._api_retry)
+            )
         except Exception as exc:
             return Error(Failure.from_exc('failed to list instances', exc))
 
@@ -455,7 +513,7 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, 
         )
 
         try:
-            instance_info = self._api_call(self._instances_client.get, request=request)
+            instance_info = self._api_call(self._instances_client.get, request=request, retry=self._api_retry)
         except google.api_core.exceptions.NotFound as exc:
             failure = Failure.from_exc(
                 f'Failed to locate instance {request.instance}', exc, recoverable=False, fail_guest_request=False
@@ -525,7 +583,9 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, 
             zone=self.pool_config['zone'],
         )
         try:
-            self._api_call(self._instances_client.delete, request=request)
+            # Mutating calls are never retried: a retry of e.g. instance creation could yield duplicate
+            # resources.
+            self._api_call(self._instances_client.delete, request=request, retry=None)
         except google.api_core.exceptions.NotFound as exc:
             failure = Failure.from_exc(
                 'Instance to delete was not found', exc, recoverable=False, fail_guest_request=False
@@ -678,7 +738,8 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, 
         client = self._instances_client
 
         try:
-            operation = self._api_call(client.insert, request=request)
+            # Mutating calls are never retried: a retry of instance creation could yield duplicate instances.
+            operation = self._api_call(client.insert, request=request, retry=None)
         except google.api_core.exceptions.BadRequest as exc:
             return _Error(Failure.from_exc('Failed to create a GCP instance', exc))
         # NOTE(ivasilev) this should not happen anymore with ResourceManager approach
@@ -754,7 +815,7 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, 
                 return Error(Failure.from_exc('malformed image description', exc, image_info=image))
 
         res = []
-        for image in self._api_call(images_client.list, request_list_images):
+        for image in self._api_call(images_client.list, request_list_images, retry=self._api_retry):
             r_image = _from_image(image)
             if r_image.is_error:
                 return Error(
@@ -826,7 +887,8 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, 
         )
 
         try:
-            self._api_call(self._instances_client.reset, request=request)
+            # Mutating calls are never retried.
+            self._api_call(self._instances_client.reset, request=request, retry=None)
         except google.api_core.exceptions.NotFound as exc:
             return Error(Failure.from_exc('Instance to reboot was not found', exc))
         except google.api_core.exceptions.ClientError as exc:
@@ -871,7 +933,10 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, 
             return Ok(
                 list(
                     self._api_call(
-                        self._instances_client.list, project=self.pool_config['project'], zone=self.pool_config['zone']
+                        self._instances_client.list,
+                        project=self.pool_config['project'],
+                        zone=self.pool_config['zone'],
+                        retry=self._api_retry,
                     )
                 )
             )
