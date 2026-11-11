@@ -86,6 +86,7 @@ from . import (
     WatchdogState,
     create_error_cause_extractor,
     create_sanitize_tags,
+    get_command_deadline,
     guest_log_updater,
     run_cli_tool,
 )
@@ -208,6 +209,7 @@ class AWSErrorCauses(enum.Enum):
     FLAVOR_INFO_REFRESH_FAILED = 'flavor-info-refresh-failed'
     IMAGE_INFO_REFRESH_FAILED = 'image-info-refresh-failed'
     CLI_SESSION_FLOCK_FAILED = 'cli-session-flock-failed'
+    CLI_COMMAND_TIMED_OUT = 'cli-command-timed-out'
 
     # AWS specific
     MISSING_INSTANCE = 'missing-instance'
@@ -2161,6 +2163,11 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
 
         command = [self.pool_config['command'], *args]
 
+        r_deadline = get_command_deadline(self.poolname)
+
+        if r_deadline.is_error:
+            return Error(r_deadline.unwrap_error())
+
         r_run = run_cli_tool(
             self.logger,
             command,
@@ -2170,6 +2177,7 @@ class AWSDriver(FlavorBasedPoolDriver[AWSErrorCauses, AWSPoolImageInfo, AWSFlavo
             poolname=self.poolname,
             commandname=commandname,
             cause_extractor=self.error_cause_extractor,
+            deadline=r_deadline.unwrap(),
         )
 
         if r_run.is_error:

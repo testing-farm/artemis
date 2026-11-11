@@ -960,12 +960,33 @@ for full list of connection parameters that can be specified via URL.
 |`cli.command.timeout.patterns`
 |`str`
 |`ARTEMIS_CLI_COMMAND_TIMEOUT_PATTERNS`
-|`3600:.*`
+|`120:(ssh|scp) .*;600:.*`
 |no
 
 
 
-5+|Timeout and command patterns: "<timeout1>:<pattern1>;<timeout2>:<pattern2>;...
+5+|Timeout and command patterns: "<timeout1>:<pattern1>;<timeout2>:<pattern2>;...". Patterns are matched
+against the beginning of the complete command, and the timeout of the first matching pattern is used.
+Commands that are given an explicit deadline (see `cli.command.timeout.termination`) are not affected by
+these patterns.
+
+|`cli.command.timeout.termination`
+|`int`
+|`ARTEMIS_CLI_COMMAND_TIMEOUT_TERMINATION`
+|`300`
+|no
+
+
+|`cli.command.timeout.termination:$entityname`
+|
+|`ARTEMIS_CLI_COMMAND_TIMEOUT_TERMINATION_$entityname`
+|
+|
+
+
+5+|Timeout, in seconds, for CLI commands executed by pool drivers when talking to the infrastructure, e.g. `aws`
+or `az` CLI tools. After this many seconds, the command will be sent `SIGTERM`. Set to zero or less to
+disable the explicit deadline, and fall back to `cli.command.timeout.patterns` instead.
 
 |`config.dirpath`
 |`<lambda>`
@@ -1108,6 +1129,23 @@ deployments.
 
 
 5+|How old must the guest log blobs be to be removed, in seconds.
+
+|`gcp.api-timeout`
+|`int`
+|`ARTEMIS_GCP_API_TIMEOUT`
+|`60`
+|no
+
+
+|`gcp.api-timeout:$entityname`
+|
+|`ARTEMIS_GCP_API_TIMEOUT_$entityname`
+|
+|
+
+
+5+|Timeout, in seconds, for GCP API calls made by the driver. Set to zero or less to use the client library's
+default timeout.
 
 |`gcp.mapping.environment-to-image.pattern-map.filepath`
 |`str`
@@ -1357,6 +1395,23 @@ https://docs.python.org/3.7/library/logging.html#levels[logging subsystem].
 
 
 5+|When enabled, Artemis would log more debuginfo related to singleton task locking.
+
+|`openstack.api-timeout`
+|`int`
+|`ARTEMIS_OPENSTACK_API_TIMEOUT`
+|`60`
+|no
+
+
+|`openstack.api-timeout:$entityname`
+|
+|`ARTEMIS_OPENSTACK_API_TIMEOUT_$entityname`
+|
+|
+
+
+5+|Timeout, in seconds, for OpenStack API calls made by the driver's Python clients, e.g. nova or glance.
+Set to zero or less to use the client library's default (no timeout).
 
 |`openstack.build-timeout`
 |`int`

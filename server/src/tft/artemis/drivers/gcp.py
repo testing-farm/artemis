@@ -7,7 +7,7 @@ import functools
 import re
 import string
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Any, Optional, TypeAlias, cast, override
 
 import gluetool.log
@@ -68,6 +68,19 @@ KNOB_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE: Knob[str] = Knob(
     envvar='ARTEMIS_GCP_ENVIRONMENT_TO_IMAGE_MAPPING_NEEDLE',
     cast_from_str=str,
     default='{{ os.compose }}',
+)
+
+KNOB_API_TIMEOUT: Knob[int] = Knob(
+    'gcp.api-timeout',
+    """
+    Timeout, in seconds, for GCP API calls made by the driver. Set to zero or less to use the client library's
+    default timeout.
+    """,
+    has_db=False,
+    per_entity=True,
+    envvar='ARTEMIS_GCP_API_TIMEOUT',
+    cast_from_str=int,
+    default=60,
 )
 
 DEFAULT_DISK_SIZE: SizeType = UNITS('20 GiB')
@@ -242,6 +255,60 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, 
             compute_v1.MachineTypesClient.from_service_account_info(self._service_account_info),
         )
 
+    @functools.cached_property
+    def _api_timeout(self) -> Optional[int]:
+        """
+        Timeout, in seconds, for GCP API calls, or ``None`` if the client library's default timeout should be
+        used. Resolved from the per-pool ``gcp.api-timeout`` knob.
+        """
+
+        try:
+            r_timeout = KNOB_API_TIMEOUT.get_value(entityname=self.poolname)
+
+        except ValueError as exc:
+            # Misconfigured knob value, e.g. a non-numeric string: report it, and fall back to the client
+            # library's default timeout.
+            Failure.from_exc('failed to resolve the GCP API timeout', exc).log(
+                self.logger.warning, label='failed to resolve the GCP API timeout'
+            )
+
+            return None
+
+        if r_timeout.is_error:
+            r_timeout.unwrap_error().log(self.logger.warning, label='failed to resolve the GCP API timeout')
+
+            return None
+
+        timeout = r_timeout.unwrap()
+
+        # Zero or negative timeout means "use the client library's default timeout".
+        if timeout is None or timeout <= 0:
+            return None
+
+        return timeout
+
+    def _api_call(self, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:  # noqa: ANN401  # Pass-through
+        """
+        Run a GCP API call, making sure it is limited by the driver's API timeout.
+
+        GCP client library methods accept a ``timeout`` argument, given in seconds. Unless the caller provides
+        their own timeout, we pass the value resolved from the ``gcp.api-timeout`` knob, to prevent calls from
+        hanging for too long when the infrastructure is unresponsive.
+
+        .. note::
+
+           When the knob is disabled, we do not pass the ``timeout`` argument at all: passing ``timeout=None``
+           explicitly would disable the client library's own default timeout as well.
+
+        :param fn: the client library method to call.
+        :returns: whatever the given method returns.
+        """
+
+        if 'timeout' not in kwargs and self._api_timeout is not None:
+            kwargs['timeout'] = self._api_timeout
+
+        return fn(*args, **kwargs)
+
     @classmethod
     def timestamp_to_datetime(cls, timestamp: str) -> Result[datetime.datetime, Failure]:
         try:
@@ -274,7 +341,7 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, 
 
         try:
             images_client = compute_v1.ImagesClient.from_service_account_info(self._service_account_info)
-            image_description = images_client.get(project=image_project, image=image_name)
+            image_description = self._api_call(images_client.get, project=image_project, image=image_name)
         except google.api_core.exceptions.NotFound as exc:
             return Error(Failure.from_exc('The given imagename was not found.', exc, imagename=image_name))
 
@@ -309,7 +376,7 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, 
         zone = self.pool_config['zone']
 
         try:
-            flavors = self._flavors_client.list(project=project, zone=zone)
+            flavors = self._api_call(self._flavors_client.list, project=project, zone=zone)
         except Exception as exc:
             return _Error(Failure.from_exc('failed to list flavors', exc))
 
@@ -320,7 +387,7 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, 
         zone = self.pool_config['zone']
 
         try:
-            raw_instances = list(self._instances_client.list(project=project, zone=zone))
+            raw_instances = list(self._api_call(self._instances_client.list, project=project, zone=zone))
         except Exception as exc:
             return Error(Failure.from_exc('failed to list instances', exc))
 
@@ -388,7 +455,7 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, 
         )
 
         try:
-            instance_info = self._instances_client.get(request=request)
+            instance_info = self._api_call(self._instances_client.get, request=request)
         except google.api_core.exceptions.NotFound as exc:
             failure = Failure.from_exc(
                 f'Failed to locate instance {request.instance}', exc, recoverable=False, fail_guest_request=False
@@ -458,7 +525,7 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, 
             zone=self.pool_config['zone'],
         )
         try:
-            self._instances_client.delete(request=request)
+            self._api_call(self._instances_client.delete, request=request)
         except google.api_core.exceptions.NotFound as exc:
             failure = Failure.from_exc(
                 'Instance to delete was not found', exc, recoverable=False, fail_guest_request=False
@@ -611,7 +678,7 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, 
         client = self._instances_client
 
         try:
-            operation = client.insert(request=request)
+            operation = self._api_call(client.insert, request=request)
         except google.api_core.exceptions.BadRequest as exc:
             return _Error(Failure.from_exc('Failed to create a GCP instance', exc))
         # NOTE(ivasilev) this should not happen anymore with ResourceManager approach
@@ -687,7 +754,7 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, 
                 return Error(Failure.from_exc('malformed image description', exc, image_info=image))
 
         res = []
-        for image in images_client.list(request_list_images):
+        for image in self._api_call(images_client.list, request_list_images):
             r_image = _from_image(image)
             if r_image.is_error:
                 return Error(
@@ -759,7 +826,7 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, 
         )
 
         try:
-            self._instances_client.reset(request=request)
+            self._api_call(self._instances_client.reset, request=request)
         except google.api_core.exceptions.NotFound as exc:
             return Error(Failure.from_exc('Instance to reboot was not found', exc))
         except google.api_core.exceptions.ClientError as exc:
@@ -802,7 +869,11 @@ class GCPDriver(FlavorBasedPoolDriver[GCPErrorCauses, PoolImageInfo, GCPFlavor, 
         # Resource usage - instances and flavors
         def _fetch_instances(logger: gluetool.log.ContextAdapter) -> Result[list[compute_v1.Instance], Failure]:
             return Ok(
-                list(self._instances_client.list(project=self.pool_config['project'], zone=self.pool_config['zone']))
+                list(
+                    self._api_call(
+                        self._instances_client.list, project=self.pool_config['project'], zone=self.pool_config['zone']
+                    )
+                )
             )
 
         def _update_instance_usage(

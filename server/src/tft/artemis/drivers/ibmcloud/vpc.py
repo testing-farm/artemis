@@ -116,6 +116,7 @@ class IBMCloudVPCErrorCauses(enum.Enum):
     FLAVOR_INFO_REFRESH_FAILED = 'flavor-info-refresh-failed'
     IMAGE_INFO_REFRESH_FAILED = 'image-info-refresh-failed'
     CLI_SESSION_FLOCK_FAILED = 'cli-session-flock-failed'
+    CLI_COMMAND_TIMED_OUT = 'cli-command-timed-out'
 
     # IBM Cloud VPC specific
     UNEXPECTED_INSTANCE_STATE = 'unexpected-instance-state'

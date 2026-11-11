@@ -3,12 +3,16 @@
 
 import datetime
 from typing import Optional
+from unittest.mock import MagicMock
 
 import gluetool.log
 import pytest
+from gluetool.result import Ok
 
 import tft.artemis.db
 import tft.artemis.drivers.aws
+
+from ... import MockPatcher
 
 AWS_TAGS_EXAMPLES: dict[str, str] = {
     'tag1': 'value1',
@@ -95,3 +99,25 @@ def test_should_use_spot_request(
     )
 
     assert driver._should_use_spot_request(guest_request) is expected
+
+
+def test_aws_command_deadline(logger: gluetool.log.ContextAdapter, mockpatch: MockPatcher) -> None:
+    driver = tft.artemis.drivers.aws.AWSDriver(
+        logger,
+        'dummy-aws-pool',
+        {
+            'command': 'aws',
+            'access-key-id': 'dummy',
+            'secret-access-key': 'dummy',
+            'default-region': 'dummy',
+        },
+    )
+
+    mock_run_cli_tool = mockpatch(tft.artemis.drivers.aws, 'run_cli_tool')
+    mock_run_cli_tool.return_value = Ok(MagicMock(json={}))
+
+    r_output = driver._aws_command(['ec2', 'describe-instances'], commandname='ec2.describe-instances')
+
+    assert r_output.is_ok
+
+    assert mock_run_cli_tool.call_args.kwargs['deadline'] == datetime.timedelta(seconds=300)

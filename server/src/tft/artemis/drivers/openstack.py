@@ -62,8 +62,22 @@ from . import (
     Tags,
     create_error_cause_extractor,
     create_tempfile,
+    get_command_deadline,
     guest_log_updater,
     run_cli_tool,
+)
+
+KNOB_API_TIMEOUT: Knob[int] = Knob(
+    'openstack.api-timeout',
+    """
+    Timeout, in seconds, for OpenStack API calls made by the driver's Python clients, e.g. nova or glance.
+    Set to zero or less to use the client library's default (no timeout).
+    """,
+    has_db=False,
+    per_entity=True,
+    envvar='ARTEMIS_OPENSTACK_API_TIMEOUT',
+    cast_from_str=int,
+    default=60,
 )
 
 KNOB_BUILD_TIMEOUT: Knob[int] = Knob(
@@ -122,6 +136,7 @@ class OpenStackErrorCauses(enum.Enum):
     FLAVOR_INFO_REFRESH_FAILED = 'flavor-info-refresh-failed'
     IMAGE_INFO_REFRESH_FAILED = 'image-info-refresh-failed'
     CLI_SESSION_FLOCK_FAILED = 'cli-session-flock-failed'
+    CLI_COMMAND_TIMED_OUT = 'cli-command-timed-out'
 
     # OpenStack specific
     NO_SUCH_COMMAND = 'no-such-command'
@@ -479,8 +494,17 @@ class OpenStackDriver(
             project_domain_id=self.pool_config.get('project-domain-id'),
             project_name=self.pool_config['project-name'],
         )
+
+        r_timeout = KNOB_API_TIMEOUT.get_value(entityname=self.poolname)
+
+        if r_timeout.is_error:
+            return Error(r_timeout.unwrap_error())
+
+        api_timeout = r_timeout.unwrap()
+
         try:
-            sess = keystoneauth1.session.Session(auth=auth)
+            # Zero or negative timeout means "no timeout" - the client library's default behavior.
+            sess = keystoneauth1.session.Session(auth=auth, timeout=api_timeout if api_timeout > 0 else None)
             return Ok(sess)
         except Exception as exc:
             return Error(
@@ -527,6 +551,11 @@ class OpenStackDriver(
         if json_format:
             options += ['-f', 'json']
 
+        r_deadline = get_command_deadline(self.poolname)
+
+        if r_deadline.is_error:
+            return Error(r_deadline.unwrap_error())
+
         r_run = run_cli_tool(
             self.logger,
             os_base + options,
@@ -536,6 +565,7 @@ class OpenStackDriver(
             poolname=self.poolname,
             commandname=commandname,
             cause_extractor=self.error_cause_extractor,
+            deadline=r_deadline.unwrap(),
         )
 
         if r_run.is_error:

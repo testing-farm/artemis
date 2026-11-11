@@ -336,11 +336,16 @@ KNOB_DISPATCH_RESOURCE_CLEANUP_DELAY: Knob[int] = Knob(
 
 KNOB_CLI_COMMAND_TIMEOUT_PATTERNS: Knob[str] = Knob(
     'cli.command.timeout.patterns',
-    'Timeout and command patterns: "<timeout1>:<pattern1>;<timeout2>:<pattern2>;...',
+    """
+    Timeout and command patterns: "<timeout1>:<pattern1>;<timeout2>:<pattern2>;...". Patterns are matched
+    against the beginning of the complete command, and the timeout of the first matching pattern is used.
+    Commands that are given an explicit deadline (see `cli.command.timeout.termination`) are not affected by
+    these patterns.
+    """,
     has_db=False,
     envvar='ARTEMIS_CLI_COMMAND_TIMEOUT_PATTERNS',
     cast_from_str=str,
-    default=r'3600:.*',
+    default=r'120:(ssh|scp) .*;600:.*',
 )
 
 KNOB_CLI_COMMAND_TIMEOUT_KILL_DELAY: Knob[int] = Knob(
@@ -350,6 +355,20 @@ KNOB_CLI_COMMAND_TIMEOUT_KILL_DELAY: Knob[int] = Knob(
     envvar='ARTEMIS_CLI_COMMAND_TIMEOUT_KILL_DELAY',
     cast_from_str=int,
     default=10,
+)
+
+KNOB_COMMAND_TERMINATION_TIMEOUT: Knob[int] = Knob(
+    'cli.command.timeout.termination',
+    """
+    Timeout, in seconds, for CLI commands executed by pool drivers when talking to the infrastructure, e.g. `aws`
+    or `az` CLI tools. After this many seconds, the command will be sent `SIGTERM`. Set to zero or less to
+    disable the explicit deadline, and fall back to `cli.command.timeout.patterns` instead.
+    """,
+    has_db=False,
+    per_entity=True,
+    envvar='ARTEMIS_CLI_COMMAND_TIMEOUT_TERMINATION',
+    cast_from_str=int,
+    default=300,
 )
 
 KNOB_LOGGING_SLOW_CLI_COMMANDS: Knob[bool] = Knob(
@@ -568,10 +587,13 @@ class CommonErrorCauses(enum.Enum):
     FLAVOR_INFO_REFRESH_FAILED = 'flavor-info-refresh-failed'
     IMAGE_INFO_REFRESH_FAILED = 'image-info-refresh-failed'
     CLI_SESSION_FLOCK_FAILED = 'cli-session-flock-failed'
+    CLI_COMMAND_TIMED_OUT = 'cli-command-timed-out'
 
 
 COMMON_ERROR_CAUSE_PATTERNS: dict[enum.Enum, Pattern[str]] = {
     CommonErrorCauses.CLI_SESSION_FLOCK_FAILED: re.compile(r'cli-session-flock-failed'),
+    # As reported by the `timeout --verbose` wrapper when it starts terminating the command.
+    CommonErrorCauses.CLI_COMMAND_TIMED_OUT: re.compile(r'timeout: sending signal'),
 }
 
 
@@ -3409,6 +3431,55 @@ def vm_info_to_ip(
     return Ok(match_obj.group(1))
 
 
+def get_command_deadline(poolname: str) -> Result[Optional[datetime.timedelta], Failure]:
+    """
+    Resolve the deadline for CLI commands run by a pool driver.
+
+    Uses the per-pool ``cli.command.timeout.termination`` knob. If the knob is set to zero or less, no explicit
+    deadline is returned, and :py:func:`run_cli_tool` falls back to its command timeout patterns to decide
+    the timeout.
+
+    :param poolname: name of the pool the command is run for.
+    :returns: either a valid result, the deadline to use, possibly ``None``, or an error with a :py:class:`Failure`
+        describing the problem.
+    """
+
+    r_timeout = KNOB_COMMAND_TERMINATION_TIMEOUT.get_value(entityname=poolname)
+
+    if r_timeout.is_error:
+        return Error(r_timeout.unwrap_error())
+
+    timeout = r_timeout.unwrap()
+
+    # Zero or negative timeout means "no explicit deadline" - `run_cli_tool` will fall back to its command
+    # timeout patterns.
+    if timeout is None or timeout <= 0:
+        return Ok(None)
+
+    return Ok(datetime.timedelta(seconds=timeout))
+
+
+def _command_timed_out(output: gluetool.utils.ProcessOutput, actual_timeout: Optional[int]) -> bool:
+    """
+    Find out whether the command was terminated by the ``timeout`` wrapper.
+
+    We run commands wrapped with ``timeout --verbose`` which reports, on its standard error output, the moment
+    it starts terminating the command. That is the only reliable way of telling "we killed the command" apart
+    from "the command died on its own".
+
+    :param output: output of the command.
+    :param actual_timeout: the timeout the command was given, if any.
+    :returns: ``True`` if the command was terminated because it ran out of time.
+    """
+
+    if actual_timeout is None:
+        return False
+
+    stderr = process_output_to_str(output, stream='stderr')
+
+    return stderr is not None and 'timeout: sending signal' in stderr
+
+
 def run_cli_tool(
     logger: gluetool.log.ContextAdapter,
     command: list[str],
@@ -3533,6 +3604,9 @@ def run_cli_tool(
     except gluetool.glue.GlueCommandError as exc:
         _log_command(exc.output)
 
+        if _command_timed_out(exc.output, actual_timeout):
+            failure_details.update(timed_out=True, command_timeout=actual_timeout)
+
         return Error(Failure.from_exc('error running CLI command', exc, command_output=exc.output, **failure_details))
 
     else:
@@ -3616,6 +3690,7 @@ def run_remote(
             poolname=poolname,
             commandname=commandname,
             cause_extractor=cause_extractor,
+            deadline=deadline,
         )
 
 
@@ -3665,6 +3740,7 @@ def copy_to_remote(
             poolname=poolname,
             commandname=commandname,
             cause_extractor=cause_extractor,
+            deadline=deadline,
         )
 
 
@@ -3714,6 +3790,7 @@ def copy_from_remote(
             poolname=poolname,
             commandname=commandname,
             cause_extractor=cause_extractor,
+            deadline=deadline,
         )
 
 
@@ -3899,6 +3976,11 @@ class CLISessionTemporaryDir(CLISessionDir):
     ) -> Result[Union[JSONType, str], Failure]:
         environ = {**os.environ, self.cli_config_dir_env_var: self.session_directory.name}
 
+        r_deadline = get_command_deadline(self.pool.poolname)
+
+        if r_deadline.is_error:
+            return Error(r_deadline.unwrap_error())
+
         r_run = run_cli_tool(
             logger,
             [self.cli_cmd, *options],
@@ -3909,6 +3991,7 @@ class CLISessionTemporaryDir(CLISessionDir):
             poolname=self.pool.poolname,
             commandname=commandname,
             cause_extractor=self.pool.error_cause_extractor,
+            deadline=r_deadline.unwrap(),
         )
 
         if r_run.is_error:
@@ -3993,6 +4076,11 @@ class CLISessionPermanentDir(CLISessionDir):
     ) -> Result[Union[JSONType, str], Failure]:
         environ = {**os.environ, self.cli_config_dir_env_var: self.session_dir_path}
 
+        r_deadline = get_command_deadline(self.pool.poolname)
+
+        if r_deadline.is_error:
+            return Error(r_deadline.unwrap_error())
+
         session_dir_fd = os.open(self.session_dir_path, os.O_RDONLY)
 
         # Obtain lock
@@ -4037,6 +4125,7 @@ class CLISessionPermanentDir(CLISessionDir):
             poolname=self.pool.poolname,
             commandname=commandname,
             cause_extractor=self.pool.error_cause_extractor,
+            deadline=r_deadline.unwrap(),
         )
 
         # Release the lock

@@ -1,12 +1,16 @@
 # Copyright Contributors to the Testing Farm project.
 # SPDX-License-Identifier: Apache-2.0
 
+import datetime
 from re import Pattern
+from types import SimpleNamespace
 from typing import Any, Optional, cast
 from unittest.mock import MagicMock
 
+import _pytest.monkeypatch
 import gluetool
 import gluetool.log
+import gluetool.utils
 import pytest
 import sqlalchemy
 import yaml
@@ -261,3 +265,189 @@ def test_generate_post_install_script_from_template_default(
     script = r_script.unwrap()
     # Make sure that resulting post-install-script is matches passed user-data
     assert script == (user_data or '')
+
+
+def test_get_command_deadline_default() -> None:
+    r_deadline = tft.artemis.drivers.get_command_deadline('dummy-pool')
+
+    assert r_deadline.is_ok
+    assert r_deadline.unwrap() == datetime.timedelta(seconds=300)
+
+
+def test_get_command_deadline_per_pool(monkeypatch: _pytest.monkeypatch.MonkeyPatch) -> None:
+    monkeypatch.setenv('ARTEMIS_CLI_COMMAND_TIMEOUT_TERMINATION_dummy_pool', '42')
+
+    r_deadline = tft.artemis.drivers.get_command_deadline('dummy-pool')
+
+    assert r_deadline.is_ok
+    assert r_deadline.unwrap() == datetime.timedelta(seconds=42)
+
+
+def test_get_command_deadline_disabled(monkeypatch: _pytest.monkeypatch.MonkeyPatch) -> None:
+    monkeypatch.setenv('ARTEMIS_CLI_COMMAND_TIMEOUT_TERMINATION_dummy_pool', '0')
+
+    r_deadline = tft.artemis.drivers.get_command_deadline('dummy-pool')
+
+    assert r_deadline.is_ok
+    assert r_deadline.unwrap() is None
+
+
+@pytest.mark.parametrize(
+    ('command', 'expected_timeout'),
+    [
+        ('ssh -i /tmp/dummy-key -o ConnectTimeout=15 root@192.0.2.1 true', 120),
+        ('scp -i /tmp/dummy-key src dst', 120),
+        ('aws ec2 describe-instances', 600),
+        ('az vm list', 600),
+        ('bkr job-results J:123', 600),
+    ],
+)
+def test_cli_timeout_patterns(command: str, expected_timeout: int) -> None:
+    for pattern, timeout in tft.artemis.drivers.CLI_TIMEOUT_PATTERNS:
+        if pattern.match(command) is not None:
+            assert timeout == expected_timeout
+
+            return
+
+    pytest.fail(f'no timeout pattern matched command {command}')
+
+
+@pytest.mark.parametrize(
+    ('exit_code', 'stderr', 'actual_timeout', 'expected'),
+    [
+        (143, "timeout: sending signal TERM to command 'sleep'", 120, True),
+        (137, "timeout: sending signal KILL to command 'sleep'", 120, True),
+        (1, 'command failed', 120, False),
+        (143, "timeout: sending signal TERM to command 'sleep'", None, False),
+    ],
+)
+def test_command_timed_out(exit_code: int, stderr: str, actual_timeout: Optional[int], expected: bool) -> None:
+    output = gluetool.utils.ProcessOutput(['dummy'], exit_code, '', stderr, {})
+
+    assert tft.artemis.drivers._command_timed_out(output, actual_timeout) is expected
+
+
+def test_run_cli_tool_deadline(logger: gluetool.log.ContextAdapter) -> None:
+    r_output = tft.artemis.drivers.run_cli_tool(
+        logger,
+        ['sleep', '30'],
+        deadline=datetime.timedelta(seconds=1),
+    )
+
+    assert r_output.is_error
+
+    failure = r_output.unwrap_error()
+
+    assert failure.details['timed_out'] is True
+    assert failure.details['command_timeout'] == 1
+
+
+def test_error_cause_extractor_command_timed_out() -> None:
+    extractor = tft.artemis.drivers.create_error_cause_extractor(tft.artemis.drivers.CommonErrorCauses)
+
+    output = gluetool.utils.ProcessOutput(['sleep'], 143, '', "timeout: sending signal TERM to command 'sleep'", {})
+
+    assert extractor(output=output) is tft.artemis.drivers.CommonErrorCauses.CLI_COMMAND_TIMED_OUT
+
+
+def test_run_remote_deadline_forwarded(logger: gluetool.log.ContextAdapter, mockpatch: MockPatcher) -> None:
+    mock_run_cli_tool = mockpatch(tft.artemis.drivers, 'run_cli_tool')
+    mock_run_cli_tool.return_value = Ok(MagicMock())
+
+    guest_request = cast(Any, SimpleNamespace(address='192.0.2.1', ssh_username='root', ssh_port=22))
+
+    r_output = tft.artemis.drivers.run_remote(
+        logger,
+        guest_request,
+        ['true'],
+        key=cast(Any, SimpleNamespace(private='dummy-private-key')),
+        ssh_timeout=15,
+        deadline=datetime.timedelta(seconds=33),
+    )
+
+    assert r_output.is_ok
+
+    assert mock_run_cli_tool.call_args.kwargs['deadline'] == datetime.timedelta(seconds=33)
+
+
+class _DummyCLISessionPermanentDir(tft.artemis.drivers.CLISessionPermanentDir):
+    """
+    A minimal `CLISessionPermanentDir` subclass that does not depend on any real CLI tool.
+    """
+
+    @property
+    def cli_prefix(self) -> str:
+        return 'dummy'
+
+    @property
+    def cli_cmd(self) -> str:
+        return 'true'
+
+    @property
+    def cli_config_dir_env_var(self) -> str:
+        return 'DUMMY_CLI_CONFIG_DIR'
+
+    def _login(self, logger: gluetool.log.ContextAdapter) -> Result[None, tft.artemis.Failure]:
+        return Ok(None)
+
+
+def test_cli_session_permanent_dir_command_deadline(
+    logger: gluetool.log.ContextAdapter,
+    mockpatch: MockPatcher,
+    monkeypatch: _pytest.monkeypatch.MonkeyPatch,
+    tmp_path: Any,
+    redis: None,
+) -> None:
+    monkeypatch.setenv('ARTEMIS_CLI_SESSION_CONFIGURATION_DIR', str(tmp_path))
+
+    pool = cast(Any, SimpleNamespace(poolname='dummy-pool', error_cause_extractor=MagicMock()))
+
+    session = _DummyCLISessionPermanentDir(logger, pool)
+
+    mock_run_cli_tool = mockpatch(tft.artemis.drivers, 'run_cli_tool')
+    mock_run_cli_tool.return_value = Ok(MagicMock(json=None))
+
+    r_output = session._run_cmd(logger, ['foo', 'bar'], commandname='dummy.foo')
+
+    assert r_output.is_ok
+
+    assert mock_run_cli_tool.call_args.kwargs['deadline'] == datetime.timedelta(seconds=300)
+
+
+class _DummyCLISessionTemporaryDir(tft.artemis.drivers.CLISessionTemporaryDir):
+    """
+    A minimal `CLISessionTemporaryDir` subclass that does not depend on any real CLI tool.
+    """
+
+    @property
+    def cli_prefix(self) -> str:
+        return 'dummy'
+
+    @property
+    def cli_cmd(self) -> str:
+        return 'true'
+
+    @property
+    def cli_config_dir_env_var(self) -> str:
+        return 'DUMMY_CLI_CONFIG_DIR'
+
+    def _login(self, logger: gluetool.log.ContextAdapter) -> Result[None, tft.artemis.Failure]:
+        return Ok(None)
+
+
+def test_cli_session_temporary_dir_command_deadline(
+    logger: gluetool.log.ContextAdapter,
+    mockpatch: MockPatcher,
+) -> None:
+    pool = cast(Any, SimpleNamespace(poolname='dummy-pool', error_cause_extractor=MagicMock()))
+
+    session = _DummyCLISessionTemporaryDir(logger, pool)
+
+    mock_run_cli_tool = mockpatch(tft.artemis.drivers, 'run_cli_tool')
+    mock_run_cli_tool.return_value = Ok(MagicMock(json=None))
+
+    r_output = session._run_cmd(logger, ['foo', 'bar'], commandname='dummy.foo')
+
+    assert r_output.is_ok
+
+    assert mock_run_cli_tool.call_args.kwargs['deadline'] == datetime.timedelta(seconds=300)
