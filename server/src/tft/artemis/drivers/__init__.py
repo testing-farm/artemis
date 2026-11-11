@@ -357,8 +357,12 @@ KNOB_CLI_COMMAND_TIMEOUT_OVERRIDES: Knob[str] = Knob(
     the matching timeout is used even if `cli.command.timeout.termination` says otherwise - this makes it possible
     to give a larger budget to commands known to take their time, e.g. `az vm create`. Set the timeout to zero
     or less to let the matching command fall back to `cli.command.timeout.patterns`.
+
+    Can be set per pool by using `ARTEMIS_CLI_COMMAND_TIMEOUT_OVERRIDES_<poolname>` environment variable - such
+    pool-specific list then replaces the global one.
     """,
     has_db=False,
+    per_entity=True,
     envvar='ARTEMIS_CLI_COMMAND_TIMEOUT_OVERRIDES',
     cast_from_str=str,
     default=(
@@ -553,23 +557,6 @@ except Exception as exc:
         'failed to compile ARTEMIS_CLI_COMMAND_TIMEOUT_PATTERNS pattern',
         exc,
         pattern=KNOB_CLI_COMMAND_TIMEOUT_PATTERNS.value,
-    ).handle(LOGGER.get())
-
-    sys.exit(1)
-
-
-# Precompile the timeout command overrides
-try:
-    CLI_COMMAND_TIMEOUT_OVERRIDES: list[tuple[Pattern[str], int]] = [
-        (re.compile(command_pattern.split(':', 1)[1]), int(command_pattern.split(':', 1)[0]))
-        for command_pattern in KNOB_CLI_COMMAND_TIMEOUT_OVERRIDES.value.split(';')
-    ]
-
-except Exception as exc:
-    Failure.from_exc(
-        'failed to compile ARTEMIS_CLI_COMMAND_TIMEOUT_OVERRIDES pattern',
-        exc,
-        pattern=KNOB_CLI_COMMAND_TIMEOUT_OVERRIDES.value,
     ).handle(LOGGER.get())
 
     sys.exit(1)
@@ -3476,15 +3463,51 @@ def vm_info_to_ip(
     return Ok(match_obj.group(1))
 
 
+@functools.lru_cache(maxsize=64)
+def _compile_command_timeout_overrides(raw_overrides: str) -> Result[list[tuple[Pattern[str], int]], Failure]:
+    """
+    Compile the raw ``<timeout>:<pattern>;...`` string into a list of compiled patterns and their timeouts.
+
+    The outcome is cached: the number of distinct raw strings - the global default and pool-specific overrides -
+    is small, and :py:func:`get_command_deadline` is called for every single CLI command the drivers run.
+
+    :param raw_overrides: the raw patterns, as given by the ``cli.command.timeout.overrides`` knob.
+    :returns: either a valid result, list of compiled patterns and their timeouts, or an error with
+        a :py:class:`Failure` describing the problem.
+    """
+
+    # An empty list of overrides is a valid state - it simply means no command is given a special budget.
+    if not raw_overrides.strip():
+        return Ok([])
+
+    try:
+        return Ok(
+            [
+                (re.compile(command_pattern.split(':', 1)[1]), int(command_pattern.split(':', 1)[0]))
+                for command_pattern in raw_overrides.split(';')
+            ]
+        )
+
+    except Exception as exc:
+        return Error(
+            Failure.from_exc(
+                'failed to compile ARTEMIS_CLI_COMMAND_TIMEOUT_OVERRIDES pattern',
+                exc,
+                pattern=raw_overrides,
+            )
+        )
+
+
 def get_command_deadline(poolname: str, command: list[str]) -> Result[Optional[datetime.timedelta], Failure]:
     """
     Resolve the deadline for CLI commands run by a pool driver.
 
     Commands matching one of the ``cli.command.timeout.overrides`` patterns are given the timeout attached
     to the matching pattern - such patterns exist for commands known to take their time, e.g. ``az vm create``.
-    All other commands are given the timeout from the per-pool ``cli.command.timeout.termination`` knob. If
-    that knob is set to zero or less, no explicit deadline is returned, and :py:func:`run_cli_tool` falls back
-    to its command timeout patterns to decide the timeout.
+    The patterns are resolved per pool, a pool-specific list replacing the global one. All other commands are
+    given the timeout from the per-pool ``cli.command.timeout.termination`` knob. If that knob is set to zero
+    or less, no explicit deadline is returned, and :py:func:`run_cli_tool` falls back to its command timeout
+    patterns to decide the timeout.
 
     :param poolname: name of the pool the command is run for.
     :param command: the command that will be run.
@@ -3494,7 +3517,17 @@ def get_command_deadline(poolname: str, command: list[str]) -> Result[Optional[d
 
     joined_command = command_join(command)
 
-    for pattern, timeout in CLI_COMMAND_TIMEOUT_OVERRIDES:
+    r_overrides = KNOB_CLI_COMMAND_TIMEOUT_OVERRIDES.get_value(entityname=poolname)
+
+    if r_overrides.is_error:
+        return Error(r_overrides.unwrap_error())
+
+    r_compiled_overrides = _compile_command_timeout_overrides(r_overrides.unwrap())
+
+    if r_compiled_overrides.is_error:
+        return Error(r_compiled_overrides.unwrap_error())
+
+    for pattern, timeout in r_compiled_overrides.unwrap():
         if pattern.match(joined_command) is None:
             continue
 

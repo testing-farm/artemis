@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import datetime
-import re
 from re import Pattern
 from types import SimpleNamespace
 from typing import Any, Optional, cast
@@ -327,19 +326,38 @@ def test_get_command_deadline_slow_command_override_beats_per_pool(
     assert r_deadline.unwrap() == datetime.timedelta(seconds=900)
 
 
+def test_get_command_deadline_overrides_per_pool(monkeypatch: _pytest.monkeypatch.MonkeyPatch) -> None:
+    monkeypatch.setenv('ARTEMIS_CLI_COMMAND_TIMEOUT_OVERRIDES_dummy_pool', '123:az vm .*')
+
+    r_deadline = tft.artemis.drivers.get_command_deadline('dummy-pool', ['az', 'vm', 'create', '--name', 'dummy'])
+
+    assert r_deadline.is_ok
+    assert r_deadline.unwrap() == datetime.timedelta(seconds=123)
+
+    # Other pools keep using the global overrides.
+    r_deadline = tft.artemis.drivers.get_command_deadline('other-pool', ['az', 'vm', 'create', '--name', 'dummy'])
+
+    assert r_deadline.is_ok
+    assert r_deadline.unwrap() == datetime.timedelta(seconds=900)
+
+
 def test_get_command_deadline_slow_command_override_disabled(
     monkeypatch: _pytest.monkeypatch.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        tft.artemis.drivers,
-        'CLI_COMMAND_TIMEOUT_OVERRIDES',
-        [(re.compile('dummy .*'), 0)],
-    )
+    monkeypatch.setenv('ARTEMIS_CLI_COMMAND_TIMEOUT_OVERRIDES_dummy_pool', '0:dummy .*')
 
     r_deadline = tft.artemis.drivers.get_command_deadline('dummy-pool', ['dummy', 'command'])
 
     assert r_deadline.is_ok
     assert r_deadline.unwrap() is None
+
+
+def test_get_command_deadline_overrides_invalid(monkeypatch: _pytest.monkeypatch.MonkeyPatch) -> None:
+    monkeypatch.setenv('ARTEMIS_CLI_COMMAND_TIMEOUT_OVERRIDES_dummy_pool', 'pattern-without-a-timeout')
+
+    r_deadline = tft.artemis.drivers.get_command_deadline('dummy-pool', ['dummy', 'command'])
+
+    assert r_deadline.is_error
 
 
 @pytest.mark.parametrize(

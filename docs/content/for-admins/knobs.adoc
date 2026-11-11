@@ -964,6 +964,12 @@ for full list of connection parameters that can be specified via URL.
 |no
 
 
+|`cli.command.timeout.overrides:$entityname`
+|
+|`ARTEMIS_CLI_COMMAND_TIMEOUT_OVERRIDES_$entityname`
+|
+|
+
 
 5+|Timeout and command patterns for commands that need a budget different from `cli.command.timeout.termination`:
 "<timeout1>:<pattern1>;<timeout2>:<pattern2>;...". Patterns are matched against the beginning of the complete
@@ -971,6 +977,9 @@ command, and the timeout of the first matching pattern is used. When a command m
 the matching timeout is used even if `cli.command.timeout.termination` says otherwise - this makes it possible
 to give a larger budget to commands known to take their time, e.g. `az vm create`. Set the timeout to zero
 or less to let the matching command fall back to `cli.command.timeout.patterns`.
+
+Can be set per pool by using `ARTEMIS_CLI_COMMAND_TIMEOUT_OVERRIDES_<poolname>` environment variable - such
+pool-specific list then replaces the global one.
 
 |`cli.command.timeout.patterns`
 |`str`
