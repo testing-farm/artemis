@@ -1336,20 +1336,28 @@ def _close_broker_connection(logger: gluetool.log.ContextAdapter) -> None:
     BROKER.connection.close()
 
 
-#: A single pool-refresh dispatcher group: a pool-name pattern (a regular expression matched against pool names)
-#: paired with a Cron-like schedule. Used to schedule the very same dispatcher several times, with different
-#: intervals and for different sets of pools.
-DispatcherGroup = tuple[str, str]
+#: A single pool-refresh dispatcher group: a compiled pool-name pattern (a regular expression matched against pool
+#: names) paired with a parsed Cron-like schedule. Used to schedule the very same dispatcher several times, with
+#: different intervals and for different sets of pools.
+#:
+#: Both members are the narrow, parsed types rather than plain strings: once validated at the configuration
+#: boundary (:py:func:`parse_dispatcher_groups`), the pattern is a ready-to-use :py:class:`re.Pattern` and the
+#: schedule a ready-to-use :py:class:`periodiq.CronSpec`, so neither can be mistaken for an arbitrary string later.
+DispatcherGroup = tuple[re.Pattern[str], periodiq.CronSpec]
 
 
 def parse_dispatcher_groups(raw: str) -> list[DispatcherGroup]:
     """
     Parse pool-refresh dispatcher groups from a knob value.
 
-    The value is a ``;``-separated list of ``POOLNAME-PATTERN:CRONTAB`` entries, where ``POOLNAME-PATTERN`` is a
-    regular expression matched against pool names and ``CRONTAB`` is a Cron-like schedule, e.g.::
+    The value is a ``;``-separated list of ``PATTERN:CRONTAB`` entries, where ``PATTERN`` is a regular expression
+    matched against pool names and ``CRONTAB`` is a Cron-like schedule, e.g.::
 
         ibmcloud-.*:0/27 * * * *;(?!ibmcloud-).*:*/5 * * * *
+
+    Each entry is parsed at this boundary into its narrow type: ``PATTERN`` is compiled with :py:func:`re.compile`
+    into a :py:class:`re.Pattern`, and ``CRONTAB`` with :py:func:`periodiq.cron` into a :py:class:`periodiq.CronSpec`
+    (see :py:data:`DispatcherGroup`), so neither can later be mistaken for an arbitrary string.
 
     The pattern is split from the schedule on the first ``:``. A Cron spec never contains ``:``, so the pattern
     must not contain one either - use ``(...)`` rather than ``(?:...)``. An empty value yields an empty list,
@@ -1373,14 +1381,14 @@ def parse_dispatcher_groups(raw: str) -> list[DispatcherGroup]:
 
         if not separator or not pattern or not period:
             Failure(
-                'ignoring malformed pool refresh group, expected POOLNAME-PATTERN:CRONTAB',
+                'ignoring malformed pool refresh group, expected PATTERN:CRONTAB',
                 group=entry,
             ).handle(_ROOT_LOGGER)
 
             continue
 
         try:
-            re.compile(pattern)
+            compiled_pattern = re.compile(pattern)
         except re.error as exc:
             Failure.from_exc(
                 'ignoring pool refresh group with invalid pool name pattern',
@@ -1391,7 +1399,7 @@ def parse_dispatcher_groups(raw: str) -> list[DispatcherGroup]:
             continue
 
         try:
-            periodiq.cron(period)
+            schedule = periodiq.cron(period)
         except Exception as exc:
             Failure.from_exc(
                 'ignoring pool refresh group with invalid schedule',
@@ -1401,7 +1409,7 @@ def parse_dispatcher_groups(raw: str) -> list[DispatcherGroup]:
 
             continue
 
-        groups.append((pattern, period))
+        groups.append((compiled_pattern, schedule))
 
     return groups
 
@@ -1416,12 +1424,14 @@ def register_pool_dispatcher_actors(
     default_schedule: str,
 ) -> None:
     """
-    Register one periodic dispatcher actor per configured group into ``namespace`` (a module's ``globals()``).
+    Register one periodic dispatcher actor per configured group into ``namespace`` (a module's :py:func:`globals`,
+    a plain :py:class:`dict`).
 
-    Periodiq schedules every registered actor that carries a ``periodic`` Cron spec, but it cannot schedule a
-    single actor several times with different parameters. To work around that, we register a separate actor for
-    each group - the same dispatcher logic, but with its own schedule and its own pool-name pattern - so periodiq
-    ends up scheduling the dispatcher several times, exactly as configured.
+    :py:mod:`periodiq` schedules every registered actor that carries a ``periodic`` schedule (a
+    :py:class:`periodiq.CronSpec`), but it cannot schedule a single actor several times with different parameters.
+    To work around that, we register a separate actor for each group - the same dispatcher logic, but with its own
+    schedule and its own pool-name pattern - so :py:mod:`periodiq` ends up scheduling the dispatcher several times,
+    exactly as configured.
 
     Each actor passes its group's pool-name pattern to the doer via ``doer_args``, selecting which pools it
     dispatches the refresh for. Groups are independent: a pool matching several patterns is dispatched by each
@@ -1433,25 +1443,28 @@ def register_pool_dispatcher_actors(
 
     .. note::
 
-       The group configuration must be identical for the scheduler and the workers: periodiq (scheduler) emits a
-       message for each group actor, and a worker must have the very same actor registered to process it.
+       The group configuration must be identical for the scheduler and the workers: :py:mod:`periodiq` (scheduler)
+       emits a message for each group actor, and a worker must have the very same actor registered to process it.
     """
 
-    normalized: list[DispatcherGroup] = groups or [('.*', default_schedule)]
+    normalized: list[DispatcherGroup] = groups or [(re.compile('.*'), periodiq.cron(default_schedule))]
     multiple = len(normalized) > 1
 
-    for index, (pattern, period) in enumerate(normalized):
+    for index, (pattern, schedule) in enumerate(normalized):
         actor_name = f'{base_actor_name}_{index}' if multiple else base_actor_name
         logger_name = f'{taskname}-{index}' if multiple else taskname
 
         # Bind the per-group values as default arguments, so each generated actor captures its own group's
         # pattern and logger name instead of the last values of the loop variables.
-        def _entry(pattern: str = pattern, logger_name: str = logger_name) -> None:
+        def _entry(pattern: re.Pattern[str] = pattern, logger_name: str = logger_name) -> None:
             task_core(
                 doer,
                 logger=TaskLogger(_ROOT_LOGGER, logger_name),
                 session_read_only=True,
-                doer_args=(pattern,),
+                # The compiled pattern is built here, in the worker, and handed straight to the doer in-process;
+                # unlike a real actor argument it never crosses the broker, so it need not be JSON-serializable
+                # (hence not an ``ActorArgumentType``).
+                doer_args=cast('tuple[ActorArgumentType, ...]', (pattern,)),
             )
 
         _entry.__name__ = actor_name
@@ -1460,7 +1473,7 @@ def register_pool_dispatcher_actors(
         namespace[actor_name] = task(
             singleton=True,
             singleton_no_retry_on_lock_fail=True,
-            periodic=periodiq.cron(period),
+            periodic=schedule,
             priority=TaskPriority.HIGH,
             queue_name=TaskQueue.PERIODIC,
         )(_entry)
@@ -2541,21 +2554,19 @@ class Workspace:
 
         return self
 
-    def pools_matching_name(self, poolname_pattern: str) -> list[PoolDriver[Any, Instance]]:
+    def pools_matching_name(self, poolname_pattern: re.Pattern[str]) -> list[PoolDriver[Any, Instance]]:
         """
         Return the subset of loaded pools whose name matches the given regular expression.
 
-        The pattern is matched against the whole pool name (:py:func:`re.fullmatch`), so ``ibmcloud-.*`` matches
-        ``ibmcloud-s390x`` and ``.*`` matches every pool. Use a lookahead, e.g. ``(?!ibmcloud-).*``, for a
+        The pattern is matched against the whole pool name (:py:meth:`re.Pattern.fullmatch`), so ``ibmcloud-.*``
+        matches ``ibmcloud-s390x`` and ``.*`` matches every pool. Use a lookahead, e.g. ``(?!ibmcloud-).*``, for a
         catch-all that excludes pools already covered by another group.
 
-        The pattern is expected to be valid - it is validated when the group configuration is parsed (see
-        :py:func:`parse_dispatcher_groups`), so invalid patterns never reach this method.
+        The pattern arrives already compiled - it is compiled and validated when the group configuration is parsed
+        (see :py:func:`parse_dispatcher_groups`), so there is nothing left to validate here.
         """
 
-        matcher = re.compile(poolname_pattern)
-
-        return [pool for pool in self.pools if matcher.fullmatch(pool.poolname)]
+        return [pool for pool in self.pools if poolname_pattern.fullmatch(pool.poolname)]
 
     def mark_note_poolname(self) -> Self:
         if self.result:
