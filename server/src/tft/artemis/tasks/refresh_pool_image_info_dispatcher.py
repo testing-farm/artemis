@@ -10,6 +10,7 @@ Find the most suitable pool for a given request, and dispatch its provisioning.
    MUST preserve consistent and restartable state.
 """
 
+import re
 from typing import cast
 
 import gluetool.log
@@ -40,10 +41,12 @@ KNOB_REFRESH_POOL_IMAGE_INFO_SCHEDULE: Knob[str] = Knob(
 
 KNOB_REFRESH_POOL_IMAGE_INFO_GROUPS: Knob[list[DispatcherGroup]] = Knob(
     'actor.refresh-pool-image-info.groups',
-    'Image info refresh groups, as a semicolon-separated list of POOLNAME-PATTERN:CRONTAB entries, where'
-    ' POOLNAME-PATTERN is a regular expression matched against pool names and CRONTAB is a Cron-like schedule,'
-    ' e.g. "ibmcloud-.*:0/27 * * * *;(?!ibmcloud-).*:*/5 * * * *". Groups are independent, so patterns should be'
-    ' kept disjoint. Empty (the default) means a single group refreshing all pools on the plain schedule knob.',
+    """
+    Image info refresh groups, as a semicolon-separated list of `PATTERN:CRONTAB` entries, where
+    `PATTERN` is a regular expression matched against pool names, and `CRONTAB` is a Cron-like schedule.
+    For example, `ibmcloud-.*:0/27 * * * *;(?!ibmcloud-).*:*/5 * * * *`. Groups are independent, so patterns should be
+    kept disjoint. Empty (the default) means a single group refreshing all pools on the plain schedule knob.
+    """,
     has_db=False,
     envvar='ARTEMIS_ACTOR_REFRESH_POOL_IMAGE_INFO_GROUPS',
     cast_from_str=parse_dispatcher_groups,
@@ -58,8 +61,8 @@ class Workspace(_Workspace):
 
     TASKNAME = 'refresh-pool-image-info-dispatcher'
 
-    #: Regular expression selecting, by name, which pools this dispatcher run refreshes. Set per group.
-    poolname_pattern: str = '.*'
+    #: Compiled regular expression selecting, by name, which pools this dispatcher run refreshes. Set per group.
+    poolname_pattern: re.Pattern[str] = re.compile('.*')
 
     @step
     def run(self) -> None:
@@ -88,7 +91,7 @@ class Workspace(_Workspace):
         logger: gluetool.log.ContextAdapter,
         db: DB,
         session: sqlalchemy.orm.session.Session,
-        poolname_pattern: str = '.*',
+        poolname_pattern: re.Pattern[str] = re.compile('.*'),
     ) -> 'Workspace':
         """
         Create workspace.
@@ -96,7 +99,8 @@ class Workspace(_Workspace):
         :param logger: logger to use for logging.
         :param db: DB instance to use for DB access.
         :param session: DB session to use for DB access.
-        :param poolname_pattern: regular expression selecting, by name, which pools to refresh.
+        :param poolname_pattern: compiled regular expression (:py:class:`re.Pattern`) selecting, by name, which
+            pools to refresh.
         :returns: newly created workspace.
         """
 
@@ -111,7 +115,7 @@ class Workspace(_Workspace):
         logger: gluetool.log.ContextAdapter,
         db: DB,
         session: sqlalchemy.orm.session.Session,
-        poolname_pattern: str = '.*',
+        poolname_pattern: re.Pattern[str] = re.compile('.*'),
     ) -> DoerReturnType:
         """
         Schedule image info refresh for the pools whose name matches the given pattern.
@@ -124,7 +128,8 @@ class Workspace(_Workspace):
         :param logger: logger to use for logging.
         :param db: DB instance to use for DB access.
         :param session: DB session to use for DB access.
-        :param poolname_pattern: regular expression selecting, by name, which pools to refresh.
+        :param poolname_pattern: compiled regular expression (:py:class:`re.Pattern`) selecting, by name, which
+            pools to refresh.
         :returns: task result.
         """
 

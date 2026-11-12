@@ -277,7 +277,10 @@ guest request watchdog tasks.
 
 
 
-5+|Flavor info refresh groups, as a semicolon-separated list of POOLNAME-PATTERN:CRONTAB entries, where POOLNAME-PATTERN is a regular expression matched against pool names and CRONTAB is a Cron-like schedule, e.g. "ibmcloud-.*:0/27 * * * *;(?!ibmcloud-).*:*/5 * * * *". Groups are independent, so patterns should be kept disjoint. Empty (the default) means a single group refreshing all pools on the plain schedule knob.
+5+|Flavor info refresh groups, as a semicolon-separated list of `PATTERN:CRONTAB` entries, where
+`PATTERN` is a regular expression matched against pool names, and `CRONTAB` is a Cron-like schedule.
+For example, `ibmcloud-.*:0/27 * * * *;(?!ibmcloud-).*:*/5 * * * *`. Groups are independent, so patterns should be
+kept disjoint. Empty (the default) means a single group refreshing all pools on the plain schedule knob.
 
 |`actor.refresh-pool-flavor-info.schedule`
 |`str`
@@ -297,7 +300,10 @@ guest request watchdog tasks.
 
 
 
-5+|Image info refresh groups, as a semicolon-separated list of POOLNAME-PATTERN:CRONTAB entries, where POOLNAME-PATTERN is a regular expression matched against pool names and CRONTAB is a Cron-like schedule, e.g. "ibmcloud-.*:0/27 * * * *;(?!ibmcloud-).*:*/5 * * * *". Groups are independent, so patterns should be kept disjoint. Empty (the default) means a single group refreshing all pools on the plain schedule knob.
+5+|Image info refresh groups, as a semicolon-separated list of `PATTERN:CRONTAB` entries, where
+`PATTERN` is a regular expression matched against pool names, and `CRONTAB` is a Cron-like schedule.
+For example, `ibmcloud-.*:0/27 * * * *;(?!ibmcloud-).*:*/5 * * * *`. Groups are independent, so patterns should be
+kept disjoint. Empty (the default) means a single group refreshing all pools on the plain schedule knob.
 
 |`actor.refresh-pool-image-info.schedule`
 |`str`
