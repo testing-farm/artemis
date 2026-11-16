@@ -11,7 +11,7 @@ Find the most suitable pool for a given request, and dispatch its provisioning.
 """
 
 import re
-from typing import cast
+from typing import Any, cast
 
 import gluetool.log
 import sqlalchemy.orm.session
@@ -62,7 +62,18 @@ class Workspace(_Workspace):
     TASKNAME = 'refresh-pool-flavor-info-dispatcher'
 
     #: Compiled regular expression selecting, by name, which pools this dispatcher run refreshes. Set per group.
-    poolname_pattern: re.Pattern[str] = re.compile('.*')
+    poolname_pattern: re.Pattern[str]
+
+    def __init__(
+        self,
+        logger: gluetool.log.ContextAdapter,
+        session: sqlalchemy.orm.session.Session,
+        poolname_pattern: re.Pattern[str],
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(logger, session, **kwargs)
+
+        self.poolname_pattern = poolname_pattern
 
     @step
     def run(self) -> None:
@@ -91,7 +102,7 @@ class Workspace(_Workspace):
         logger: gluetool.log.ContextAdapter,
         db: DB,
         session: sqlalchemy.orm.session.Session,
-        poolname_pattern: re.Pattern[str] = re.compile('.*'),
+        poolname_pattern: re.Pattern[str],
     ) -> 'Workspace':
         """
         Create workspace.
@@ -104,10 +115,7 @@ class Workspace(_Workspace):
         :returns: newly created workspace.
         """
 
-        workspace = cls(logger, session, db=db, task=Workspace.TASKNAME)
-        workspace.poolname_pattern = poolname_pattern
-
-        return workspace
+        return cls(logger, session, db=db, task=Workspace.TASKNAME, poolname_pattern=poolname_pattern)
 
     @classmethod
     def refresh_pool_flavor_info_dispatcher(
@@ -115,7 +123,7 @@ class Workspace(_Workspace):
         logger: gluetool.log.ContextAdapter,
         db: DB,
         session: sqlalchemy.orm.session.Session,
-        poolname_pattern: re.Pattern[str] = re.compile('.*'),
+        poolname_pattern: re.Pattern[str],
     ) -> DoerReturnType:
         """
         Schedule flavor info refresh for the pools whose name matches the given pattern.
