@@ -148,7 +148,7 @@ def test_task_core_ok(
 
     run_doer.assert_has_calls(
         [
-            call(task_logger, db, session, doer, 'test_task_core_ok', *doer_args, **doer_kwargs),
+            call(task_logger, db, session, doer, doer.actor_name, *doer_args, **doer_kwargs),
             call().is_ok.__bool__(),
             call().unwrap(),
         ]
