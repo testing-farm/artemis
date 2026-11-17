@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import logging
+import re
 import unittest
 from typing import Any, cast
 from unittest.mock import MagicMock, call
@@ -148,7 +149,7 @@ def test_task_core_ok(
 
     run_doer.assert_has_calls(
         [
-            call(task_logger, db, session, doer, doer.actor_name, *doer_args, **doer_kwargs),
+            call(task_logger, db, session, doer, doer.actor_name, *doer_args, fallback_actor_name=None, **doer_kwargs),
             call().is_ok.__bool__(),
             call().unwrap(),
         ]
@@ -268,6 +269,97 @@ def test_mark_note_poolname(mockpatch: MockPatcher, workspace: tft.artemis.tasks
     )
 
     assert workspace.spice_details['poolname'] == workspace.gr.poolname
+
+
+def test_pools_matching_name_exclude(workspace: tft.artemis.tasks.Workspace) -> None:
+    workspace.pools = cast(
+        Any,
+        [MagicMock(poolname=name) for name in ('ibmcloud-s390x', 'ibmcloud-x86', 'aws-1', 'azure-fast')],
+    )
+
+    # A normal group: only the include pattern applies.
+    assert sorted(pool.poolname for pool in workspace.pools_matching_name(re.compile('ibmcloud-.*'))) == [
+        'ibmcloud-s390x',
+        'ibmcloud-x86',
+    ]
+
+    # The catch-all: everything, minus the pools every configured group matches.
+    assert sorted(
+        pool.poolname
+        for pool in workspace.pools_matching_name(re.compile('.*'), [re.compile('ibmcloud-.*'), re.compile('aws-.*')])
+    ) == ['azure-fast']
+
+
+@pytest.mark.usefixtures('broker')
+def test_register_pool_dispatcher_actors_no_groups() -> None:
+    namespace: dict[str, Any] = {}
+
+    tft.artemis.tasks.register_pool_dispatcher_actors(
+        namespace,
+        base_actor_name='dummy_dispatcher',
+        taskname='dummy-dispatcher',
+        doer=cast(Any, MagicMock(name='doer', __name__='doer')),
+        groups=[],
+        default_schedule='*/5 * * * *',
+    )
+
+    # No groups configured preserves the original behavior: a single actor under the bare base name, no catch-all.
+    assert sorted(namespace) == ['dummy_dispatcher']
+
+
+@pytest.mark.usefixtures('broker')
+def test_register_pool_dispatcher_actors_groups_add_catchall() -> None:
+    namespace: dict[str, Any] = {}
+
+    groups = tft.artemis.tasks.parse_dispatcher_groups('ibmcloud-.*:0/27 * * * *;aws-.*:*/5 * * * *')
+
+    tft.artemis.tasks.register_pool_dispatcher_actors(
+        namespace,
+        base_actor_name='dummy_dispatcher',
+        taskname='dummy-dispatcher',
+        doer=cast(Any, MagicMock(name='doer', __name__='doer')),
+        groups=groups,
+        default_schedule='*/5 * * * *',
+    )
+
+    # One indexed actor per configured group, plus an implicit catch-all under `_rest` refreshing uncovered pools.
+    assert sorted(namespace) == ['dummy_dispatcher_0', 'dummy_dispatcher_1', 'dummy_dispatcher_rest']
+
+
+def test_actor_control_value_fallback(monkeypatch: _pytest.monkeypatch.MonkeyPatch) -> None:
+    for var in ('ARTEMIS_ACTOR_DUMMY_DISPATCHER_0_QUEUE', 'ARTEMIS_ACTOR_DUMMY_DISPATCHER_QUEUE'):
+        monkeypatch.delenv(var, raising=False)
+
+    # The actor's own var wins over the fallback.
+    monkeypatch.setenv('ARTEMIS_ACTOR_DUMMY_DISPATCHER_0_QUEUE', 'own')
+    monkeypatch.setenv('ARTEMIS_ACTOR_DUMMY_DISPATCHER_QUEUE', 'base')
+    assert (
+        tft.artemis.tasks.actor_control_value(
+            'dummy_dispatcher_0', 'QUEUE', 'def', fallback_actor_name='dummy_dispatcher'
+        )
+        == 'own'
+    )
+
+    # With the actor's own var unset, the base actor name's var applies - existing overrides keep working.
+    monkeypatch.delenv('ARTEMIS_ACTOR_DUMMY_DISPATCHER_0_QUEUE')
+    assert (
+        tft.artemis.tasks.actor_control_value(
+            'dummy_dispatcher_0', 'QUEUE', 'def', fallback_actor_name='dummy_dispatcher'
+        )
+        == 'base'
+    )
+
+    # Without a fallback name the base var is ignored; only the actor's own var or the default apply.
+    assert tft.artemis.tasks.actor_control_value('dummy_dispatcher_0', 'QUEUE', 'def') == 'def'
+
+    # Neither var set: the default is used.
+    monkeypatch.delenv('ARTEMIS_ACTOR_DUMMY_DISPATCHER_QUEUE')
+    assert (
+        tft.artemis.tasks.actor_control_value(
+            'dummy_dispatcher_0', 'QUEUE', 'def', fallback_actor_name='dummy_dispatcher'
+        )
+        == 'def'
+    )
 
 
 def test_mark_note_poolname_error_noop(mockpatch: MockPatcher, workspace: tft.artemis.tasks.Workspace) -> None:

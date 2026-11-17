@@ -728,8 +728,23 @@ class TaskLogger(gluetool.log.ContextAdapter):
         self.error(f'failed:\n{stackprinter.format(failure.exception)}')  # noqa: FS002
 
 
-def actor_control_value(actor_name: str, var_name: str, default: Any) -> Any:  # noqa: ANN401
-    var_value = os.getenv(f'ARTEMIS_ACTOR_{actor_name.upper()}_{var_name}', default)
+def actor_control_value(
+    actor_name: str,
+    var_name: str,
+    default: Any,  # noqa: ANN401
+    fallback_actor_name: Optional[str] = None,
+) -> Any:  # noqa: ANN401
+    var_value: Any = os.getenv(f'ARTEMIS_ACTOR_{actor_name.upper()}_{var_name}')
+
+    # When the actor's own control var is not set, fall back to another actor's var before using the default.
+    # Used by the generated pool-refresh dispatcher actors (e.g. `..._0`, `..._rest`): they fall back to the
+    # base actor name's controls, so an operator's existing `ARTEMIS_ACTOR_<BASE>_<VAR>` override keeps applying
+    # even once refresh groups rename the actors.
+    if var_value is None and fallback_actor_name is not None:
+        var_value = os.getenv(f'ARTEMIS_ACTOR_{fallback_actor_name.upper()}_{var_name}')
+
+    if var_value is None:
+        var_value = default
 
     # We don't bother about milliseconds in backoff values. For a sake of simplicity
     # variables stores value in seconds and here we convert it back to milliseconds
@@ -744,6 +759,7 @@ def actor_kwargs(
     priority: TaskPriority = TaskPriority.DEFAULT,
     queue_name: TaskQueue = TaskQueue.DEFAULT,
     periodic: Optional[periodiq.CronSpec] = None,
+    fallback_actor_name: Optional[str] = None,
 ) -> dict[str, Any]:
     # We need to preserve the special queues requested by tasks, but still giving maintainers a chance
     # to change that. Therefore we accept the priority and queue name as parameters, and use them as
@@ -758,13 +774,17 @@ def actor_kwargs(
     # We want to support two ways how to specify priority: using names of our predefined priorities ("high"),
     # or by a number, for tweaks needed by maintainers ("101"). We get the maintainers' input, and try to
     # translate it to either enum member, or an integer.
-    priority_input: str = actor_control_value(actor_name, 'PRIORITY', default=priority.name)
+    priority_input: str = actor_control_value(
+        actor_name, 'PRIORITY', default=priority.name, fallback_actor_name=fallback_actor_name
+    )
 
     # Queues are easier: we have a list of predefined queues, but just like priorities, maintainers can specify
     # their own ones. There's no second-level test though, calling `str()` on queue name makes no sense since it's
     # already a string, and pretty much any string can be a queue name. We use `int()` on given priority because
     # priorities can be only integers.
-    queue_input: str = actor_control_value(actor_name, 'QUEUE', default=queue_name.name)
+    queue_input: str = actor_control_value(
+        actor_name, 'QUEUE', default=queue_name.name, fallback_actor_name=fallback_actor_name
+    )
 
     try:
         priority_actual = TaskPriority[priority_input.upper()].value
@@ -785,15 +805,37 @@ def actor_kwargs(
     kwargs = {
         'priority': priority_actual,
         'queue_name': queue_actual,
-        'max_retries': int(actor_control_value(actor_name, 'RETRIES', default=KNOB_ACTOR_DEFAULT_RETRIES_COUNT.value)),
+        'max_retries': int(
+            actor_control_value(
+                actor_name,
+                'RETRIES',
+                default=KNOB_ACTOR_DEFAULT_RETRIES_COUNT.value,
+                fallback_actor_name=fallback_actor_name,
+            )
+        ),
         'min_backoff': int(
-            actor_control_value(actor_name, 'MIN_BACKOFF', default=KNOB_ACTOR_DEFAULT_MIN_BACKOFF.value)
+            actor_control_value(
+                actor_name,
+                'MIN_BACKOFF',
+                default=KNOB_ACTOR_DEFAULT_MIN_BACKOFF.value,
+                fallback_actor_name=fallback_actor_name,
+            )
         ),
         'max_backoff': int(
-            actor_control_value(actor_name, 'MAX_BACKOFF', default=KNOB_ACTOR_DEFAULT_MAX_BACKOFF.value)
+            actor_control_value(
+                actor_name,
+                'MAX_BACKOFF',
+                default=KNOB_ACTOR_DEFAULT_MAX_BACKOFF.value,
+                fallback_actor_name=fallback_actor_name,
+            )
         ),
         'singleton_deadline': int(
-            actor_control_value(actor_name, 'SINGLETON_DEADLINE', default=KNOB_ACTOR_DEFAULT_SINGLETON_DEADLINE.value)
+            actor_control_value(
+                actor_name,
+                'SINGLETON_DEADLINE',
+                default=KNOB_ACTOR_DEFAULT_SINGLETON_DEADLINE.value,
+                fallback_actor_name=fallback_actor_name,
+            )
         ),
     }
 
@@ -902,6 +944,7 @@ class task:  # noqa: N801
         tail_handler: Optional['TailHandler'] = None,
         singleton: bool = False,
         singleton_no_retry_on_lock_fail: bool = False,
+        control_name: Optional[str] = None,
     ) -> None:
         self.priority = priority
         self.queue_name = queue_name
@@ -912,11 +955,20 @@ class task:  # noqa: N801
         self.singleton = singleton
         self.singleton_no_retry_on_lock_fail = singleton_no_retry_on_lock_fail
 
+        #: When set, actor-control env vars (queue, priority, singleton deadline, ...) not defined for this actor's
+        #: own name fall back to this name's vars. Used by the generated pool-refresh dispatcher actors so their
+        #: group-specific names still honor the base actor name's overrides.
+        self.control_name = control_name
+
     def __call__(self, fn: BareActorType) -> Actor:
         actor_name_uppersized = fn.__name__.upper()
 
         dramatiq_kwargs = actor_kwargs(
-            actor_name_uppersized, periodic=self.periodic, priority=self.priority, queue_name=self.queue_name
+            actor_name_uppersized,
+            periodic=self.periodic,
+            priority=self.priority,
+            queue_name=self.queue_name,
+            fallback_actor_name=self.control_name,
         )
 
         dramatiq_actor = dramatiq.actor(  # type: ignore[call-overload]
@@ -937,6 +989,7 @@ def run_doer_multithread(
     fn: DoerType,
     actor_name: str,
     *args: ActorArgumentType,
+    fallback_actor_name: Optional[str] = None,
     **kwargs: Any,
 ) -> DoerReturnType:
     """
@@ -996,10 +1049,12 @@ def run_doer_multithread(
 
         def _thread_trampoline() -> DoerReturnType:
             profile_actor = gluetool.utils.normalize_bool_option(
-                actor_control_value(actor_name, 'PROFILE', default=False)
+                actor_control_value(actor_name, 'PROFILE', default=False, fallback_actor_name=fallback_actor_name)
             )
             verbose_profile = gluetool.utils.normalize_bool_option(
-                actor_control_value(actor_name, 'VERBOSE_PROFILE', default=False)
+                actor_control_value(
+                    actor_name, 'VERBOSE_PROFILE', default=False, fallback_actor_name=fallback_actor_name
+                )
             )
 
             profiler: Optional[Profiler] = None
@@ -1050,6 +1105,7 @@ def run_doer_singlethread(
     fn: DoerType,
     actor_name: str,
     *args: ActorArgumentType,
+    fallback_actor_name: Optional[str] = None,
     **kwargs: Any,
 ) -> DoerReturnType:
     """
@@ -1062,9 +1118,11 @@ def run_doer_singlethread(
 
     logger.debug(f'starting {fn.__name__} doer')
 
-    profile_actor = gluetool.utils.normalize_bool_option(actor_control_value(actor_name, 'PROFILE', default=False))
+    profile_actor = gluetool.utils.normalize_bool_option(
+        actor_control_value(actor_name, 'PROFILE', default=False, fallback_actor_name=fallback_actor_name)
+    )
     verbose_profile = gluetool.utils.normalize_bool_option(
-        actor_control_value(actor_name, 'VERBOSE_PROFILE', default=False)
+        actor_control_value(actor_name, 'VERBOSE_PROFILE', default=False, fallback_actor_name=fallback_actor_name)
     )
 
     profiler: Optional[Profiler] = None
@@ -1118,6 +1176,7 @@ def _task_core(
     actor_name: str,
     db: Optional[DB] = None,
     *,
+    fallback_actor_name: Optional[str] = None,
     session: Optional[sqlalchemy.orm.session.Session] = None,
     doer_args: Optional[tuple[ActorArgumentType, ...]] = None,
     doer_kwargs: Optional[dict[str, Any]] = None,
@@ -1152,7 +1211,9 @@ def _task_core(
         assert doer_args is not None
         assert doer_kwargs is not None
 
-        doer_result = run_doer(logger, db, session, doer, actor_name, *doer_args, **doer_kwargs)
+        doer_result = run_doer(
+            logger, db, session, doer, actor_name, *doer_args, fallback_actor_name=fallback_actor_name, **doer_kwargs
+        )
 
         # "Ignored" failures - failures the tasks don't wish to repeat by running the task again - need
         # special handling: we have to mark the guest request as failed. Without this step, client will
@@ -1269,6 +1330,7 @@ def task_core(
     logger: TaskLogger,
     db: Optional[DB] = None,
     *,
+    fallback_actor_name: Optional[str] = None,
     session: Optional[sqlalchemy.orm.session.Session] = None,
     doer_args: Optional[tuple[ActorArgumentType, ...]] = None,
     doer_kwargs: Optional[dict[str, Any]] = None,
@@ -1310,6 +1372,7 @@ def task_core(
                 logger,
                 task_call.actor.actor_name,
                 db,
+                fallback_actor_name=fallback_actor_name,
                 session=session,
                 doer_args=doer_args,
                 doer_kwargs=doer_kwargs,
@@ -1429,38 +1492,78 @@ def register_pool_dispatcher_actors(
     schedule and its own pool-name pattern - so :py:mod:`periodiq` ends up scheduling the dispatcher several times,
     exactly as configured.
 
-    Each actor passes its group's pool-name pattern to the doer via ``doer_args``, selecting which pools it
-    dispatches the refresh for. Groups are independent: a pool matching several patterns is dispatched by each
-    matching group, so patterns should be kept disjoint (e.g. a lookahead catch-all like ``(?!ibmcloud-).*``).
+    Each actor passes its group's pool-name pattern (and, for the catch-all below, the patterns to exclude) to the
+    doer via ``doer_args``, selecting which pools it dispatches the refresh for. Groups are independent: a pool
+    matching several patterns is dispatched by each matching group, so patterns should be kept disjoint.
 
-    When ``groups`` is empty, a single default group matching all pools (``.*``) on ``default_schedule`` is
-    registered under ``base_actor_name`` - i.e. the original, un-grouped behavior is preserved. With several
-    groups configured, actors are registered under ``{base_actor_name}_{index}``.
+    When ``groups`` is empty, a single default actor matching all pools (``.*``) on ``default_schedule`` is
+    registered under ``base_actor_name`` - i.e. the original, un-grouped behavior is preserved. With groups
+    configured, actors are registered under ``{base_actor_name}_{index}``, plus an implicit catch-all actor under
+    ``{base_actor_name}_rest`` on ``default_schedule`` that refreshes exactly the pools no configured group matches
+    (it is handed every group pattern as ``exclude_patterns``). Every pool therefore keeps getting refreshed even
+    if the operator did not add an explicit catch-all group.
+
+    Configuring groups renames the actors, which would otherwise silently drop an operator's actor-control env-var
+    overrides (like ``ARTEMIS_ACTOR_<BASE>_QUEUE``), since those are keyed by actor name. To avoid that, the
+    generated actors are given ``control_name=base_actor_name``, so a control var not set for the group-specific
+    name falls back to the base actor name's var. A group-specific override (``ARTEMIS_ACTOR_<BASE>_0_QUEUE``) still
+    wins when present. The default, group-less actor keeps the bare base name, so its controls are unchanged.
 
     .. note::
 
        The group configuration must be identical for the scheduler and the workers: :py:mod:`periodiq` (scheduler)
-       emits a message for each group actor, and a worker must have the very same actor registered to process it.
+       emits a message for each group actor (including the implicit catch-all), and a worker must have the very
+       same actor registered to process it.
     """
 
     normalized: list[DispatcherGroup] = groups or [(re.compile('.*'), periodiq.cron(default_schedule))]
-    multiple = len(normalized) > 1
 
-    for index, (pattern, schedule) in enumerate(normalized):
-        actor_name = f'{base_actor_name}_{index}' if multiple else base_actor_name
-        logger_name = f'{taskname}-{index}' if multiple else taskname
+    # Each entry describes one actor to register: its name suffix, the pattern selecting pools to refresh, the
+    # patterns whose pools to exclude, and the schedule. Normal groups exclude nothing; the catch-all (added only
+    # when groups are configured) includes everything but excludes every configured group's pattern.
+    specs: list[tuple[Optional[int], re.Pattern[str], list[re.Pattern[str]], periodiq.CronSpec]] = [
+        (index, pattern, [], schedule) for index, (pattern, schedule) in enumerate(normalized)
+    ]
 
-        # Bind the per-group values as default arguments, so each generated actor captures its own group's
-        # pattern and logger name instead of the last values of the loop variables.
-        def _entry(pattern: re.Pattern[str] = pattern, logger_name: str = logger_name) -> None:
+    if groups:
+        specs.append((None, re.compile('.*'), [pattern for pattern, _ in normalized], periodiq.cron(default_schedule)))
+
+    # With groups configured there is always more than one actor (the groups plus the catch-all), so names are
+    # suffixed; with no groups the single actor keeps the bare base name, preserving the original behavior.
+    multiple = bool(groups)
+
+    for index, pattern, exclude_patterns, schedule in specs:
+        if not multiple:
+            actor_suffix = ''
+        elif index is None:
+            actor_suffix = '_rest'
+        else:
+            actor_suffix = f'_{index}'
+
+        actor_name = f'{base_actor_name}{actor_suffix}'
+        logger_name = f'{taskname}{actor_suffix.replace("_", "-", 1)}' if actor_suffix else taskname
+
+        # Suffixed actors fall back to the base actor name's control env vars; the bare default actor needs no
+        # fallback (its name already is the base name).
+        control_name = base_actor_name if actor_suffix else None
+
+        # Bind the per-actor values as default arguments, so each generated actor captures its own instead of the
+        # last values of the loop variables.
+        def _entry(
+            pattern: re.Pattern[str] = pattern,
+            exclude_patterns: list[re.Pattern[str]] = exclude_patterns,
+            logger_name: str = logger_name,
+            control_name: Optional[str] = control_name,
+        ) -> None:
             task_core(
                 doer,
                 logger=TaskLogger(_ROOT_LOGGER, logger_name),
                 session_read_only=True,
-                # The compiled pattern is built here, in the worker, and handed straight to the doer in-process;
-                # unlike a real actor argument it never crosses the broker, so it need not be JSON-serializable
+                fallback_actor_name=control_name,
+                # The compiled patterns are built here, in the worker, and handed straight to the doer in-process;
+                # unlike real actor arguments they never cross the broker, so they need not be JSON-serializable
                 # (hence not an ``ActorArgumentType``).
-                doer_args=cast('tuple[ActorArgumentType, ...]', (pattern,)),
+                doer_args=cast('tuple[ActorArgumentType, ...]', (pattern, exclude_patterns)),
             )
 
         _entry.__name__ = actor_name
@@ -1472,6 +1575,7 @@ def register_pool_dispatcher_actors(
             periodic=schedule,
             priority=TaskPriority.HIGH,
             queue_name=TaskQueue.PERIODIC,
+            control_name=control_name,
         )(_entry)
 
 
@@ -2550,19 +2654,34 @@ class Workspace:
 
         return self
 
-    def pools_matching_name(self, poolname_pattern: re.Pattern[str]) -> list[PoolDriver[Any, Instance]]:
+    def pools_matching_name(
+        self,
+        poolname_pattern: re.Pattern[str],
+        exclude_patterns: Optional[list[re.Pattern[str]]] = None,
+    ) -> list[PoolDriver[Any, Instance]]:
         """
-        Return the subset of loaded pools whose name matches the given regular expression.
+        Return the subset of loaded pools whose name matches ``poolname_pattern`` and matches none of
+        ``exclude_patterns``.
 
-        The pattern is matched against the whole pool name (:py:meth:`re.Pattern.fullmatch`), so ``ibmcloud-.*``
-        matches ``ibmcloud-s390x`` and ``.*`` matches every pool. Use a lookahead, e.g. ``(?!ibmcloud-).*``, for a
-        catch-all that excludes pools already covered by another group.
+        Patterns are matched against the whole pool name (:py:meth:`re.Pattern.fullmatch`), so ``ibmcloud-.*``
+        matches ``ibmcloud-s390x`` and ``.*`` matches every pool.
 
-        The pattern arrives already compiled - it is compiled and validated when the group configuration is parsed
-        (see :py:func:`parse_dispatcher_groups`), so there is nothing left to validate here.
+        ``exclude_patterns`` powers the implicit catch-all dispatcher actor: called with ``poolname_pattern=.*``
+        and every configured group's pattern as ``exclude_patterns``, it selects exactly the pools no group covers.
+        For a normal group it is empty (or ``None``), so only ``poolname_pattern`` applies.
+
+        The patterns arrive already compiled - they are compiled and validated when the group configuration is
+        parsed (see :py:func:`parse_dispatcher_groups`), so there is nothing left to validate here.
         """
 
-        return [pool for pool in self.pools if poolname_pattern.fullmatch(pool.poolname)]
+        exclude_patterns = exclude_patterns or []
+
+        return [
+            pool
+            for pool in self.pools
+            if poolname_pattern.fullmatch(pool.poolname)
+            and not any(exclude_pattern.fullmatch(pool.poolname) for exclude_pattern in exclude_patterns)
+        ]
 
     def mark_note_poolname(self) -> Self:
         if self.result:

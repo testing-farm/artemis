@@ -279,8 +279,9 @@ guest request watchdog tasks.
 
 5+|Flavor info refresh groups, as a semicolon-separated list of `PATTERN:CRONTAB` entries, where
 `PATTERN` is a regular expression matched against pool names, and `CRONTAB` is a Cron-like schedule.
-For example, `ibmcloud-.*:0/27 * * * *;(?!ibmcloud-).*:*/5 * * * *`. Groups are independent, so patterns should be
-kept disjoint. Empty (the default) means a single group refreshing all pools on the plain schedule knob.
+For example, `ibmcloud-.*:0/27 * * * *`. Groups are independent, so patterns should be kept disjoint. Pools
+matching no group are refreshed by an implicit catch-all on the plain schedule knob, so no explicit catch-all
+group is needed. Empty (the default) means a single group refreshing all pools on the plain schedule knob.
 
 |`actor.refresh-pool-flavor-info.schedule`
 |`str`
@@ -302,8 +303,9 @@ kept disjoint. Empty (the default) means a single group refreshing all pools on 
 
 5+|Image info refresh groups, as a semicolon-separated list of `PATTERN:CRONTAB` entries, where
 `PATTERN` is a regular expression matched against pool names, and `CRONTAB` is a Cron-like schedule.
-For example, `ibmcloud-.*:0/27 * * * *;(?!ibmcloud-).*:*/5 * * * *`. Groups are independent, so patterns should be
-kept disjoint. Empty (the default) means a single group refreshing all pools on the plain schedule knob.
+For example, `ibmcloud-.*:0/27 * * * *`. Groups are independent, so patterns should be kept disjoint. Pools
+matching no group are refreshed by an implicit catch-all on the plain schedule knob, so no explicit catch-all
+group is needed. Empty (the default) means a single group refreshing all pools on the plain schedule knob.
 
 |`actor.refresh-pool-image-info.schedule`
 |`str`
