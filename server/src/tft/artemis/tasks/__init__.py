@@ -1114,6 +1114,7 @@ run_doer = run_doer_multithread if KNOB_OFFLOAD_TASKS.value else run_doer_single
 def _task_core(
     doer: DoerType,
     logger: TaskLogger,
+    actor_name: str,
     db: Optional[DB] = None,
     *,
     session: Optional[sqlalchemy.orm.session.Session] = None,
@@ -1127,12 +1128,6 @@ def _task_core(
     logger.begin(actor_args=doer_args)
 
     logger.info(f'[{os.getpid()}] {rss.format()}')  # noqa: FS002
-
-    # TODO: implement a proper decorator, or merge this into @task decorator - but @task seems to be flawed,
-    # which requires a fix, therefore merge this into @task once it gets fixed.
-    caller_frame = inspect.stack()[2]
-
-    actor_name = caller_frame.frame.f_code.co_name
 
     db = db or get_root_db()
 
@@ -1312,6 +1307,7 @@ def task_core(
             _task_core(
                 doer,
                 logger,
+                task_call.actor.actor_name,
                 db,
                 session=session,
                 doer_args=doer_args,
