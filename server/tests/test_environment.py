@@ -1908,7 +1908,9 @@ _SCHEMA_CONSISTENCY_MIN_VERSION = 'v0.0.55'
 
 # Schema elements a milestone drops on purpose, keyed by the milestone that drops them. Each entry is a dotted path:
 # `definitions.<name>`, `definitions.<name>.properties.<name>`, `properties.<name>` or `required.<name>`.
-_SCHEMA_INTENTIONAL_REMOVALS: dict[str, set[str]] = {}
+_SCHEMA_INTENTIONAL_REMOVALS: dict[str, set[str]] = {
+    'v0.0.96': {'properties.spot_instance'},
+}
 
 _SCHEMA_DIR = str(importlib.resources.files('tft.artemis').joinpath('schema'))
 

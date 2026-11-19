@@ -4,11 +4,12 @@
 import base64
 import re
 from re import Pattern
-from typing import cast
+from typing import Any, Optional, cast
 from unittest.mock import MagicMock
 
 import _pytest.monkeypatch
 import fastapi
+import fastapi.routing
 import fastapi.testclient
 import gluetool.log
 import pytest
@@ -16,6 +17,8 @@ import sqlalchemy
 
 import tft.artemis.api
 import tft.artemis.api.middleware
+import tft.artemis.api.routers.v0_0_56
+import tft.artemis.api.routers.v0_0_96
 import tft.artemis.db
 from tft.artemis import __VERSION__
 from tft.artemis.api.environment import CURRENT_MILESTONE_VERSION
@@ -90,6 +93,44 @@ def test_api_redirects(api_client: fastapi.testclient.TestClient) -> None:
     # supported versions should include no redirects
     response = api_client.request('GET', '/v0.0.72/about', follow_redirects=False)
     assert response.status_code == 200
+
+
+@pytest.mark.parametrize(
+    ('router', 'expected_api_version'),
+    [
+        (tft.artemis.api.routers.v0_0_56.router_shelves, 'v0.0.56'),
+        (tft.artemis.api.routers.v0_0_96.router_shelves, 'v0.0.96'),
+    ],
+)
+def test_router_shelves_preprovision_uses_its_api_version(
+    router: fastapi.APIRouter,
+    expected_api_version: str,
+    monkeypatch: _pytest.monkeypatch.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def _preprovision_guest(**kwargs: Any) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(tft.artemis.api.routers.v0_0_56, 'preprovision_guest', _preprovision_guest)
+
+    route = next(
+        route
+        for route in router.routes
+        if isinstance(route, fastapi.routing.APIRoute) and route.path == '/shelves/{shelfname}/preprovision'
+    )
+
+    route.endpoint(
+        shelfname='dummy-shelf',
+        preprovisioning_request=MagicMock(),
+        manager=MagicMock(),
+        auth=MagicMock(),
+        logger=MagicMock(),
+    )
+
+    # The preprovisioning endpoint must validate the guest environment against the schema of
+    # the API version whose router serves it, not against the version where it was introduced.
+    assert captured['api_version'] == expected_api_version
 
 
 @pytest.mark.usefixtures('schema_actual')
@@ -733,6 +774,32 @@ def test_validate_environment(
     else:
         with pytest.raises(tft.artemis.api.errors.BadRequestError):
             tft.artemis.api.routers._validate_environment(logger, environment.serialize(), schema, {})
+
+
+def test_spot_instance_environment_backward_compat(
+    logger: gluetool.log.ContextAdapter,
+    schemas: dict[str, tft.artemis.JSONSchemaType],
+) -> None:
+    def _environment() -> dict[str, Optional[Any]]:
+        return {
+            'hw': {'arch': 'x86_64'},
+            'os': {'compose': 'foo'},
+            'kickstart': {},
+            'spot_instance': None,
+        }
+
+    # Older API versions still accept `spot_instance`. The field is kept in the environment
+    # mapping (and the database) until a future update removes it together with the model field.
+    validated = tft.artemis.api.routers._validate_environment(logger, _environment(), schemas['v0.0.89'], {})
+    assert validated['spot_instance'] is None
+
+    parsed = tft.artemis.api.routers._parse_environment(logger, validated, {})
+    assert parsed.hw.arch == 'x86_64'
+    assert parsed.spot_instance is None
+
+    # The current API version rejects the dropped field.
+    with pytest.raises(tft.artemis.api.errors.BadRequestError):
+        tft.artemis.api.routers._validate_environment(logger, _environment(), schemas['v0.0.96'], {})
 
 
 @pytest.fixture(name='schema_pools')

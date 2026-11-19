@@ -44,10 +44,6 @@ router_guests = APIRouter(
     responses={status.HTTP_404_NOT_FOUND: {'description': 'Not found'}},
 )
 
-router_shelves = APIRouter(
-    prefix='/shelves', tags=['shelves'], responses={status.HTTP_404_NOT_FOUND: {'description': 'Not found'}}
-)
-
 
 @router_guests.get('/', status_code=status.HTTP_200_OK)
 def get_guests(
@@ -132,77 +128,94 @@ def create_guest_log(
     return create_guest_request_log(guestname, logname, contenttype, manager, logger)
 
 
-@router_shelves.get('/', status_code=status.HTTP_200_OK)
-def get_shelves(
-    manager: Annotated[GuestShelfManager, Depends(GuestShelfManager)],
-    auth: Annotated[AuthContext, Depends(get_auth_context)],
-    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
-) -> list[GuestShelfResponse]:
-    return GuestShelfManager.entry_get_shelves(manager=manager, auth=auth, logger=logger)
+def create_router_shelves(api_version: str) -> APIRouter:
+    """
+    Create a router for guest shelves, validating preprovisioning requests against the given
+    API version.
 
+    The environment schema used for the preprovisioning endpoint is selected by ``api_version``,
+    so each API version must provide its own router to honour fields added or removed from the
+    environment.
 
-@router_shelves.get('/{shelfname}', status_code=status.HTTP_200_OK)
-def get_shelf(
-    shelfname: str,
-    manager: Annotated[GuestShelfManager, Depends(GuestShelfManager)],
-    auth: Annotated[AuthContext, Depends(get_auth_context)],
-    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
-) -> Optional[GuestShelfResponse]:
-    return GuestShelfManager.entry_get_shelf(shelfname=shelfname, manager=manager, logger=logger)
+    :param api_version: API version whose environment schema should be used for preprovisioning.
+    :returns: router serving shelf endpoints.
+    """
 
-
-@router_shelves.post('/{shelfname}', status_code=status.HTTP_201_CREATED)
-def create_shelf(
-    shelfname: str,
-    manager: Annotated[GuestShelfManager, Depends(GuestShelfManager)],
-    auth: Annotated[AuthContext, Depends(get_auth_context)],
-    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
-) -> GuestShelfResponse:
-    return GuestShelfManager.entry_create_shelf(shelfname=shelfname, manager=manager, auth=auth, logger=logger)
-
-
-@router_shelves.delete('/{shelfname}', status_code=status.HTTP_204_NO_CONTENT)
-def delete_shelf(
-    shelfname: str,
-    request: Request,
-    manager: Annotated[GuestShelfManager, Depends(GuestShelfManager)],
-    auth: Annotated[AuthContext, Depends(get_auth_context)],
-    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
-) -> None:
-    return GuestShelfManager.entry_delete_shelf(
-        shelfname=shelfname, request=request, manager=manager, auth=auth, logger=logger
+    router_shelves = APIRouter(
+        prefix='/shelves', tags=['shelves'], responses={status.HTTP_404_NOT_FOUND: {'description': 'Not found'}}
     )
 
+    @router_shelves.get('/', status_code=status.HTTP_200_OK)
+    def get_shelves(
+        manager: Annotated[GuestShelfManager, Depends(GuestShelfManager)],
+        auth: Annotated[AuthContext, Depends(get_auth_context)],
+        logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
+    ) -> list[GuestShelfResponse]:
+        return GuestShelfManager.entry_get_shelves(manager=manager, auth=auth, logger=logger)
 
-@router_shelves.delete('/guests/{guestname}', status_code=status.HTTP_204_NO_CONTENT)
-def entry_delete_shelved_guest(
-    guestname: str,
-    request: Request,
-    manager: Annotated[GuestRequestManager, Depends(GuestRequestManager)],
-    auth: Annotated[AuthContext, Depends(get_auth_context)],
-    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
-) -> None:
-    return GuestShelfManager.entry_delete_shelved_guest(
-        guestname=guestname, request=request, manager=manager, auth=auth, logger=logger
-    )
+    @router_shelves.get('/{shelfname}', status_code=status.HTTP_200_OK)
+    def get_shelf(
+        shelfname: str,
+        manager: Annotated[GuestShelfManager, Depends(GuestShelfManager)],
+        auth: Annotated[AuthContext, Depends(get_auth_context)],
+        logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
+    ) -> Optional[GuestShelfResponse]:
+        return GuestShelfManager.entry_get_shelf(shelfname=shelfname, manager=manager, logger=logger)
+
+    @router_shelves.post('/{shelfname}', status_code=status.HTTP_201_CREATED)
+    def create_shelf(
+        shelfname: str,
+        manager: Annotated[GuestShelfManager, Depends(GuestShelfManager)],
+        auth: Annotated[AuthContext, Depends(get_auth_context)],
+        logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
+    ) -> GuestShelfResponse:
+        return GuestShelfManager.entry_create_shelf(shelfname=shelfname, manager=manager, auth=auth, logger=logger)
+
+    @router_shelves.delete('/{shelfname}', status_code=status.HTTP_204_NO_CONTENT)
+    def delete_shelf(
+        shelfname: str,
+        request: Request,
+        manager: Annotated[GuestShelfManager, Depends(GuestShelfManager)],
+        auth: Annotated[AuthContext, Depends(get_auth_context)],
+        logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
+    ) -> None:
+        return GuestShelfManager.entry_delete_shelf(
+            shelfname=shelfname, request=request, manager=manager, auth=auth, logger=logger
+        )
+
+    @router_shelves.delete('/guests/{guestname}', status_code=status.HTTP_204_NO_CONTENT)
+    def entry_delete_shelved_guest(
+        guestname: str,
+        request: Request,
+        manager: Annotated[GuestRequestManager, Depends(GuestRequestManager)],
+        auth: Annotated[AuthContext, Depends(get_auth_context)],
+        logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
+    ) -> None:
+        return GuestShelfManager.entry_delete_shelved_guest(
+            guestname=guestname, request=request, manager=manager, auth=auth, logger=logger
+        )
+
+    @router_shelves.post('/{shelfname}/preprovision', status_code=status.HTTP_202_ACCEPTED)
+    def preprovision(
+        shelfname: str,
+        preprovisioning_request: PreprovisioningRequest,
+        manager: Annotated[GuestShelfManager, Depends(GuestShelfManager)],
+        auth: Annotated[AuthContext, Depends(get_auth_context)],
+        logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
+    ) -> None:
+        return preprovision_guest(
+            api_version=api_version,
+            shelfname=shelfname,
+            preprovisioning_request=preprovisioning_request,
+            manager=manager,
+            auth=auth,
+            logger=logger,
+        )
+
+    return router_shelves
 
 
-@router_shelves.post('/{shelfname}/preprovision', status_code=status.HTTP_202_ACCEPTED)
-def preprovision(
-    shelfname: str,
-    preprovisioning_request: PreprovisioningRequest,
-    manager: Annotated[GuestShelfManager, Depends(GuestShelfManager)],
-    auth: Annotated[AuthContext, Depends(get_auth_context)],
-    logger: Annotated[gluetool.log.ContextAdapter, Depends(get_logger)],
-) -> None:
-    return preprovision_guest(
-        api_version='v0.0.56',
-        shelfname=shelfname,
-        preprovisioning_request=preprovisioning_request,
-        manager=manager,
-        auth=auth,
-        logger=logger,
-    )
+router_shelves = create_router_shelves('v0.0.56')
 
 
 def register_routes(app: fastapi.FastAPI) -> None:

@@ -322,12 +322,6 @@ def cmd_guest(cfg: Configuration) -> None:
 @click.option('--pool', help='name of the pool')
 @click.option('--snapshots', is_flag=True, help='require snapshots support')
 @click.option(
-    '--spot-instance/--no-spot-instance',
-    is_flag=True,
-    default=None,
-    help='require spot instance support',
-)
-@click.option(
     '--post-install-script',
     help='Path to user data script to be executed after vm becomes active',
 )
@@ -395,7 +389,6 @@ def cmd_guest_create(
     compose: Optional[str] = None,
     pool: Optional[str] = None,
     snapshots: Optional[bool] = None,
-    spot_instance: Optional[bool] = None,
     priority_group: Optional[str] = None,
     post_install_script: Optional[str] = None,
     security_group_rule_ingress: Optional[List[str]] = None,
@@ -500,8 +493,6 @@ def cmd_guest_create(
 
     if snapshots:
         environment['snapshots'] = True
-
-    environment['spot_instance'] = spot_instance
 
     post_install = None
     if post_install_script:
@@ -1867,26 +1858,26 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
             active = extract_metric(
                 metrics,
                 'pg_stat_activity_count',
-                labels=lambda labels: labels.get('application_name', '').startswith(
-                    'artemis-'
-                )
-                and labels.get('state') == 'active',
+                labels=lambda labels: (
+                    labels.get('application_name', '').startswith('artemis-')
+                    and labels.get('state') == 'active'
+                ),
             )
             idle = extract_metric(
                 metrics,
                 'pg_stat_activity_count',
-                labels=lambda labels: labels.get('application_name', '').startswith(
-                    'artemis-'
-                )
-                and labels.get('state') == 'idle',
+                labels=lambda labels: (
+                    labels.get('application_name', '').startswith('artemis-')
+                    and labels.get('state') == 'idle'
+                ),
             )
             idle_in_transaction = extract_metric(
                 metrics,
                 'pg_stat_activity_count',
-                labels=lambda labels: labels.get('application_name', '').startswith(
-                    'artemis-'
-                )
-                and labels.get('idle in transaction') == 'idle',  # noqa: E501
+                labels=lambda labels: (
+                    labels.get('application_name', '').startswith('artemis-')
+                    and labels.get('idle in transaction') == 'idle'
+                ),  # noqa: E501
             )
 
             return ' | '.join(
