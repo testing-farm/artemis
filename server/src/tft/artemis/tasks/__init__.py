@@ -432,16 +432,6 @@ class Actor(Protocol):
 
     def __call__(self, *args: ActorArgumentType) -> None: ...
 
-    def send(self, *args: ActorArgumentType) -> None: ...
-
-    def send_with_options(
-        self,
-        args: Optional[tuple[ActorArgumentType, ...]] = None,
-        kwargs: Optional[dict[str, Any]] = None,
-        delay: Optional[int] = None,
-        **options: Any,
-    ) -> None: ...
-
     def message(self, *args: ActorArgumentType) -> Message: ...
 
     def message_with_options(
