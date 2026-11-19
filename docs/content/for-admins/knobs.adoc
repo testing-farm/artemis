@@ -249,16 +249,6 @@ guest request watchdog tasks.
 
 5+|Kickstart config template path.
 
-|`actor.offload-tasks`
-|`bool`
-|`ARTEMIS_OFFLOAD_TASKS`
-|`yes`
-|no
-
-
-
-5+|When enabled, tasks will run in their own threads.
-
 |`actor.refresh-pool-avoid-groups-hostnames.schedule`
 |`str`
 |`ARTEMIS_ACTOR_REFRESH_POOL_AVOID_GROUPS_HOSTNAMES_SCHEDULE`
