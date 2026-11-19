@@ -924,7 +924,6 @@ def run_doer(
     fn: DoerType,
     actor_name: str,
     *args: ActorArgumentType,
-    **kwargs: Any,
 ) -> DoerReturnType:
     """
     Run a given function - "doer" - in the current thread.
@@ -951,7 +950,7 @@ def run_doer(
             profiler.start()
 
         with Sentry.start_span(TracingOp.FUNCTION, description='run_doer', tags={'taskname': fn.__name__}):
-            result = fn(logger, db, session, *args, **kwargs)
+            result = fn(logger, db, session, *args)
 
     except dramatiq.middleware.Interrupt as exc:
         logger.debug('doer interrupted')
@@ -991,7 +990,6 @@ def _task_core(
     *,
     session: Optional[sqlalchemy.orm.session.Session] = None,
     doer_args: Optional[tuple[ActorArgumentType, ...]] = None,
-    doer_kwargs: Optional[dict[str, Any]] = None,
     session_isolation: bool = True,
     session_read_only: bool = False,
 ) -> None:
@@ -1004,7 +1002,6 @@ def _task_core(
     db = db or get_root_db()
 
     doer_args = doer_args or ()
-    doer_kwargs = doer_kwargs or {}
 
     doer_result: DoerReturnType = Error(Failure('undefined doer result'))
 
@@ -1021,9 +1018,8 @@ def _task_core(
 
         assert db is not None
         assert doer_args is not None
-        assert doer_kwargs is not None
 
-        doer_result = run_doer(logger, db, session, doer, actor_name, *doer_args, **doer_kwargs)
+        doer_result = run_doer(logger, db, session, doer, actor_name, *doer_args)
 
         # "Ignored" failures - failures the tasks don't wish to repeat by running the task again - need
         # special handling: we have to mark the guest request as failed. Without this step, client will
@@ -1142,7 +1138,6 @@ def task_core(
     *,
     session: Optional[sqlalchemy.orm.session.Session] = None,
     doer_args: Optional[tuple[ActorArgumentType, ...]] = None,
-    doer_kwargs: Optional[dict[str, Any]] = None,
     session_isolation: bool = True,
     session_read_only: bool = False,
 ) -> None:
@@ -1183,7 +1178,6 @@ def task_core(
                 db,
                 session=session,
                 doer_args=doer_args,
-                doer_kwargs=doer_kwargs,
                 session_isolation=session_isolation,
                 session_read_only=session_read_only,
             )
