@@ -969,9 +969,12 @@ def print_pools(
 
         table.add_column('Pool')
         table.add_column('Driver')
+        table.add_column('Enabled')
 
         for entry in sorted(collection, key=lambda e: e['poolname']):
-            table.add_row(entry['poolname'], entry['driver'])
+            table.add_row(
+                entry['poolname'], entry['driver'], '+' if entry['enabled'] else ''
+            )
 
         return table
 

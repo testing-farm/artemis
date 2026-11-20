@@ -42,7 +42,7 @@ from ...context import DATABASE, LOGGER, SESSION
 from ...drivers import Instance, PoolDriver
 from ...environment import Environment
 from ...guest import GuestState
-from ...knobs import KNOB_DEPLOYMENT, KNOB_DEPLOYMENT_ENVIRONMENT, KNOB_TRACING_ENABLED, Knob
+from ...knobs import KNOB_DEPLOYMENT, KNOB_DEPLOYMENT_ENVIRONMENT, KNOB_POOL_ENABLED, KNOB_TRACING_ENABLED, Knob
 from ...security_group_rules import SecurityGroupRule
 from ...tasks import Actor, TaskCall, _get_ssh_key
 from .. import environment as global_env, errors
@@ -1246,7 +1246,16 @@ class PoolManager:
             if r_pools.is_error:
                 raise errors.InternalServerError(caused_by=r_pools.unwrap_error())
 
-            return [PoolResponse.from_db(pool) for pool in r_pools.unwrap()]
+            result: list[PoolResponse] = []
+
+            for pool in r_pools.unwrap():
+                r_enabled = KNOB_POOL_ENABLED.get_value(session=session, entityname=pool.poolname)
+                if r_enabled.is_error:
+                    raise errors.InternalServerError(caused_by=r_enabled.unwrap_error())
+
+                result.append(PoolResponse.from_db(pool, enabled=r_enabled.unwrap()))
+
+            return result
 
 
 class UserManager:
