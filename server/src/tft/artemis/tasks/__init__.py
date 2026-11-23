@@ -1264,7 +1264,7 @@ def parse_dispatcher_groups(raw: str) -> list[DispatcherGroup]:
     The value is a ``;``-separated list of ``PATTERN:CRONTAB`` entries, where ``PATTERN`` is a regular expression
     matched against pool names and ``CRONTAB`` is a Cron-like schedule, e.g.::
 
-        ibmcloud-.*:0/27 * * * *;(?!ibmcloud-).*:*/5 * * * *
+        ibmcloud-.*:0/27 * * * *
 
     Each entry is parsed at this boundary into its narrow type: ``PATTERN`` is compiled with :py:func:`re.compile`
     into a :py:class:`re.Pattern`, and ``CRONTAB`` with :py:func:`periodiq.cron` into a :py:class:`periodiq.CronSpec`
