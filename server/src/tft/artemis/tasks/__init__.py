@@ -1401,25 +1401,30 @@ def register_pool_dispatcher_actors(
 
         # Bind the per-actor values as default arguments, so each generated actor captures its own instead of the
         # last values of the loop variables.
-        def _entry(
+        def _make_entry(
             pattern: re.Pattern[str] = pattern,
             exclude_patterns: list[re.Pattern[str]] = exclude_patterns,
             logger_name: str = logger_name,
             control_name: Optional[str] = control_name,
-        ) -> None:
-            task_core(
-                doer,
-                logger=TaskLogger(_ROOT_LOGGER, logger_name),
-                session_read_only=True,
-                fallback_actor_name=control_name,
-                # The compiled patterns are built here, in the worker, and handed straight to the doer in-process;
-                # unlike real actor arguments they never cross the broker, so they need not be JSON-serializable
-                # (hence not an ``ActorArgumentType``).
-                doer_args=cast('tuple[ActorArgumentType, ...]', (pattern, exclude_patterns)),
-            )
+        ) -> Callable[[], None]:
 
-        _entry.__name__ = actor_name
-        _entry.__qualname__ = actor_name
+            def _entry() -> None:
+                task_core(
+                    doer,
+                    logger=TaskLogger(_ROOT_LOGGER, logger_name),
+                    session_read_only=True,
+                    fallback_actor_name=control_name,
+                    # The compiled patterns are built here, in the worker, and handed straight to the doer in-process;
+                    # unlike real actor arguments they never cross the broker, so they need not be JSON-serializable
+                    # (hence not an ``ActorArgumentType``).
+                    doer_args=cast('tuple[ActorArgumentType, ...]', (pattern, exclude_patterns)),
+                )
+
+            return _entry
+
+        entry = _make_entry()
+        entry.__name__ = actor_name
+        entry.__qualname__ = actor_name
 
         namespace[actor_name] = task(
             singleton=True,
@@ -1428,7 +1433,7 @@ def register_pool_dispatcher_actors(
             priority=TaskPriority.HIGH,
             queue_name=TaskQueue.PERIODIC,
             control_name=control_name,
-        )(_entry)
+        )(entry)
 
 
 def _randomize_delay(delay: int) -> int:

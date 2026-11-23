@@ -318,6 +318,68 @@ def test_register_pool_dispatcher_actors_groups_add_catchall() -> None:
     assert sorted(namespace) == ['dummy_dispatcher_0', 'dummy_dispatcher_1', 'dummy_dispatcher_rest']
 
 
+@pytest.mark.usefixtures('broker')
+@pytest.mark.parametrize(
+    ('groups_spec', 'actor_names'),
+    [
+        # No groups: a single default actor under the bare base name.
+        (None, ['dummy_refresh_dispatcher']),
+        # Groups: one indexed actor per group, plus the implicit catch-all.
+        (
+            'aws-.*:*/5 * * * *;ibmcloud-.*:0/27 * * * *',
+            [
+                'dummy_refresh_dispatcher_0',
+                'dummy_refresh_dispatcher_1',
+                'dummy_refresh_dispatcher_rest',
+            ],
+        ),
+    ],
+    ids=['no-groups', 'groups'],
+)
+def test_dispatcher_actor_taskcall_from_scheduled_message(
+    broker: dramatiq.broker.Broker,
+    groups_spec: Any,
+    actor_names: list[str],
+) -> None:
+    # The generated dispatcher actors bind their per-group values as default arguments of `_entry`, so
+    # `inspect.signature(actor.fn)` counts those parameters. periodiq, however, schedules these actors with no
+    # arguments (`actor.send_with_options(scheduled_at=...)`), so the emitted message carries an empty `args`.
+    # `TaskCall` is built from that message in `task_core` and in the metrics/worker-traffic middleware, so it
+    # must construct successfully from an argument-less scheduled message - otherwise every dispatcher run raises
+    # before reaching the doer.
+    namespace: dict[str, Any] = {}
+
+    groups = tft.artemis.tasks.parse_dispatcher_groups(groups_spec) if groups_spec is not None else []
+
+    tft.artemis.tasks.register_pool_dispatcher_actors(
+        namespace,
+        base_actor_name='dummy_refresh_dispatcher',
+        taskname='dummy-refresh-dispatcher',
+        doer=cast(Any, MagicMock(name='doer', __name__='doer')),
+        groups=groups,
+        default_schedule='*/5 * * * *',
+    )
+
+    assert sorted(namespace) == sorted(actor_names)
+
+    for actor_name in actor_names:
+        actor = namespace[actor_name]
+
+        # Exactly the message periodiq emits for a scheduled actor: the actor name, no arguments.
+        message: dramatiq.Message[None] = dramatiq.Message(
+            queue_name=actor.queue_name,
+            actor_name=actor.actor_name,
+            args=(),
+            kwargs={},
+            options={},
+        )
+
+        task_call = tft.artemis.tasks.TaskCall.from_message_proxy(broker, dramatiq.MessageProxy(message))
+
+        assert task_call.actor is actor
+        assert task_call.args == ()
+
+
 def test_actor_control_value_fallback(monkeypatch: _pytest.monkeypatch.MonkeyPatch) -> None:
     for var in ('ARTEMIS_ACTOR_DUMMY_DISPATCHER_0_QUEUE', 'ARTEMIS_ACTOR_DUMMY_DISPATCHER_QUEUE'):
         monkeypatch.delenv(var, raising=False)
