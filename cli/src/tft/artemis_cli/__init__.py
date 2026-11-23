@@ -969,9 +969,21 @@ def print_pools(
 
         table.add_column('Pool')
         table.add_column('Driver')
+        table.add_column('Enabled')
+
+        def _format_enabled(enabled: Optional[bool]) -> str:
+            if enabled is None:
+                # field not defined at all -> no enabled data fetched, can happen when bleeding edge cli is run against
+                # older deployment
+                return '?'
+            return 'yes' if enabled else 'no'
 
         for entry in sorted(collection, key=lambda e: e['poolname']):
-            table.add_row(entry['poolname'], entry['driver'])
+            table.add_row(
+                entry['poolname'],
+                entry['driver'],
+                _format_enabled(entry.get('enabled')),
+            )
 
         return table
 

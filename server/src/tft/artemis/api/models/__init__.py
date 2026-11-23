@@ -418,10 +418,11 @@ class CreateUserRequest:
 class PoolResponse:
     poolname: str
     driver: str
+    enabled: bool
 
     @classmethod
-    def from_db(cls, pool: artemis_db.Pool) -> 'PoolResponse':
-        return cls(poolname=pool.poolname, driver=pool.driver)
+    def from_db(cls, pool: artemis_db.Pool, *, enabled: bool) -> 'PoolResponse':
+        return cls(poolname=pool.poolname, driver=pool.driver, enabled=enabled)
 
 
 @dataclasses.dataclass
