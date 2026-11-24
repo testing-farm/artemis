@@ -990,17 +990,19 @@ def policy_one_shot_only(
     if not guest_request.user_data.get(KNOB_ONE_SHOT_ONLY_LABEL.value):
         return Ok(PolicyRuling.from_pools(pools))
 
-    # Only the existence of an attempt matters here, and each `acquisition-attempt` event carries a serialized
-    # flavor and image in its details - count the events instead of loading them.
-    r_count = guest_request.count_events(session, eventname='acquisition-attempt')
+    # Only the existence of an attempt matters here, and each attempt event carries a serialized flavor and image
+    # in its details - count the events instead of loading them. Drivers built on top of `ResourceManager` log
+    # `resource-acquisition-attempt`, the others log `acquisition-attempt` via `log_acquisition_attempt()`.
+    for eventname in ('acquisition-attempt', 'resource-acquisition-attempt'):
+        r_count = guest_request.count_events(session, eventname=eventname)
 
-    if r_count.is_error:
-        return Error(r_count.unwrap_error())
+        if r_count.is_error:
+            return Error(r_count.unwrap_error())
 
-    if not r_count.unwrap():
-        return Ok(PolicyRuling.from_pools(pools))
+        if r_count.unwrap():
+            return Ok(PolicyRuling(cancel=True))
 
-    return Ok(PolicyRuling(cancel=True))
+    return Ok(PolicyRuling.from_pools(pools))
 
 
 def run_routing_policies(
