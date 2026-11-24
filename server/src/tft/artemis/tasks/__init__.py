@@ -1068,6 +1068,7 @@ def _task_core(
 
         doer_result = run_doer(
             logger, db, session, doer, actor_name, *doer_args, fallback_actor_name=fallback_actor_name
+        )
 
         # "Ignored" failures - failures the tasks don't wish to repeat by running the task again - need
         # special handling: we have to mark the guest request as failed. Without this step, client will
