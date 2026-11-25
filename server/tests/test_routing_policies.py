@@ -702,7 +702,12 @@ def test_policy_one_attempt_forgiving_no_events(mock_inputs: MockInputs) -> None
     do_policy_one_attempt_forgiving(mock_inputs, empty_events=True)
 
 
-def do_test_policy_one_shot_only(mock_inputs: MockInputs, labeled: bool = True, attempts: int = 0) -> None:
+def do_test_policy_one_shot_only(
+    mock_inputs: MockInputs,
+    labeled: bool = True,
+    attempts: int = 0,
+    attempt_eventname: str = 'acquisition-attempt',
+) -> None:
     mock_logger, mock_session, _, mock_pools, mock_guest_request = mock_inputs
 
     # Must be a real mapping: `MagicMock.get()` would return a truthy mock, and the policy would never
@@ -711,7 +716,9 @@ def do_test_policy_one_shot_only(mock_inputs: MockInputs, labeled: bool = True, 
         {tft.artemis.routing_policies.KNOB_ONE_SHOT_ONLY_LABEL.value: 'yes'} if labeled else {}
     )
 
-    mock_guest_request.count_events = lambda session, eventname: Ok(attempts)
+    event_counts = {attempt_eventname: attempts}
+
+    mock_guest_request.count_events = lambda session, eventname: Ok(event_counts.get(eventname, 0))
 
     r_ruling = tft.artemis.routing_policies.policy_one_shot_only(
         mock_logger, mock_session, mock_pools, mock_guest_request
@@ -734,6 +741,10 @@ def do_test_policy_one_shot_only(mock_inputs: MockInputs, labeled: bool = True, 
 
 def test_policy_one_shot_only(mock_inputs: MockInputs) -> None:
     do_test_policy_one_shot_only(mock_inputs, attempts=1)
+
+
+def test_policy_one_shot_only_resource_attempt(mock_inputs: MockInputs) -> None:
+    do_test_policy_one_shot_only(mock_inputs, attempts=1, attempt_eventname='resource-acquisition-attempt')
 
 
 def test_policy_one_shot_only_no_attempt_yet(mock_inputs: MockInputs) -> None:
