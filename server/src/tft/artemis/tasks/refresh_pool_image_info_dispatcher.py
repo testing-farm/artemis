@@ -26,6 +26,7 @@ from . import (
     get_pool_logger,
     parse_dispatcher_groups,
     register_pool_dispatcher_actors,
+    serialize_dispatcher_groups,
     step,
 )
 from .refresh_pool_image_info import refresh_pool_image_info
@@ -51,6 +52,7 @@ KNOB_REFRESH_POOL_IMAGE_INFO_GROUPS: Knob[list[DispatcherGroup]] = Knob(
     has_db=False,
     envvar='ARTEMIS_ACTOR_REFRESH_POOL_IMAGE_INFO_GROUPS',
     cast_from_str=parse_dispatcher_groups,
+    cast_to_str=serialize_dispatcher_groups,
     default=[],
 )
 

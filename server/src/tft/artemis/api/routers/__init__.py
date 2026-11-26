@@ -986,7 +986,7 @@ class KnobManager:
         # First, collect all known knobs.
         for knobname, knob in Knob.ALL_KNOBS.items():
             knobs[knobname] = KnobResponse(
-                name=knobname, value=knob.static_value, cast=knob.cast_name, help=knob.help, editable=False
+                name=knobname, value=knob.static_value_for_display, cast=knob.cast_name, help=knob.help, editable=False
             )
 
         # Second, update editable knobs.

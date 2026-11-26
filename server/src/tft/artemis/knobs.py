@@ -320,6 +320,7 @@ class Knob(Generic[T]):
         default: Optional[T] = None,
         default_label: Optional[str] = None,
         cast_from_str: Optional[Callable[[str], T]] = None,
+        cast_to_str: Optional[Callable[[T], Any]] = None,
     ) -> None:
         self.knobname = knobname
         self.help = inspect.cleandoc(help)
@@ -329,6 +330,11 @@ class Knob(Generic[T]):
         self.per_entity = per_entity
 
         self.cast_from_str = cast_from_str
+
+        # Inverse of ``cast_from_str``: render a parsed value back into a JSON-serializable form. Needed for knobs
+        # whose value is cast into a rich, non-JSON type (e.g. ``re.Pattern`` or ``periodiq.CronSpec``), which the
+        # API would otherwise fail to serialize when listing knobs. ``None`` means the value is JSON-safe as-is.
+        self.cast_to_str = cast_to_str
 
         Knob.ALL_KNOBS[knobname] = self
 
@@ -463,6 +469,20 @@ class Knob(Generic[T]):
         from . import Failure
 
         return Error(Failure('Cannot fetch knob value'))
+
+    @property
+    def static_value_for_display(self) -> object:
+        """
+        Return :py:attr:`static_value` in a JSON-serializable form.
+
+        If the knob has a :py:attr:`cast_to_str` serializer (its value is a rich, non-JSON type), apply it; otherwise
+        the value is assumed to be JSON-safe and returned as-is.
+        """
+
+        if self.cast_to_str is not None:
+            return self.cast_to_str(self.static_value)
+
+        return self.static_value
 
     @property
     def cast_name(self) -> Optional[str]:

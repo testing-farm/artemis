@@ -1326,6 +1326,19 @@ def parse_dispatcher_groups(raw: str) -> list[DispatcherGroup]:
     return groups
 
 
+def serialize_dispatcher_groups(groups: list[DispatcherGroup]) -> str:
+    """
+    Render dispatcher groups back into their ``PATTERN:CRONTAB`` string form.
+
+    Inverse of :py:func:`parse_dispatcher_groups`, used as the knob ``cast_to_str`` so the API can serialize the knob
+    value to JSON - the parsed members (:py:class:`re.Pattern` and :py:class:`periodiq.CronSpec`) are not JSON-safe on
+    their own. ``re.Pattern.pattern`` recovers the original regular expression and ``str(CronSpec)`` the Cron schedule,
+    so the result round-trips back through :py:func:`parse_dispatcher_groups`.
+    """
+
+    return ';'.join(f'{pattern.pattern}:{schedule}' for pattern, schedule in groups)
+
+
 def register_pool_dispatcher_actors(
     namespace: dict[str, Any],
     *,
