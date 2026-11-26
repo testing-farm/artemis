@@ -318,6 +318,43 @@ def test_register_pool_dispatcher_actors_groups_add_catchall() -> None:
     assert sorted(namespace) == ['dummy_dispatcher_0', 'dummy_dispatcher_1', 'dummy_dispatcher_rest']
 
 
+@pytest.mark.usefixtures('schema_actual')
+def test_get_knobs_serializes_dispatcher_groups_to_json(
+    logger: gluetool.log.ContextAdapter,
+    db: tft.artemis.db.DB,
+    monkeypatch: _pytest.monkeypatch.MonkeyPatch,
+) -> None:
+    """
+    Listing knobs over the API must yield a JSON-serializable response even when a pool-refresh dispatcher-groups
+    knob is configured.
+
+    Such a knob holds its value as the parsed, rich form ``list[tuple[re.Pattern, periodiq.CronSpec]]`` (see
+    :py:func:`tft.artemis.tasks.parse_dispatcher_groups`). Neither ``re.Pattern`` nor ``periodiq.CronSpec`` is
+    JSON-serializable on its own, so without special handling ``get_knobs`` produces a response that Pydantic cannot
+    serialize, and ``GET /knobs`` fails with ``PydanticSerializationError``.
+
+    This test drives the real ``get_knobs`` path and asserts the whole response survives JSON serialization. It is
+    agnostic to *how* the value is made JSON-safe - it only pins the observable behavior.
+    """
+
+    from pydantic import TypeAdapter
+
+    from tft.artemis.api.models import KnobResponse
+    from tft.artemis.api.routers import KnobManager
+    from tft.artemis.tasks.refresh_pool_flavor_info_dispatcher import KNOB_REFRESH_POOL_FLAVOR_INFO_GROUPS
+
+    # Pretend the knob was configured (via envvar or DB) with a non-empty set of groups, so its value is the parsed,
+    # rich form rather than the empty default - this is what triggers the serialization problem.
+    configured = tft.artemis.tasks.parse_dispatcher_groups('ibmcloud-.*:0/27 * * * *;aws-.*:*/5 * * * *')
+    assert configured  # sanity: the knob value is actually non-empty
+    monkeypatch.setattr(KNOB_REFRESH_POOL_FLAVOR_INFO_GROUPS, 'static_value', configured)
+
+    responses = KnobManager(db).get_knobs(logger)
+
+    # Mirror what the API does with the handler's return value: serialize it to JSON. Must not raise.
+    TypeAdapter(list[KnobResponse]).dump_json(responses)
+
+
 @pytest.mark.usefixtures('broker')
 @pytest.mark.parametrize(
     ('groups_spec', 'actor_names'),
