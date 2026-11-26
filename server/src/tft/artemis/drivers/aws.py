@@ -247,8 +247,9 @@ error_cause_extractor = create_error_cause_extractor(
 # tags but this is not necessarily true across all AWS services. Restrict keys to letters, digits and '+-=._:/@'.
 # See https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Tags.html#tag-basics
 TAG_KEY_ALLOWED_CHARACTERS = string.ascii_letters + string.digits + '+-=._:/@ '
-# quotes in the value are replaced
-TAG_VALUE_ALLOWED_CHARACTERS = string.printable.replace('"', '').replace("'", '')
+# Quotes and backslashes in the value are replaced: values are double-quoted when passed to AWS CLI (see
+# `_serialize_tags()`), and the shorthand parser would treat them as an end of the value or an escape sequence.
+TAG_VALUE_ALLOWED_CHARACTERS = string.printable.replace('"', '').replace("'", '').replace('\\', '')
 TAG_KEY_MAX_LENGTH = 128
 TAG_VALUE_MAX_LENGTH = 256
 
@@ -1453,6 +1454,7 @@ _sanitize_tags = create_sanitize_tags(
     tag_chars_mapping={
         '"': '<quote>',
         "'": '<singlequote>',
+        '\\': '<backslash>',
     },
 )
 
@@ -1465,12 +1467,14 @@ def _serialize_tags(tags: Tags) -> list[str]:
 
     .. code-block:: python
 
-       Key=foo,Value=bar Key=baz,Value=
+       Key=foo,Value="bar" Key=baz,Value=""
+
+    Values are always double-quoted, otherwise characters like ``,``, ``[`` or ``{`` would break the shorthand syntax.
 
     See https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Tags.html#create-tag-examples for more details.
     """
 
-    return [f"""Key={name},Value={value or '""'}""" for name, value in _sanitize_tags(tags)]
+    return [f'Key={name},Value="{value}"' for name, value in _sanitize_tags(tags)]
 
 
 def _tags_to_tag_specifications(tags: Tags, *resource_types: str) -> list[str]:
@@ -1481,7 +1485,7 @@ def _tags_to_tag_specifications(tags: Tags, *resource_types: str) -> list[str]:
 
     .. code-block:: python
 
-       ResourceType=foo,Tags=[{Key=foo,Value=bar},...]
+       ResourceType=foo,Tags=[{Key=foo,Value="bar"},...]
 
     See https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Tags.html#tag-on-create-examples for more details.
     """
