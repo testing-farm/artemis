@@ -4,6 +4,7 @@
 import datetime
 from typing import Optional
 
+import awscli.shorthand  # type: ignore[import-untyped]
 import gluetool.log
 import pytest
 
@@ -20,25 +21,78 @@ AWS_TAGS_EXAMPLES: dict[str, str] = {
     'tag5': 'foo bar',
     'tag6': 'foo "bar"',
     'tag7': "foo 'bar'",
+    'tag8': 'gitlab.com/foo, gitlab.cee/bar: CI',
+    'tag9': 'foo=[{bar}]',
+    'tag10': 'foo\\',
 }
 
 
 def test_serialize_tags() -> None:
     assert tft.artemis.drivers.aws._serialize_tags(AWS_TAGS_EXAMPLES) == [
-        'Key=tag1,Value=value1',
-        'Key=tag2,Value=value2',
+        'Key=tag1,Value="value1"',
+        'Key=tag2,Value="value2"',
         'Key=tag3,Value=""',
         'Key=tag4,Value=""',
-        'Key=tag5,Value=foo bar',
-        'Key=tag6,Value=foo <quote>bar<quote>',
-        'Key=tag7,Value=foo <singlequote>bar<singlequote>',
+        'Key=tag5,Value="foo bar"',
+        'Key=tag6,Value="foo <quote>bar<quote>"',
+        'Key=tag7,Value="foo <singlequote>bar<singlequote>"',
+        'Key=tag8,Value="gitlab.com/foo, gitlab.cee/bar: CI"',
+        'Key=tag9,Value="foo=[{bar}]"',
+        'Key=tag10,Value="foo<backslash>"',
     ]
 
 
 def test_tags_to_tags_specifications() -> None:
+    serialized_tags = (
+        '{Key=tag1,Value="value1"},'
+        '{Key=tag2,Value="value2"},'
+        '{Key=tag3,Value=""},'
+        '{Key=tag4,Value=""},'
+        '{Key=tag5,Value="foo bar"},'
+        '{Key=tag6,Value="foo <quote>bar<quote>"},'
+        '{Key=tag7,Value="foo <singlequote>bar<singlequote>"},'
+        '{Key=tag8,Value="gitlab.com/foo, gitlab.cee/bar: CI"},'
+        '{Key=tag9,Value="foo=[{bar}]"},'
+        '{Key=tag10,Value="foo<backslash>"}'
+    )
+
     assert tft.artemis.drivers.aws._tags_to_tag_specifications(AWS_TAGS_EXAMPLES, 'instance', 'volume') == [
-        'ResourceType=instance,Tags=[{Key=tag1,Value=value1},{Key=tag2,Value=value2},{Key=tag3,Value=""},{Key=tag4,Value=""},{Key=tag5,Value=foo bar},{Key=tag6,Value=foo <quote>bar<quote>},{Key=tag7,Value=foo <singlequote>bar<singlequote>}]',  # noqa: E501
-        'ResourceType=volume,Tags=[{Key=tag1,Value=value1},{Key=tag2,Value=value2},{Key=tag3,Value=""},{Key=tag4,Value=""},{Key=tag5,Value=foo bar},{Key=tag6,Value=foo <quote>bar<quote>},{Key=tag7,Value=foo <singlequote>bar<singlequote>}]',  # noqa: E501
+        f'ResourceType=instance,Tags=[{serialized_tags}]',
+        f'ResourceType=volume,Tags=[{serialized_tags}]',
+    ]
+
+
+EXPECTED_PARSED_TAGS: list[dict[str, str]] = [
+    {'Key': 'tag1', 'Value': 'value1'},
+    {'Key': 'tag2', 'Value': 'value2'},
+    {'Key': 'tag3', 'Value': ''},
+    {'Key': 'tag4', 'Value': ''},
+    {'Key': 'tag5', 'Value': 'foo bar'},
+    {'Key': 'tag6', 'Value': 'foo <quote>bar<quote>'},
+    {'Key': 'tag7', 'Value': 'foo <singlequote>bar<singlequote>'},
+    {'Key': 'tag8', 'Value': 'gitlab.com/foo, gitlab.cee/bar: CI'},
+    {'Key': 'tag9', 'Value': 'foo=[{bar}]'},
+    {'Key': 'tag10', 'Value': 'foo<backslash>'},
+]
+
+
+def test_serialize_tags_awscli_roundtrip() -> None:
+    parser = awscli.shorthand.ShorthandParser()
+
+    assert [
+        parser.parse(serialized) for serialized in tft.artemis.drivers.aws._serialize_tags(AWS_TAGS_EXAMPLES)
+    ] == EXPECTED_PARSED_TAGS
+
+
+def test_tags_to_tags_specifications_awscli_roundtrip() -> None:
+    parser = awscli.shorthand.ShorthandParser()
+
+    assert [
+        parser.parse(serialized)
+        for serialized in tft.artemis.drivers.aws._tags_to_tag_specifications(AWS_TAGS_EXAMPLES, 'instance', 'volume')
+    ] == [
+        {'ResourceType': 'instance', 'Tags': EXPECTED_PARSED_TAGS},
+        {'ResourceType': 'volume', 'Tags': EXPECTED_PARSED_TAGS},
     ]
 
 
