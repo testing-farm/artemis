@@ -67,11 +67,9 @@ from ..drivers import (
     aws as aws_driver,
     azure as azure_driver,
     beaker as beaker_driver,
-    flasher as flasher_driver,
     gcp as gcp_driver,
     localhost as localhost_driver,
     openstack as openstack_driver,
-    rest as rest_driver,
 )
 from ..drivers.ibmcloud import (
     power as ibmcloud_power_driver,
@@ -308,12 +306,10 @@ POOL_DRIVERS = {
     'beaker': beaker_driver.BeakerDriver,
     'localhost': localhost_driver.LocalhostDriver,
     'openstack': openstack_driver.OpenStackDriver,
-    'rest': rest_driver.RestDriver,
     'azure': azure_driver.AzureDriver,
     'ibmcloud-vpc': ibmcloud_vpc_driver.IBMCloudVPCDriver,
     'ibmcloud-power': ibmcloud_power_driver.IBMCloudPowerDriver,
     'gcp': gcp_driver.GCPDriver,
-    'flasher': flasher_driver.FlasherDriver,
 }
 
 

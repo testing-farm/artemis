@@ -148,10 +148,6 @@ ALLOWED_LOGS = [
     'console:dump/url',
     'console:interactive/url',
     'sys.log:dump/url',
-    'flasher-debug:dump/url',
-    'flasher-debug:dump/blob',
-    'flasher-event:dump/url',
-    'flasher-event:dump/blob',
     'anaconda.log:dump/blob',
     'storage.log:dump/blob',
     'program.log:dump/blob',
@@ -1867,26 +1863,26 @@ def _status_top_full(cfg: Configuration, tick: int) -> None:
             active = extract_metric(
                 metrics,
                 'pg_stat_activity_count',
-                labels=lambda labels: labels.get('application_name', '').startswith(
-                    'artemis-'
-                )
-                and labels.get('state') == 'active',
+                labels=lambda labels: (
+                    labels.get('application_name', '').startswith('artemis-')
+                    and labels.get('state') == 'active'
+                ),
             )
             idle = extract_metric(
                 metrics,
                 'pg_stat_activity_count',
-                labels=lambda labels: labels.get('application_name', '').startswith(
-                    'artemis-'
-                )
-                and labels.get('state') == 'idle',
+                labels=lambda labels: (
+                    labels.get('application_name', '').startswith('artemis-')
+                    and labels.get('state') == 'idle'
+                ),
             )
             idle_in_transaction = extract_metric(
                 metrics,
                 'pg_stat_activity_count',
-                labels=lambda labels: labels.get('application_name', '').startswith(
-                    'artemis-'
-                )
-                and labels.get('idle in transaction') == 'idle',  # noqa: E501
+                labels=lambda labels: (
+                    labels.get('application_name', '').startswith('artemis-')
+                    and labels.get('idle in transaction') == 'idle'
+                ),  # noqa: E501
             )
 
             return ' | '.join(
